@@ -1,8 +1,11 @@
 import Navbar from './components/Navbar'
 import Hero from './components/Hero'
+import MetricsPreview from './components/MetricsPreview'
 import Services from './components/Services'
 import Metrics from './components/Metrics'
 import Process from './components/Process'
+import WhoWeServe from './components/WhoWeServe'
+import Benefits from './components/Benefits'
 import Credibility from './components/Credibility'
 import Contact from './components/Contact'
 import Footer from './components/Footer'
@@ -13,9 +16,12 @@ function App() {
       <Navbar />
       <main>
         <Hero />
+        <MetricsPreview />
         <Services />
         <Metrics />
         <Process />
+        <WhoWeServe />
+        <Benefits />
         <Credibility />
         <Contact />
       </main>

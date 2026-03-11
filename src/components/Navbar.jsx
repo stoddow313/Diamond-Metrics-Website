@@ -1,8 +1,10 @@
+import BrandMark from './BrandMark'
+
 function Navbar() {
   return (
     <header className="header">
       <div className="nav">
-        <h2 className="logo">Diamond Metrics</h2>
+        <BrandMark />
         <nav className="nav-links">
           <a href="#services">Services</a>
           <a href="#metrics">Metrics</a>
