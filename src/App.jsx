@@ -1,14 +1,11 @@
-import { useState } from 'react'
-import reactLogo from './assets/react.svg'
-import viteLogo from '/vite.svg'
-import './App.css'
-
 import Navbar from './components/Navbar'
 import Hero from './components/Hero'
 import Services from './components/Services'
 import Metrics from './components/Metrics'
 import Process from './components/Process'
+import Credibility from './components/Credibility'
 import Contact from './components/Contact'
+import Footer from './components/Footer'
 
 function App() {
   return (
@@ -19,11 +16,12 @@ function App() {
         <Services />
         <Metrics />
         <Process />
+        <Credibility />
         <Contact />
       </main>
+      <Footer />
     </div>
   )
 }
 
 export default App
-
