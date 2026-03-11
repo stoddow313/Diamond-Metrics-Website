@@ -3,13 +3,27 @@ import reactLogo from './assets/react.svg'
 import viteLogo from '/vite.svg'
 import './App.css'
 
+import Navbar from './components/Navbar'
+import Hero from './components/Hero'
+import Services from './components/Services'
+import Metrics from './components/Metrics'
+import Process from './components/Process'
+import Contact from './components/Contact'
+
 function App() {
   return (
-    <div>
-      <h1>Diamond Metrics</h1>
-      <p>Baseball analytics for high school programs.</p>
+    <div className="container">
+      <Navbar />
+      <main>
+        <Hero />
+        <Services />
+        <Metrics />
+        <Process />
+        <Contact />
+      </main>
     </div>
   )
 }
 
 export default App
+

@@ -1,23 +1,146 @@
-:root {
-  font-family: Arial, sans-serif;
-  line-height: 1.5;
-  font-weight: 400;
-  color: #ffffff;
+body {
+  margin: 0;
+  font-family: Arial, Helvetica, sans-serif;
   background-color: #0f172a;
+  color: white;
 }
 
 * {
   box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+.container {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 32px 20px 60px;
+}
+
+.header {
+  margin-bottom: 40px;
+}
+
+.nav {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+
+.logo {
   margin: 0;
-  padding: 0;
 }
 
-body {
-  min-width: 320px;
-  min-height: 100vh;
+.nav-links {
+  display: flex;
+  gap: 18px;
+  flex-wrap: wrap;
 }
 
-a {
-  color: inherit;
+.nav-links a {
+  color: white;
   text-decoration: none;
+}
+
+main {
+  display: flex;
+  flex-direction: column;
+  gap: 48px;
+}
+
+.hero {
+  padding: 48px 0 16px;
+}
+
+.eyebrow {
+  color: #38bdf8;
+  font-weight: bold;
+  margin-bottom: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-size: 14px;
+}
+
+.hero h1 {
+  font-size: 44px;
+  line-height: 1.1;
+  margin-bottom: 16px;
+  max-width: 800px;
+}
+
+.hero-text {
+  max-width: 720px;
+  line-height: 1.7;
+  font-size: 18px;
+  color: #dbeafe;
+}
+
+.hero-buttons {
+  margin-top: 24px;
+  display: flex;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.primary-button,
+.secondary-button {
+  display: inline-block;
+  padding: 12px 18px;
+  border-radius: 8px;
+  text-decoration: none;
+  font-weight: bold;
+}
+
+.primary-button {
+  background-color: #38bdf8;
+  color: #0f172a;
+}
+
+.secondary-button {
+  border: 1px solid #38bdf8;
+  color: #38bdf8;
+}
+
+section h2 {
+  font-size: 28px;
+  margin-bottom: 18px;
+}
+
+.card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 18px;
+}
+
+.card {
+  background-color: #1e293b;
+  padding: 20px;
+  border-radius: 12px;
+  border: 1px solid #334155;
+}
+
+.card h3 {
+  margin-top: 0;
+  margin-bottom: 10px;
+}
+
+.card p {
+  margin: 0;
+  line-height: 1.6;
+  color: #e2e8f0;
+}
+
+@media (max-width: 700px) {
+  .hero h1 {
+    font-size: 34px;
+  }
+
+  .nav {
+    flex-direction: column;
+    align-items: flex-start;
+  }
 }
