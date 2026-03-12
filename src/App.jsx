@@ -3,6 +3,7 @@ import Hero from "./components/Hero";
 import UseCases from "./components/UseCases";
 import AccessibleCapture from "./components/AccessibleCapture";
 import ProDay from "./components/ProDay";
+import ProgramOptions from "./components/ProgramOptions";
 import MetricsPreview from "./components/MetricsPreview";
 import DashboardPreview from "./components/DashboardPreview";
 import VisualInsights from "./components/VisualInsights";
@@ -25,6 +26,7 @@ function App() {
         <UseCases />
         <AccessibleCapture />
         <ProDay />
+        <ProgramOptions />
         <MetricsPreview />
         <DashboardPreview />
         <VisualInsights />
