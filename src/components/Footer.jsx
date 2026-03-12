@@ -3,7 +3,7 @@ function Footer() {
     <footer className="site-footer">
       <div className="footer-top">
         <div className="footer-brand">
-          <h3>Diamond Metrics</h3>
+          <h3>Diamond Metrics LLC</h3>
           <p>Baseball Analytics for High School Programs</p>
         </div>
 
@@ -20,7 +20,7 @@ function Footer() {
       </div>
 
       <div className="footer-bottom">
-        <p>© 2026 Diamond Metrics. All rights reserved.</p>
+        <p>© 2026 Diamond Metrics LLC. All rights reserved.</p>
       </div>
     </footer>
   );
