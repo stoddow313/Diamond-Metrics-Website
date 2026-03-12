@@ -10,6 +10,8 @@ import Benefits from "./components/Benefits";
 import Credibility from "./components/Credibility";
 import Contact from "./components/Contact";
 import Footer from "./components/Footer";
+import DashboardPreview from "./components/DashboardPreview";
+
 
 function App() {
   return (
@@ -20,6 +22,7 @@ function App() {
         <Hero />
         <UseCases />
         <MetricsPreview />
+        <DashboardPreview />
         <Services />
         <Metrics />
         <Process />
