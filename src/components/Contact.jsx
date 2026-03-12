@@ -35,8 +35,8 @@ function Contact() {
           <div className="contact-details">
             <p>
               <strong>Email:</strong>{" "}
-              <a href="mailto:contact@diamondmetrics.ai">
-                contact@diamondmetrics.ai
+              <a href="mailto:william@diamondmetrics.ai">
+                william@diamondmetrics.ai
               </a>
             </p>
             <p>
@@ -127,8 +127,8 @@ function Contact() {
             <p className="form-note">
               Something went wrong. Please try again or email
               {" "}
-              <a href="mailto:contact@diamondmetrics.ai">
-                contact@diamondmetrics.ai
+              <a href="mailto:william@diamondmetrics.ai">
+                william@diamondmetrics.ai
               </a>.
             </p>
           )}
