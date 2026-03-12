@@ -474,6 +474,76 @@ section h2 {
 .dashboard-card li {
   margin-bottom: 6px;
 }
+.evaluation-layout {
+  display: grid;
+  grid-template-columns: 1.2fr 0.9fr;
+  gap: 22px;
+  margin-top: 24px;
+}
+
+.evaluation-summary-card,
+.evaluation-insights-card {
+  background-color: rgba(15, 23, 42, 0.78);
+  border: 1px solid #1e3a5f;
+  border-radius: 18px;
+  padding: 24px;
+}
+
+.evaluation-label {
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #7dd3fc;
+  margin: 0 0 10px;
+  font-weight: 700;
+}
+
+.evaluation-title {
+  margin: 0 0 18px;
+  font-size: 28px;
+  line-height: 1.2;
+}
+
+.evaluation-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+
+.evaluation-stat {
+  background-color: rgba(30, 41, 59, 0.85);
+  border: 1px solid #334155;
+  border-radius: 16px;
+  padding: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.evaluation-stat-value {
+  font-size: 30px;
+  font-weight: 800;
+  color: white;
+  line-height: 1.1;
+}
+
+.evaluation-stat-label {
+  font-size: 13px;
+  color: #cbd5e1;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.insight-list {
+  margin: 0;
+  padding-left: 20px;
+  color: #dbeafe;
+  line-height: 1.8;
+}
+
+.insight-list li {
+  margin-bottom: 8px;
+}
 
 
 
@@ -511,7 +581,13 @@ section h2 {
   .contact-layout {
     grid-template-columns: 1fr;
   }
+    .evaluation-layout {
+    grid-template-columns: 1fr;
+  }
 
+  .evaluation-stat-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (max-width: 700px) {
