@@ -1,6 +1,8 @@
 function Hero() {
   return (
-    <section className="hero">
+    <section className="hero hero-background">
+      <div className="hero-overlay"></div>
+
       <p className="eyebrow">Baseball Analytics for High School Programs</p>
       <h1>Bring advanced baseball analytics to your program.</h1>
       <p className="hero-text">
