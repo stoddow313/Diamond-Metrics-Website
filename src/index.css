@@ -690,6 +690,32 @@ section h2 {
   line-height: 1.5;
   color: #cbd5e1;
 }
+.hero-background {
+  position: relative;
+  overflow: hidden;
+}
+
+.hero-background::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+
+  background-image:
+    linear-gradient(rgba(56,189,248,0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(56,189,248,0.05) 1px, transparent 1px);
+
+  background-size: 60px 60px;
+
+  transform: rotate(45deg) scale(1.5);
+
+  pointer-events: none;
+  z-index: 0;
+}
+
+.hero-background > * {
+  position: relative;
+  z-index: 1;
+}
 
 
 
