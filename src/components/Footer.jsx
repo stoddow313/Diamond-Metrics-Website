@@ -14,7 +14,7 @@ function Footer() {
         </div>
 
         <div className="footer-contact">
-          <a href="mailto:contact@diamondmetrics.ai">contact@diamondmetrics.ai</a>
+          <a href="mailto:william@diamondmetrics.ai">william@diamondmetrics.ai</a>
           <p>Utah, United States</p>
         </div>
       </div>
