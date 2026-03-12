@@ -1,7 +1,7 @@
 import { useForm, ValidationError } from "@formspree/react";
 
 function Contact() {
-  const [state, handleSubmit] = useForm("mjgawpko");
+  const [state, handleSubmit] = useForm("xgonkqrq");
 
   if (state.succeeded) {
     return (
@@ -40,6 +40,7 @@ function Contact() {
         </div>
 
         <form className="contact-form" onSubmit={handleSubmit}>
+          <input type="hidden" name="_replyto" value="william@diamondmetrics.ai" />
           <input type="text" name="_gotcha" style={{ display: "none" }} />
 
           <div className="form-row">
