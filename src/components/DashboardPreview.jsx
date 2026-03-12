@@ -2,53 +2,58 @@ function DashboardPreview() {
   return (
     <section id="dashboard-preview">
       <p className="eyebrow">Example Evaluation Output</p>
-      <h2>See the type of reporting coaches can receive after an evaluation.</h2>
+      <h2>Sample performance snapshot from a program evaluation.</h2>
+
       <p className="section-text">
-        Diamond Metrics turns captured performance data into organized,
-        coach-friendly summaries that support evaluation, development, and
-        recruiting conversations.
+        Diamond Metrics captures measurable player data during evaluations and
+        organizes it into structured summaries that coaches can immediately use
+        for roster decisions and player development.
       </p>
 
       <div className="evaluation-layout">
+
         <div className="evaluation-summary-card">
-          <p className="evaluation-label">Sample Tryout Snapshot</p>
-          <h3 className="evaluation-title">Program Evaluation Summary</h3>
+          <p className="evaluation-label">Evaluation Snapshot</p>
+          <h3 className="evaluation-title">Program Performance Summary</h3>
 
           <div className="evaluation-stat-grid">
+
             <div className="evaluation-stat">
-              <span className="evaluation-stat-value">95.4 mph</span>
+              <span className="evaluation-stat-value">94.8 mph</span>
               <span className="evaluation-stat-label">Top Exit Velocity</span>
             </div>
 
             <div className="evaluation-stat">
-              <span className="evaluation-stat-value">4.21 sec</span>
-              <span className="evaluation-stat-label">Best Sprint Time</span>
+              <span className="evaluation-stat-value">82.1%</span>
+              <span className="evaluation-stat-label">Hard Hit Rate</span>
             </div>
 
             <div className="evaluation-stat">
-              <span className="evaluation-stat-value">88.1 mph</span>
+              <span className="evaluation-stat-value">77.7 mph</span>
               <span className="evaluation-stat-label">Top Pitch Velocity</span>
             </div>
 
             <div className="evaluation-stat">
-              <span className="evaluation-stat-value">37</span>
-              <span className="evaluation-stat-label">Players Evaluated</span>
+              <span className="evaluation-stat-value">7.31 sec</span>
+              <span className="evaluation-stat-label">Best 60-Yard Time</span>
             </div>
+
           </div>
         </div>
 
         <div className="evaluation-insights-card">
-          <p className="evaluation-label">Included Insights</p>
-          <h3 className="evaluation-title">What Coaches Can Review</h3>
+          <p className="evaluation-label">Program Insights</p>
+          <h3 className="evaluation-title">Example Analytical Takeaways</h3>
 
           <ul className="insight-list">
-            <li>Top performers by key measurable metrics</li>
-            <li>Player comparison points across evaluation groups</li>
-            <li>Pitch velocity, exit velocity, and sprint leaders</li>
-            <li>Structured summaries for development conversations</li>
-            <li>Recruiting-support outputs for standout players</li>
+            <li>25% of hitters reached the program power band (≥85 mph EV)</li>
+            <li>9% produced elite exit velocity (≥90 mph)</li>
+            <li>31% of athletes recorded top speed tier sprint times</li>
+            <li>20% of pitchers reached 75+ mph velocity</li>
+            <li>32% of hitters averaged line-drive launch angles</li>
           </ul>
         </div>
+
       </div>
     </section>
   );
