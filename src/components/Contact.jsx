@@ -54,12 +54,7 @@ function Contact() {
             name="_subject"
             value="New Diamond Metrics Inquiry"
           />
-
-          <input
-            type="text"
-            name="_gotcha"
-            style={{ display: "none" }}
-          />
+          <input type="text" name="_gotcha" style={{ display: "none" }} />
 
           <div className="form-row">
             <label htmlFor="name">Name</label>
@@ -68,6 +63,7 @@ function Contact() {
               name="name"
               type="text"
               placeholder="Your name"
+              required
             />
           </div>
 
@@ -85,13 +81,14 @@ function Contact() {
             <label htmlFor="email">Email</label>
             <input
               id="email"
-              name="_replyto"
+              name="email"
               type="email"
               placeholder="you@example.com"
+              required
             />
             <ValidationError
               prefix="Email"
-              field="_replyto"
+              field="email"
               errors={state.errors}
             />
           </div>
@@ -117,6 +114,7 @@ function Contact() {
               name="message"
               rows="5"
               placeholder="Tell us a little about your program and what you're looking for."
+              required
             ></textarea>
             <ValidationError
               prefix="Message"
@@ -124,6 +122,16 @@ function Contact() {
               errors={state.errors}
             />
           </div>
+
+          {state.errors && state.errors.length > 0 && (
+            <p className="form-note">
+              Something went wrong. Please try again or email
+              {" "}
+              <a href="mailto:contact@diamondmetrics.ai">
+                contact@diamondmetrics.ai
+              </a>.
+            </p>
+          )}
 
           <button
             type="submit"
