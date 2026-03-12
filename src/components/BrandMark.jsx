@@ -1,13 +1,16 @@
-function BrandMark() {
+import logo from "../assets/diamond-logo.svg";
+
+function Brandmark() {
   return (
-    <div className="brand-mark">
-      <div className="brand-icon">◇</div>
-      <div className="brand-text">
-        <span className="brand-name">Diamond Metrics</span>
-        <span className="brand-tagline">Baseball Analytics</span>
+    <div className="brandmark">
+      <img src={logo} alt="Diamond Metrics logo" className="brandmark-icon" />
+
+      <div className="brandmark-text">
+        <span className="brandmark-title">Diamond Metrics</span>
+        <span className="brandmark-subtitle">Baseball Analytics</span>
       </div>
     </div>
-  )
+  );
 }
 
-export default BrandMark
+export default Brandmark;
