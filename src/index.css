@@ -98,6 +98,14 @@ main {
   color: #dbeafe;
   margin: 0 auto;
 }
+.hero-proof {
+  margin-top: 18px;
+  max-width: 760px;
+  font-size: 15px;
+  line-height: 1.7;
+  color: #93c5fd;
+  font-weight: 600;
+}
 
 .hero-buttons {
   margin-top: 34px;
@@ -690,6 +698,116 @@ section h2 {
   line-height: 1.5;
   color: #cbd5e1;
 }
+.process-flow {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr auto 1fr auto 1fr;
+  gap: 16px;
+  align-items: stretch;
+  margin-top: 24px;
+}
+
+.process-step {
+  background-color: rgba(15, 23, 42, 0.78);
+  border: 1px solid #1e3a5f;
+  border-radius: 18px;
+  padding: 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.process-step h3 {
+  margin: 0;
+  font-size: 20px;
+}
+
+.process-step p {
+  margin: 0;
+  color: #dbeafe;
+  line-height: 1.65;
+}
+
+.process-number {
+  width: 34px;
+  height: 34px;
+  border-radius: 999px;
+  background-color: #38bdf8;
+  color: #081a3d;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 800;
+  font-size: 14px;
+}
+
+.process-arrow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #7dd3fc;
+  font-size: 28px;
+  font-weight: 700;
+}
+
+.site-footer {
+  margin-top: 56px;
+  padding-top: 28px;
+  border-top: 1px solid #1e3a5f;
+}
+
+.footer-top {
+  display: grid;
+  grid-template-columns: 1.2fr 1fr 1fr;
+  gap: 24px;
+  align-items: start;
+}
+
+.footer-brand h3 {
+  margin: 0 0 8px;
+  font-size: 22px;
+}
+
+.footer-brand p,
+.footer-contact p {
+  margin: 0;
+  color: #cbd5e1;
+  line-height: 1.6;
+}
+
+.footer-links {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.footer-links a,
+.footer-contact a {
+  color: #dbeafe;
+  text-decoration: none;
+}
+
+.footer-links a:hover,
+.footer-contact a:hover {
+  color: #38bdf8;
+}
+
+.footer-contact {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.footer-bottom {
+  margin-top: 24px;
+  padding-top: 18px;
+  border-top: 1px solid rgba(30, 58, 95, 0.7);
+}
+
+.footer-bottom p {
+  margin: 0;
+  color: #94a3b8;
+  font-size: 14px;
+}
 
 
 
@@ -745,6 +863,17 @@ section h2 {
 
   .bar-row {
     grid-template-columns: 95px 1fr 50px;
+  }
+    .process-flow {
+    grid-template-columns: 1fr;
+  }
+
+  .process-arrow {
+    display: none;
+  }
+
+  .footer-top {
+    grid-template-columns: 1fr;
   }
 }
 
