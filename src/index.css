@@ -219,18 +219,34 @@ section h2 {
 .brandmark {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 14px;
 }
 
-.brandmark-icon {
-  width: 42px;
-  height: 42px;
+.brandmark-badge {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+
+  display: flex;
+  align-items: center;
+  justify-content: center;
+
+  background: linear-gradient(145deg, #38bdf8, #0284c7);
+
+  box-shadow:
+    0 6px 18px rgba(14, 165, 233, 0.35),
+    inset 0 0 8px rgba(255,255,255,0.15);
+}
+
+.brandmark-badge img {
+  width: 18px;
+  height: 18px;
 }
 
 .brandmark-text {
   display: flex;
   flex-direction: column;
-  line-height: 1.1;
+  line-height: 1.05;
 }
 
 .brandmark-title {
@@ -245,6 +261,7 @@ section h2 {
   color: #7dd3fc;
   text-transform: uppercase;
 }
+
 .metrics-preview {
   display: flex;
   flex-direction: column;
