@@ -224,7 +224,7 @@ section h2 {
   font-size: 14px;
 }
 
-..brandmark {
+.brandmark {
   display: flex;
   align-items: center;
   gap: 14px;

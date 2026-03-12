@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120">
+
+  <defs>
+    <linearGradient id="dmGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#7dd3fc"/>
+      <stop offset="55%" stop-color="#38bdf8"/>
+      <stop offset="100%" stop-color="#2563eb"/>
+    </linearGradient>
+  </defs>
+
+  <!-- outer field shape -->
+  <path
+    d="M60 10
+       C82 10, 100 20, 110 36
+       L90 56
+       L60 88
+       L30 56
+       L10 36
+       C20 20, 38 10, 60 10 Z"
+    fill="none"
+    stroke="url(#dmGradient)"
+    stroke-width="8"
+  />
+
+  <!-- inner diamond -->
+  <polygon
+    points="60,36 82,56 60,76 38,56"
+    fill="none"
+    stroke="url(#dmGradient)"
+    stroke-width="6"
+  />
+
+  <!-- center node -->
+  <circle cx="60" cy="56" r="10" fill="#e0f2fe"/>
+
+</svg>
