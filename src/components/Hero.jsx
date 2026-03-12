@@ -3,12 +3,18 @@ function Hero() {
     <section className="hero">
       <p className="eyebrow">Baseball Analytics for High School Programs</p>
 
-      <h1>Bring advanced baseball analytics to your program.</h1>
+      <h1>Bring MLB-informed baseball analytics to your high school program.</h1>
+
 
       <p className="hero-text">
         Diamond Metrics helps coaches and athletic departments turn video and
         performance data into actionable insights for evaluation, development,
         and recruiting support.
+      </p>
+
+      <p className="hero-proof">
+        Already used in a Utah 6A high school tryout setting and built with
+        MLB-informed evaluation experience.
       </p>
 
       <div className="hero-buttons">
