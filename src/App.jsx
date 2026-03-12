@@ -1,6 +1,8 @@
 import Navbar from "./components/Navbar";
 import Hero from "./components/Hero";
 import UseCases from "./components/UseCases";
+import AccessibleCapture from "./components/AccessibleCapture";
+import ProDay from "./components/ProDay";
 import MetricsPreview from "./components/MetricsPreview";
 import DashboardPreview from "./components/DashboardPreview";
 import VisualInsights from "./components/VisualInsights";
@@ -21,6 +23,8 @@ function App() {
       <main>
         <Hero />
         <UseCases />
+        <AccessibleCapture />
+        <ProDay />
         <MetricsPreview />
         <DashboardPreview />
         <VisualInsights />

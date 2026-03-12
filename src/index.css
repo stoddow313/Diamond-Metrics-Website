@@ -808,7 +808,29 @@ section h2 {
   color: #94a3b8;
   font-size: 14px;
 }
+.pro-day-layout {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 18px;
+  margin-top: 24px;
+}
 
+.pro-day-list {
+  margin: 0;
+  padding-left: 20px;
+  color: #dbeafe;
+  line-height: 1.8;
+}
+
+.pro-day-list li {
+  margin-bottom: 8px;
+}
+
+.pro-day-note {
+  margin-top: 14px !important;
+  color: #93c5fd !important;
+  line-height: 1.6;
+}
 
 
 
@@ -873,6 +895,9 @@ section h2 {
   }
 
   .footer-top {
+    grid-template-columns: 1fr;
+  }
+  .pro-day-layout {
     grid-template-columns: 1fr;
   }
 }
