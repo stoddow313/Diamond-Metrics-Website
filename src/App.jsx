@@ -1,5 +1,6 @@
 import Navbar from "./components/Navbar";
 import Hero from "./components/Hero";
+import UseCases from "./components/UseCases";
 import MetricsPreview from "./components/MetricsPreview";
 import Services from "./components/Services";
 import Metrics from "./components/Metrics";
@@ -17,21 +18,14 @@ function App() {
 
       <main>
         <Hero />
-
+        <UseCases />
         <MetricsPreview />
-
         <Services />
-
         <Metrics />
-
         <Process />
-
         <WhoWeServe />
-
         <Benefits />
-
         <Credibility />
-
         <Contact />
       </main>
 
