@@ -8,7 +8,7 @@
     </linearGradient>
   </defs>
 
-  <!-- outer field shape -->
+  <!-- outer shape -->
   <path
     d="M60 10
        C82 10, 100 20, 110 36
@@ -19,7 +19,16 @@
        C20 20, 38 10, 60 10 Z"
     fill="none"
     stroke="url(#dmGradient)"
-    stroke-width="8"
+    stroke-width="7"
+  />
+
+  <!-- top arc (THIS was missing) -->
+  <path
+    d="M28 34 C42 22, 78 20, 94 34"
+    fill="none"
+    stroke="#7dd3fc"
+    stroke-width="6"
+    stroke-linecap="round"
   />
 
   <!-- inner diamond -->
@@ -27,7 +36,7 @@
     points="60,36 82,56 60,76 38,56"
     fill="none"
     stroke="url(#dmGradient)"
-    stroke-width="6"
+    stroke-width="5"
   />
 
   <!-- center node -->
