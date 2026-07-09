@@ -10,15 +10,15 @@ export default function LoginPage() {
   const { login } = useAuth();
   const navigate = useNavigate();
 
-  function handleSubmit(e) {
+  async function handleSubmit(e) {
     e.preventDefault();
     setError('');
-    const role = login(email, password);
-    if (!role) {
-      setError('Invalid email or password.');
-      return;
+    try {
+      await login(email, password);
+      navigate('/admin');
+    } catch (err) {
+      setError(err.message || 'Invalid email or password.');
     }
-    navigate(role === 'admin' ? '/admin' : '/app');
   }
 
   return (

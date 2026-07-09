@@ -1,43 +1,42 @@
-import { createContext, useContext, useState } from 'react';
+import { createContext, useContext, useEffect, useState } from 'react';
+import { api, getToken, setToken } from '../lib/api';
 
 const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
-  const [user, setUser] = useState(() => {
-    const stored = localStorage.getItem('dm_user');
-    return stored ? JSON.parse(stored) : null;
-  });
+  const [user, setUser] = useState(null);
+  const [loading, setLoading] = useState(() => !!getToken());
 
-  function login(email, password) {
-    if (email === 'admin@diamondmetrics.ai' && password === 'admin') {
-      const adminUser = { email: 'admin@diamondmetrics.ai', name: 'Admin', role: 'admin' };
-      localStorage.setItem('dm_user', JSON.stringify(adminUser));
-      setUser(adminUser);
-      return 'admin';
-    }
+  // Validate any stored token against the API on load.
+  useEffect(() => {
+    if (!getToken()) return;
+    api.me()
+      .then(({ admin }) => setUser(admin))
+      .catch(() => setToken(null))
+      .finally(() => setLoading(false));
+  }, []);
 
-    if (email === 'user@diamondmetrics.ai' && password === 'diamonduser') {
-      const coachUser = { email: 'user@diamondmetrics.ai', name: 'Will Stoddard', teamName: 'Westlake Thunder', role: 'coach' };
-      localStorage.setItem('dm_user', JSON.stringify(coachUser));
-      setUser(coachUser);
-      return 'coach';
-    }
-
-    return null;
+  async function login(email, password) {
+    const { token, admin } = await api.login(email, password);
+    setToken(token);
+    setUser(admin);
+    return admin;
   }
 
-  function logout() {
-    localStorage.removeItem('dm_user');
+  async function logout() {
+    try { await api.logout(); } catch { /* token may already be invalid */ }
+    setToken(null);
     setUser(null);
   }
 
   return (
-    <AuthContext.Provider value={{ user, login, logout }}>
+    <AuthContext.Provider value={{ user, loading, login, logout }}>
       {children}
     </AuthContext.Provider>
   );
 }
 
+// eslint-disable-next-line react-refresh/only-export-components -- standard context hook pairing
 export function useAuth() {
   return useContext(AuthContext);
 }
