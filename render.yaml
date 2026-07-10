@@ -1,0 +1,19 @@
+# Render Blueprint for the Diamond Metrics API.
+# The web frontend stays on Vercel and proxies /api/* here (see vercel.json).
+services:
+  - type: web
+    name: diamond-metrics-api
+    runtime: node
+    plan: starter # persistent disk (SQLite) requires a paid instance type
+    buildCommand: npm ci --omit=dev
+    startCommand: node server/index.js
+    healthCheckPath: /api/health
+    envVars:
+      - key: DM_DB_PATH
+        value: /var/data/diamond-metrics.db
+      - key: DM_ADMIN_PASSWORD
+        sync: false # set in the Render dashboard; seeds the admin login on first boot
+    disk:
+      name: diamond-metrics-data
+      mountPath: /var/data
+      sizeGB: 1

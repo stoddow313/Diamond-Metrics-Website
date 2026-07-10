@@ -270,6 +270,25 @@ section h2 {
   text-transform: uppercase;
 }
 
+/* Variant for light backgrounds (e.g. public profile header) */
+.brandmark--dark .brandmark-title {
+  color: #0f172a;
+}
+
+.brandmark--dark .brandmark-subtitle {
+  color: #2563eb;
+}
+
+/* Horizontal scroll without a visible scrollbar (profile tab bar) */
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
 .metrics-preview {
   display: flex;
   flex-direction: column;
