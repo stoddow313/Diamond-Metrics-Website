@@ -1,16 +1,36 @@
-# React + Vite
+# Diamond Metrics
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+Marketing site + player-profile platform. React (Vite) frontend with a local Node/Express + SQLite backend.
 
-Currently, two official plugins are available:
+## Running locally
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+```bash
+npm install
+npm run dev        # starts the API (:3001) and the web app (:5173) together
+```
 
-## React Compiler
+- `npm run server` — API only
+- `npm run dev:web` — Vite only
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+## Admin
 
-## Expanding the ESLint configuration
+Log in at `/login` with the seeded admin account:
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+- **Email:** `admin@diamondmetrics.ai`
+- **Password:** `diamond-admin-2026` (override with `DM_ADMIN_PASSWORD` env var before first run)
+
+The admin dashboard (`/admin`) lets you create player profiles, set bio/attribute ratings, log games, and enter per-game stats. Every stat captured is defined in [server/metricCatalog.js](server/metricCatalog.js) — add a metric there and it appears in the admin entry form and profile automatically.
+
+## Public profiles
+
+Each player gets a public, shareable profile at `/p/<slug>` (e.g. `/p/william-stoddard`). Profiles roll up per-game stat entries into headline numbers (max/avg per metric) and trend series. Hero metrics adapt to position (position player / pitcher / catcher). A player's public page can be disabled via the "Public profile enabled" toggle in the admin editor.
+
+## Backend
+
+- Express + better-sqlite3; DB file lives at `server/data/diamond-metrics.db` (gitignored)
+- Auth: scrypt-hashed passwords, bearer session tokens (30-day expiry)
+- Data model: `players` → `games` → `stat_entries` (one row per game+metric, so the stat set is flexible without schema changes)
+
+## Sidelined UI
+
+The original dummy coach dashboard (`/app`) and film-review admin are parked — see the commented block in [src/App.jsx](src/App.jsx) to restore them.

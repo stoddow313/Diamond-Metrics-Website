@@ -1,6 +1,6 @@
-function Brandmark() {
+function Brandmark({ dark = false }) {
   return (
-    <div className="brandmark">
+    <div className={`brandmark${dark ? ' brandmark--dark' : ''}`}>
       <div className="brandmark-badge" aria-hidden="true">
         <svg
           className="brandmark-svg"

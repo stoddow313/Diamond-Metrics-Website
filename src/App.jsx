@@ -1,48 +1,84 @@
-import Navbar from "./components/Navbar";
-import Hero from "./components/Hero";
-import UseCases from "./components/UseCases";
-import AccessibleCapture from "./components/AccessibleCapture";
-import ProDay from "./components/ProDay";
-import ProgramOptions from "./components/ProgramOptions";
-import MetricsPreview from "./components/MetricsPreview";
-import DashboardPreview from "./components/DashboardPreview";
-import VisualInsights from "./components/VisualInsights";
-import Services from "./components/Services";
-import Metrics from "./components/Metrics";
-import Process from "./components/Process";
-import WhoWeServe from "./components/WhoWeServe";
-import Benefits from "./components/Benefits";
-import Credibility from "./components/Credibility";
-import Contact from "./components/Contact";
-import Footer from "./components/Footer";
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { AuthProvider, useAuth } from './context/AuthContext';
+import LandingPage from './pages/LandingPage';
+import LoginPage from './pages/LoginPage';
+import AdminLayout from './components/admin/AdminLayout';
+import AdminPlayersPage from './pages/admin/AdminPlayersPage';
+import AdminPlayerEditorPage from './pages/admin/AdminPlayerEditorPage';
+import PublicProfilePage from './pages/PublicProfilePage';
+
+/* ── SIDELINED (pre-BE demo app) ─────────────────────────────────────────
+ * The original dummy coach dashboard (/app) and film-review admin (/admin)
+ * are parked while we stand up the real backend + admin player tooling.
+ * The page/shell files remain in src/pages and src/components/app.
+ * To restore, re-enable these imports and the routes commented out below.
+ *
+ * import AppShell from './components/app/AppShell';
+ * import AdminShell from './components/app/AdminShell';
+ * import DashboardPage from './pages/DashboardPage';
+ * import RosterPage from './pages/RosterPage';
+ * import FilmRoomPage from './pages/FilmRoomPage';
+ * import GameDetailPage from './pages/GameDetailPage';
+ * import PlayerDetailPage from './pages/PlayerDetailPage';
+ * import AdminFilmQueuePage from './pages/admin/AdminFilmQueuePage';
+ * import AdminReviewPage from './pages/admin/AdminReviewPage';
+ * ──────────────────────────────────────────────────────────────────────── */
+
+function AdminRoute({ children }) {
+  const { user, loading } = useAuth();
+  if (loading) return null;
+  if (!user) return <Navigate to="/login" replace />;
+  return children;
+}
+
+function AppRoutes() {
+  return (
+    <Routes>
+      <Route path="/" element={<LandingPage />} />
+      <Route path="/login" element={<LoginPage />} />
+      <Route path="/signup" element={<Navigate to="/login" replace />} />
+
+      {/* Public, shareable player profiles */}
+      <Route path="/p/:slug" element={<PublicProfilePage />} />
+
+      {/* Admin: player profile + stat management */}
+      <Route
+        path="/admin"
+        element={
+          <AdminRoute>
+            <AdminLayout />
+          </AdminRoute>
+        }
+      >
+        <Route index element={<AdminPlayersPage />} />
+        <Route path="players/:playerId" element={<AdminPlayerEditorPage />} />
+      </Route>
+
+      {/* ── SIDELINED routes (see note above) ──────────────────────────
+      <Route path="/app" element={<ProtectedRoute><AppShell /></ProtectedRoute>}>
+        <Route index element={<DashboardPage />} />
+        <Route path="roster" element={<RosterPage />} />
+        <Route path="roster/:playerId" element={<PlayerDetailPage />} />
+        <Route path="film-room" element={<FilmRoomPage />} />
+        <Route path="film-room/:gameId" element={<GameDetailPage />} />
+      </Route>
+      <Route path="/admin-film" element={<AdminRoute><AdminShell /></AdminRoute>}>
+        <Route index element={<AdminFilmQueuePage />} />
+        <Route path="review/:filmId" element={<AdminReviewPage />} />
+      </Route>
+      ─────────────────────────────────────────────────────────────────── */}
+    </Routes>
+  );
+}
 
 function App() {
   return (
-    <div className="container">
-      <Navbar />
-
-      <main>
-        <Hero />
-        <UseCases />
-        <AccessibleCapture />
-        <ProDay />
-        <ProgramOptions />
-        <MetricsPreview />
-        <DashboardPreview />
-        <VisualInsights />
-        <Services />
-        <Metrics />
-        <Process />
-        <WhoWeServe />
-        <Benefits />
-        <Credibility />
-        <Contact />
-      </main>
-
-      <Footer />
-    </div>
+    <BrowserRouter>
+      <AuthProvider>
+        <AppRoutes />
+      </AuthProvider>
+    </BrowserRouter>
   );
 }
 
 export default App;
-

@@ -1,0 +1,166 @@
+// Dummy data extracted from diamond_metrics_game_practice_dummy_data.xlsx
+
+export const players = [
+  { id: 1, firstName: 'Carter', lastName: 'Jensen', jersey: 3, primaryPos: 'C', secondaryPos: '1B', bats: 'R', throws: 'R', gradYear: 2026 },
+  { id: 2, firstName: 'Jace', lastName: 'Miller', jersey: 12, primaryPos: 'C', secondaryPos: 'OF', bats: 'R', throws: 'R', gradYear: 2027 },
+  { id: 3, firstName: 'Luke', lastName: 'Bennett', jersey: 2, primaryPos: 'SS', secondaryPos: '2B', bats: 'R', throws: 'R', gradYear: 2026 },
+  { id: 4, firstName: 'Logan', lastName: 'Price', jersey: 4, primaryPos: '2B', secondaryPos: 'SS', bats: 'L', throws: 'R', gradYear: 2026 },
+  { id: 5, firstName: 'Ethan', lastName: 'Walker', jersey: 11, primaryPos: '3B', secondaryPos: 'RHP', bats: 'R', throws: 'R', gradYear: 2026 },
+  { id: 6, firstName: 'Cole', lastName: 'Harding', jersey: 21, primaryPos: '1B', secondaryPos: 'LHP', bats: 'L', throws: 'L', gradYear: 2025 },
+  { id: 7, firstName: 'Noah', lastName: 'Peterson', jersey: 8, primaryPos: 'CF', secondaryPos: 'OF', bats: 'L', throws: 'R', gradYear: 2026 },
+  { id: 8, firstName: 'Jack', lastName: 'Owens', jersey: 7, primaryPos: 'LF', secondaryPos: 'OF', bats: 'L', throws: 'R', gradYear: 2025 },
+  { id: 9, firstName: 'Caleb', lastName: 'Moore', jersey: 14, primaryPos: 'RF', secondaryPos: 'OF', bats: 'R', throws: 'R', gradYear: 2025 },
+  { id: 10, firstName: 'Drew', lastName: 'Collins', jersey: 18, primaryPos: 'OF', secondaryPos: '1B', bats: 'R', throws: 'R', gradYear: 2026 },
+  { id: 11, firstName: 'Hunter', lastName: 'Davis', jersey: 22, primaryPos: 'OF', secondaryPos: 'RF', bats: 'R', throws: 'R', gradYear: 2027 },
+  { id: 12, firstName: 'Tyler', lastName: 'Brooks', jersey: 28, primaryPos: 'RHP', secondaryPos: '1B', bats: 'R', throws: 'R', gradYear: 2025 },
+  { id: 13, firstName: 'Ryan', lastName: 'Turner', jersey: 30, primaryPos: 'RHP', secondaryPos: '3B', bats: 'R', throws: 'R', gradYear: 2026 },
+  { id: 14, firstName: 'Ben', lastName: 'Larson', jersey: 24, primaryPos: 'LHP', secondaryPos: '1B', bats: 'L', throws: 'L', gradYear: 2025 },
+  { id: 15, firstName: 'Brady', lastName: 'Nelson', jersey: 5, primaryPos: 'UTIL', secondaryPos: 'SS', bats: 'R', throws: 'R', gradYear: 2026 },
+  { id: 16, firstName: 'Sam', lastName: 'Foster', jersey: 15, primaryPos: 'UTIL', secondaryPos: 'C', bats: 'R', throws: 'R', gradYear: 2025 },
+  { id: 17, firstName: 'Parker', lastName: 'Hill', jersey: 16, primaryPos: 'IF', secondaryPos: '3B', bats: 'R', throws: 'R', gradYear: 2027 },
+  { id: 18, firstName: 'Aiden', lastName: 'Cooper', jersey: 9, primaryPos: 'OF', secondaryPos: 'CF', bats: 'L', throws: 'R', gradYear: 2027 },
+  { id: 19, firstName: 'Gavin', lastName: 'Ross', jersey: 20, primaryPos: 'RHP', secondaryPos: '1B', bats: 'R', throws: 'R', gradYear: 2025 },
+  { id: 20, firstName: 'Mason', lastName: 'Reed', jersey: 10, primaryPos: 'LHP', secondaryPos: 'OF', bats: 'L', throws: 'L', gradYear: 2026 },
+  { id: 21, firstName: 'Brady', lastName: 'Allen', jersey: 32, primaryPos: 'RHP', secondaryPos: 'OF', bats: 'R', throws: 'R', gradYear: 2026 },
+  { id: 22, firstName: 'Tucker', lastName: 'Ward', jersey: 27, primaryPos: 'OF', secondaryPos: 'RF', bats: 'R', throws: 'R', gradYear: 2027 },
+  { id: 23, firstName: 'Cam', lastName: 'Sullivan', jersey: 6, primaryPos: 'IF', secondaryPos: '2B', bats: 'R', throws: 'R', gradYear: 2027 },
+  { id: 24, firstName: 'Owen', lastName: 'Carter', jersey: 19, primaryPos: 'C', secondaryPos: 'OF', bats: 'R', throws: 'R', gradYear: 2026 },
+  { id: 25, firstName: 'Preston', lastName: 'Hayes', jersey: 33, primaryPos: 'RHP', secondaryPos: 'IF', bats: 'R', throws: 'R', gradYear: 2027 },
+  { id: 26, firstName: 'Nate', lastName: 'Bishop', jersey: 26, primaryPos: 'LHP', secondaryPos: '1B', bats: 'L', throws: 'L', gradYear: 2027 },
+  { id: 27, firstName: 'Wyatt', lastName: 'Brooks', jersey: 17, primaryPos: 'OF', secondaryPos: '1B', bats: 'L', throws: 'R', gradYear: 2026 },
+  { id: 28, firstName: 'Chase', lastName: 'Morgan', jersey: 13, primaryPos: 'IF', secondaryPos: 'RHP', bats: 'R', throws: 'R', gradYear: 2027 },
+];
+
+export const games = [
+  { id: 1, date: '2026-03-18', opponent: 'Riverton', location: 'Home', result: 'W', teamRuns: 6, oppRuns: 3, teamInnings: [1,0,2,0,1,0,2], oppInnings: [0,1,0,0,1,1,0] },
+  { id: 2, date: '2026-03-21', opponent: 'Corner Canyon', location: 'Away', result: 'L', teamRuns: 4, oppRuns: 5, teamInnings: [0,1,0,2,0,0,1], oppInnings: [1,0,0,2,1,1,0] },
+  { id: 3, date: '2026-03-25', opponent: 'Herriman', location: 'Home', result: 'W', teamRuns: 8, oppRuns: 2, teamInnings: [2,0,1,0,2,1,2], oppInnings: [0,0,0,1,0,1,0] },
+  { id: 4, date: '2026-03-28', opponent: 'Skyridge', location: 'Away', result: 'W', teamRuns: 5, oppRuns: 1, teamInnings: [0,1,0,2,0,1,1], oppInnings: [0,0,0,0,1,0,0] },
+];
+
+export const teamGameSummary = [
+  { gameId: 1, opponent: 'Riverton', result: 'W', teamRuns: 6, hits: 19, teamAVG: .413, teamOBP: .420, teamSLG: .652, teamOPS: 1.072, hr: 1, sb: 0, hardHitPct: 48.8, contactPct: 80.5, whiffPct: 13.7, pitchingK: 13, pitchingBB: 3, strikePct: 67.2, pitchingWhiffPct: 29.0, errors: 1 },
+  { gameId: 2, opponent: 'Corner Canyon', result: 'L', teamRuns: 4, hits: 20, teamAVG: .400, teamOBP: .400, teamSLG: .540, teamOPS: .940, hr: 1, sb: 0, hardHitPct: 51.1, contactPct: 79.0, whiffPct: 15.1, pitchingK: 13, pitchingBB: 4, strikePct: 65.2, pitchingWhiffPct: 27.6, errors: 1 },
+  { gameId: 3, opponent: 'Herriman', result: 'W', teamRuns: 8, hits: 20, teamAVG: .408, teamOBP: .434, teamSLG: .531, teamOPS: .965, hr: 2, sb: 1, hardHitPct: 46.7, contactPct: 81.2, whiffPct: 12.0, pitchingK: 13, pitchingBB: 4, strikePct: 67.4, pitchingWhiffPct: 27.1, errors: 1 },
+  { gameId: 4, opponent: 'Skyridge', result: 'W', teamRuns: 5, hits: 17, teamAVG: .425, teamOBP: .489, teamSLG: .575, teamOPS: 1.064, hr: 1, sb: 0, hardHitPct: 49.0, contactPct: 78.2, whiffPct: 16.4, pitchingK: 13, pitchingBB: 4, strikePct: 65.3, pitchingWhiffPct: 29.0, errors: 0 },
+];
+
+export const gameBatting = [
+  // Game 1
+  { gameId: 1, playerId: 1, pa: 5, ab: 5, h: 3, singles: 2, doubles: 1, triples: 0, hr: 0, r: 1, rbi: 4, bb: 0, k: 0, hbp: 0, sf: 0, sh: 0, sb: 0, cs: 0, hardHitPct: 47.5, contactPct: 81.4, whiffPct: 10.6, avgEV: 82, maxEV: 90.8, avgLA: 11, pullPct: 50, centerPct: 39, oppoPct: 11 },
+  { gameId: 1, playerId: 6, pa: 5, ab: 5, h: 1, singles: 1, doubles: 0, triples: 0, hr: 0, r: 1, rbi: 2, bb: 0, k: 2, hbp: 0, sf: 0, sh: 0, sb: 0, cs: 0, hardHitPct: 45.8, contactPct: 78.5, whiffPct: 15.5, avgEV: 87.1, maxEV: 95.5, avgLA: 21.9, pullPct: 41, centerPct: 40, oppoPct: 19 },
+  { gameId: 1, playerId: 3, pa: 5, ab: 4, h: 1, singles: 0, doubles: 1, triples: 0, hr: 0, r: 0, rbi: 1, bb: 1, k: 0, hbp: 0, sf: 0, sh: 0, sb: 0, cs: 0, hardHitPct: 50.9, contactPct: 87, whiffPct: 5, avgEV: 87.9, maxEV: 99.4, avgLA: 10.8, pullPct: 47, centerPct: 34, oppoPct: 19 },
+  { gameId: 1, playerId: 5, pa: 5, ab: 5, h: 1, singles: 0, doubles: 0, triples: 1, hr: 0, r: 0, rbi: 1, bb: 0, k: 0, hbp: 0, sf: 0, sh: 0, sb: 0, cs: 0, hardHitPct: 48.1, contactPct: 82.2, whiffPct: 12.8, avgEV: 84.7, maxEV: 96.6, avgLA: 10.5, pullPct: 30, centerPct: 40, oppoPct: 30 },
+  { gameId: 1, playerId: 8, pa: 3, ab: 2, h: 0, singles: 0, doubles: 0, triples: 0, hr: 0, r: 0, rbi: 1, bb: 0, k: 0, hbp: 0, sf: 1, sh: 0, sb: 0, cs: 0, hardHitPct: 42.4, contactPct: 80.8, whiffPct: 12.2, avgEV: 87.6, maxEV: 95.3, avgLA: 17.5, pullPct: 42, centerPct: 32, oppoPct: 26 },
+  { gameId: 1, playerId: 7, pa: 4, ab: 4, h: 3, singles: 3, doubles: 0, triples: 0, hr: 0, r: 0, rbi: 3, bb: 0, k: 0, hbp: 0, sf: 0, sh: 0, sb: 0, cs: 0, hardHitPct: 58.6, contactPct: 81.4, whiffPct: 13.6, avgEV: 84.4, maxEV: 96.2, avgLA: 18.5, pullPct: 37, centerPct: 21, oppoPct: 42 },
+  { gameId: 1, playerId: 9, pa: 4, ab: 4, h: 2, singles: 2, doubles: 0, triples: 0, hr: 0, r: 0, rbi: 3, bb: 0, k: 0, hbp: 0, sf: 0, sh: 0, sb: 0, cs: 0, hardHitPct: 42, contactPct: 82.2, whiffPct: 15.8, avgEV: 85.6, maxEV: 93.2, avgLA: 16.9, pullPct: 32, centerPct: 39, oppoPct: 29 },
+  { gameId: 1, playerId: 4, pa: 4, ab: 4, h: 3, singles: 2, doubles: 0, triples: 1, hr: 0, r: 1, rbi: 4, bb: 0, k: 0, hbp: 0, sf: 0, sh: 0, sb: 0, cs: 0, hardHitPct: 59.3, contactPct: 76.3, whiffPct: 18.7, avgEV: 88, maxEV: 98.8, avgLA: 17.6, pullPct: 37, centerPct: 23, oppoPct: 40 },
+  { gameId: 1, playerId: 2, pa: 4, ab: 4, h: 2, singles: 1, doubles: 1, triples: 0, hr: 0, r: 0, rbi: 2, bb: 0, k: 1, hbp: 0, sf: 0, sh: 0, sb: 0, cs: 0, hardHitPct: 43.8, contactPct: 72.1, whiffPct: 24.9, avgEV: 83, maxEV: 89.4, avgLA: 5.3, pullPct: 39, centerPct: 27, oppoPct: 34 },
+  { gameId: 1, playerId: 10, pa: 3, ab: 3, h: 0, singles: 0, doubles: 0, triples: 0, hr: 0, r: 0, rbi: 0, bb: 0, k: 0, hbp: 0, sf: 0, sh: 0, sb: 0, cs: 0, hardHitPct: 53.8, contactPct: 80.1, whiffPct: 14.9, avgEV: 82, maxEV: 90.4, avgLA: 16.4, pullPct: 45, centerPct: 34, oppoPct: 21 },
+  { gameId: 1, playerId: 15, pa: 4, ab: 3, h: 1, singles: 1, doubles: 0, triples: 0, hr: 0, r: 0, rbi: 2, bb: 0, k: 0, hbp: 0, sf: 1, sh: 0, sb: 0, cs: 0, hardHitPct: 51.9, contactPct: 82.6, whiffPct: 10.4, avgEV: 83.9, maxEV: 95.8, avgLA: 19.9, pullPct: 31, centerPct: 34, oppoPct: 35 },
+  { gameId: 1, playerId: 16, pa: 4, ab: 3, h: 2, singles: 0, doubles: 1, triples: 0, hr: 1, r: 1, rbi: 3, bb: 1, k: 1, hbp: 0, sf: 0, sh: 0, sb: 0, cs: 0, hardHitPct: 41.4, contactPct: 81.4, whiffPct: 9.6, avgEV: 80.6, maxEV: 91.5, avgLA: 7, pullPct: 49, centerPct: 29, oppoPct: 22 },
+  // Game 2
+  { gameId: 2, playerId: 1, pa: 4, ab: 4, h: 1, singles: 1, doubles: 0, triples: 0, hr: 0, r: 0, rbi: 1, bb: 0, k: 0, hbp: 0, sf: 0, sh: 0, sb: 0, cs: 0, hardHitPct: 42.5, contactPct: 77.4, whiffPct: 19.6, avgEV: 85.7, maxEV: 95.4, avgLA: 14.2, pullPct: 46, centerPct: 27, oppoPct: 27 },
+  { gameId: 2, playerId: 6, pa: 5, ab: 5, h: 2, singles: 2, doubles: 0, triples: 0, hr: 0, r: 0, rbi: 3, bb: 0, k: 1, hbp: 0, sf: 0, sh: 0, sb: 0, cs: 0, hardHitPct: 57.8, contactPct: 78.5, whiffPct: 11.5, avgEV: 88.3, maxEV: 98.9, avgLA: 11.7, pullPct: 40, centerPct: 40, oppoPct: 20 },
+  { gameId: 2, playerId: 4, pa: 5, ab: 5, h: 3, singles: 3, doubles: 0, triples: 0, hr: 0, r: 0, rbi: 4, bb: 0, k: 1, hbp: 0, sf: 0, sh: 0, sb: 0, cs: 0, hardHitPct: 56.3, contactPct: 82.3, whiffPct: 11.7, avgEV: 86.4, maxEV: 98, avgLA: 11, pullPct: 44, centerPct: 26, oppoPct: 30 },
+  { gameId: 2, playerId: 5, pa: 5, ab: 5, h: 4, singles: 3, doubles: 1, triples: 0, hr: 0, r: 0, rbi: 4, bb: 0, k: 0, hbp: 0, sf: 0, sh: 0, sb: 0, cs: 0, hardHitPct: 52.1, contactPct: 84.2, whiffPct: 10.8, avgEV: 84.6, maxEV: 96.2, avgLA: 20.5, pullPct: 42, centerPct: 35, oppoPct: 23 },
+  { gameId: 2, playerId: 8, pa: 3, ab: 3, h: 2, singles: 0, doubles: 2, triples: 0, hr: 0, r: 1, rbi: 3, bb: 0, k: 0, hbp: 0, sf: 0, sh: 0, sb: 0, cs: 0, hardHitPct: 46.4, contactPct: 78.8, whiffPct: 17.2, avgEV: 84.7, maxEV: 94.3, avgLA: 14.7, pullPct: 32, centerPct: 30, oppoPct: 38 },
+  { gameId: 2, playerId: 7, pa: 4, ab: 4, h: 1, singles: 0, doubles: 1, triples: 0, hr: 0, r: 0, rbi: 1, bb: 0, k: 1, hbp: 0, sf: 0, sh: 0, sb: 0, cs: 0, hardHitPct: 60.6, contactPct: 81.4, whiffPct: 8.6, avgEV: 86.6, maxEV: 96.2, avgLA: 14.6, pullPct: 38, centerPct: 23, oppoPct: 39 },
+  { gameId: 2, playerId: 10, pa: 5, ab: 5, h: 2, singles: 2, doubles: 0, triples: 0, hr: 0, r: 1, rbi: 3, bb: 0, k: 1, hbp: 0, sf: 0, sh: 0, sb: 0, cs: 0, hardHitPct: 49.8, contactPct: 81.1, whiffPct: 12.9, avgEV: 82.1, maxEV: 90.8, avgLA: 10.9, pullPct: 36, centerPct: 32, oppoPct: 32 },
+  { gameId: 2, playerId: 3, pa: 3, ab: 3, h: 2, singles: 1, doubles: 0, triples: 0, hr: 1, r: 0, rbi: 3, bb: 0, k: 0, hbp: 0, sf: 0, sh: 0, sb: 0, cs: 0, hardHitPct: 61.9, contactPct: 78, whiffPct: 20, avgEV: 89.6, maxEV: 99.8, avgLA: 8.8, pullPct: 36, centerPct: 34, oppoPct: 30 },
+  { gameId: 2, playerId: 2, pa: 4, ab: 4, h: 1, singles: 1, doubles: 0, triples: 0, hr: 0, r: 1, rbi: 2, bb: 0, k: 1, hbp: 0, sf: 0, sh: 0, sb: 0, cs: 0, hardHitPct: 50.8, contactPct: 76.1, whiffPct: 17.9, avgEV: 84.5, maxEV: 91.7, avgLA: 4.3, pullPct: 35, centerPct: 37, oppoPct: 28 },
+  { gameId: 2, playerId: 9, pa: 3, ab: 3, h: 0, singles: 0, doubles: 0, triples: 0, hr: 0, r: 0, rbi: 0, bb: 0, k: 0, hbp: 0, sf: 0, sh: 0, sb: 0, cs: 0, hardHitPct: 53, contactPct: 84.2, whiffPct: 11.8, avgEV: 84.4, maxEV: 93.5, avgLA: 19.3, pullPct: 30, centerPct: 33, oppoPct: 37 },
+  { gameId: 2, playerId: 15, pa: 5, ab: 5, h: 0, singles: 0, doubles: 0, triples: 0, hr: 0, r: 0, rbi: 0, bb: 0, k: 1, hbp: 0, sf: 0, sh: 0, sb: 0, cs: 0, hardHitPct: 37.9, contactPct: 74.6, whiffPct: 19.4, avgEV: 82.1, maxEV: 93, avgLA: 15.1, pullPct: 50, centerPct: 21, oppoPct: 29 },
+  { gameId: 2, playerId: 17, pa: 4, ab: 4, h: 2, singles: 2, doubles: 0, triples: 0, hr: 0, r: 0, rbi: 3, bb: 0, k: 0, hbp: 0, sf: 0, sh: 0, sb: 0, cs: 0, hardHitPct: 43.5, contactPct: 71, whiffPct: 20, avgEV: 82.6, maxEV: 94.5, avgLA: 17, pullPct: 38, centerPct: 29, oppoPct: 33 },
+  // Game 3
+  { gameId: 3, playerId: 2, pa: 5, ab: 5, h: 2, singles: 2, doubles: 0, triples: 0, hr: 0, r: 1, rbi: 3, bb: 0, k: 3, hbp: 0, sf: 0, sh: 0, sb: 0, cs: 0, hardHitPct: 39.8, contactPct: 80.1, whiffPct: 13.9, avgEV: 83.4, maxEV: 94.6, avgLA: 12.1, pullPct: 43, centerPct: 27, oppoPct: 30 },
+  { gameId: 3, playerId: 6, pa: 5, ab: 5, h: 1, singles: 1, doubles: 0, triples: 0, hr: 0, r: 1, rbi: 1, bb: 0, k: 0, hbp: 0, sf: 0, sh: 0, sb: 0, cs: 0, hardHitPct: 47.8, contactPct: 83.5, whiffPct: 12.5, avgEV: 85, maxEV: 92.5, avgLA: 9.4, pullPct: 41, centerPct: 23, oppoPct: 36 },
+  { gameId: 3, playerId: 3, pa: 5, ab: 5, h: 2, singles: 1, doubles: 0, triples: 0, hr: 1, r: 0, rbi: 3, bb: 0, k: 0, hbp: 0, sf: 0, sh: 0, sb: 0, cs: 0, hardHitPct: 46.9, contactPct: 83, whiffPct: 11, avgEV: 87, maxEV: 96.4, avgLA: 16.7, pullPct: 37, centerPct: 32, oppoPct: 31 },
+  { gameId: 3, playerId: 5, pa: 4, ab: 2, h: 2, singles: 1, doubles: 0, triples: 0, hr: 1, r: 0, rbi: 4, bb: 1, k: 0, hbp: 0, sf: 1, sh: 0, sb: 0, cs: 0, hardHitPct: 50.1, contactPct: 83.2, whiffPct: 12.8, avgEV: 84.6, maxEV: 93.8, avgLA: 16.4, pullPct: 49, centerPct: 40, oppoPct: 11 },
+  { gameId: 3, playerId: 8, pa: 5, ab: 5, h: 2, singles: 2, doubles: 0, triples: 0, hr: 0, r: 1, rbi: 2, bb: 0, k: 0, hbp: 0, sf: 0, sh: 0, sb: 0, cs: 0, hardHitPct: 52.4, contactPct: 81.8, whiffPct: 9.2, avgEV: 86.8, maxEV: 97.6, avgLA: 10, pullPct: 44, centerPct: 34, oppoPct: 22 },
+  { gameId: 3, playerId: 7, pa: 5, ab: 5, h: 4, singles: 4, doubles: 0, triples: 0, hr: 0, r: 1, rbi: 4, bb: 0, k: 1, hbp: 0, sf: 0, sh: 0, sb: 0, cs: 0, hardHitPct: 53.6, contactPct: 77.4, whiffPct: 12.6, avgEV: 87.4, maxEV: 94.9, avgLA: 21.8, pullPct: 32, centerPct: 29, oppoPct: 39 },
+  { gameId: 3, playerId: 9, pa: 4, ab: 4, h: 0, singles: 0, doubles: 0, triples: 0, hr: 0, r: 0, rbi: 0, bb: 0, k: 1, hbp: 0, sf: 0, sh: 0, sb: 0, cs: 0, hardHitPct: 43, contactPct: 83.2, whiffPct: 10.8, avgEV: 87, maxEV: 95.8, avgLA: 18.7, pullPct: 31, centerPct: 28, oppoPct: 41 },
+  { gameId: 3, playerId: 4, pa: 4, ab: 3, h: 2, singles: 2, doubles: 0, triples: 0, hr: 0, r: 1, rbi: 2, bb: 1, k: 0, hbp: 0, sf: 0, sh: 0, sb: 1, cs: 0, hardHitPct: 46.3, contactPct: 81.3, whiffPct: 12.7, avgEV: 85.7, maxEV: 96.9, avgLA: 12.2, pullPct: 39, centerPct: 25, oppoPct: 36 },
+  { gameId: 3, playerId: 24, pa: 5, ab: 5, h: 2, singles: 2, doubles: 0, triples: 0, hr: 0, r: 0, rbi: 2, bb: 0, k: 0, hbp: 0, sf: 0, sh: 0, sb: 0, cs: 0, hardHitPct: 35.5, contactPct: 75, whiffPct: 18, avgEV: 82.3, maxEV: 92.4, avgLA: 11.7, pullPct: 31, centerPct: 20, oppoPct: 49 },
+  { gameId: 3, playerId: 1, pa: 4, ab: 4, h: 2, singles: 2, doubles: 0, triples: 0, hr: 0, r: 0, rbi: 2, bb: 0, k: 0, hbp: 0, sf: 0, sh: 0, sb: 0, cs: 0, hardHitPct: 51.5, contactPct: 85.4, whiffPct: 5.6, avgEV: 87.1, maxEV: 97.8, avgLA: 12.2, pullPct: 37, centerPct: 30, oppoPct: 33 },
+  { gameId: 3, playerId: 10, pa: 4, ab: 4, h: 1, singles: 1, doubles: 0, triples: 0, hr: 0, r: 0, rbi: 2, bb: 0, k: 1, hbp: 0, sf: 0, sh: 0, sb: 0, cs: 0, hardHitPct: 48.8, contactPct: 81.1, whiffPct: 8.9, avgEV: 81.1, maxEV: 87.4, avgLA: 9.7, pullPct: 40, centerPct: 37, oppoPct: 23 },
+  { gameId: 3, playerId: 15, pa: 3, ab: 2, h: 0, singles: 0, doubles: 0, triples: 0, hr: 0, r: 0, rbi: 0, bb: 1, k: 1, hbp: 0, sf: 0, sh: 0, sb: 0, cs: 0, hardHitPct: 44.9, contactPct: 79.6, whiffPct: 15.4, avgEV: 80.8, maxEV: 91, avgLA: 13.9, pullPct: 49, centerPct: 35, oppoPct: 16 },
+  // Game 4
+  { gameId: 4, playerId: 1, pa: 5, ab: 5, h: 2, singles: 1, doubles: 1, triples: 0, hr: 0, r: 1, rbi: 2, bb: 0, k: 0, hbp: 0, sf: 0, sh: 0, sb: 0, cs: 0, hardHitPct: 54.5, contactPct: 85.4, whiffPct: 8.6, avgEV: 81.8, maxEV: 90.5, avgLA: 11.4, pullPct: 35, centerPct: 38, oppoPct: 27 },
+  { gameId: 4, playerId: 27, pa: 3, ab: 2, h: 0, singles: 0, doubles: 0, triples: 0, hr: 0, r: 1, rbi: 0, bb: 1, k: 0, hbp: 0, sf: 0, sh: 0, sb: 0, cs: 0, hardHitPct: 51, contactPct: 74.2, whiffPct: 23.8, avgEV: 84.6, maxEV: 93.9, avgLA: 12.9, pullPct: 37, centerPct: 24, oppoPct: 39 },
+  { gameId: 4, playerId: 3, pa: 4, ab: 4, h: 3, singles: 2, doubles: 0, triples: 0, hr: 1, r: 1, rbi: 4, bb: 0, k: 0, hbp: 0, sf: 0, sh: 0, sb: 0, cs: 0, hardHitPct: 46.9, contactPct: 84, whiffPct: 10, avgEV: 88.8, maxEV: 99, avgLA: 20, pullPct: 45, centerPct: 36, oppoPct: 19 },
+  { gameId: 4, playerId: 19, pa: 5, ab: 4, h: 2, singles: 2, doubles: 0, triples: 0, hr: 0, r: 1, rbi: 2, bb: 0, k: 2, hbp: 1, sf: 0, sh: 0, sb: 0, cs: 0, hardHitPct: 38.8, contactPct: 68.7, whiffPct: 29.3, avgEV: 79.4, maxEV: 86.7, avgLA: 6.3, pullPct: 40, centerPct: 37, oppoPct: 23 },
+  { gameId: 4, playerId: 8, pa: 3, ab: 2, h: 1, singles: 1, doubles: 0, triples: 0, hr: 0, r: 1, rbi: 1, bb: 1, k: 0, hbp: 0, sf: 0, sh: 0, sb: 0, cs: 0, hardHitPct: 42.4, contactPct: 78.8, whiffPct: 12.2, avgEV: 82.4, maxEV: 93.7, avgLA: 15.9, pullPct: 42, centerPct: 27, oppoPct: 31 },
+  { gameId: 4, playerId: 7, pa: 4, ab: 4, h: 1, singles: 1, doubles: 0, triples: 0, hr: 0, r: 1, rbi: 1, bb: 0, k: 1, hbp: 0, sf: 0, sh: 0, sb: 0, cs: 0, hardHitPct: 53.6, contactPct: 83.4, whiffPct: 14.6, avgEV: 85.3, maxEV: 96.6, avgLA: 8.5, pullPct: 35, centerPct: 25, oppoPct: 40 },
+  { gameId: 4, playerId: 22, pa: 3, ab: 3, h: 2, singles: 2, doubles: 0, triples: 0, hr: 0, r: 0, rbi: 2, bb: 0, k: 1, hbp: 0, sf: 0, sh: 0, sb: 0, cs: 0, hardHitPct: 49.3, contactPct: 76.9, whiffPct: 16.1, avgEV: 81.4, maxEV: 90, avgLA: 17.6, pullPct: 36, centerPct: 39, oppoPct: 25 },
+  { gameId: 4, playerId: 5, pa: 4, ab: 3, h: 0, singles: 0, doubles: 0, triples: 0, hr: 0, r: 0, rbi: 0, bb: 1, k: 0, hbp: 0, sf: 0, sh: 0, sb: 0, cs: 0, hardHitPct: 56.1, contactPct: 78.2, whiffPct: 11.8, avgEV: 86.5, maxEV: 93.4, avgLA: 11.3, pullPct: 31, centerPct: 30, oppoPct: 39 },
+  { gameId: 4, playerId: 2, pa: 3, ab: 2, h: 2, singles: 2, doubles: 0, triples: 0, hr: 0, r: 1, rbi: 2, bb: 0, k: 0, hbp: 1, sf: 0, sh: 0, sb: 0, cs: 0, hardHitPct: 47.8, contactPct: 72.1, whiffPct: 23.9, avgEV: 79.6, maxEV: 88.9, avgLA: 5.3, pullPct: 41, centerPct: 27, oppoPct: 32 },
+  { gameId: 4, playerId: 4, pa: 4, ab: 4, h: 1, singles: 1, doubles: 0, triples: 0, hr: 0, r: 0, rbi: 1, bb: 0, k: 1, hbp: 0, sf: 0, sh: 0, sb: 0, cs: 0, hardHitPct: 53.3, contactPct: 76.3, whiffPct: 15.7, avgEV: 86.3, maxEV: 95.3, avgLA: 17.4, pullPct: 35, centerPct: 32, oppoPct: 33 },
+  { gameId: 4, playerId: 6, pa: 3, ab: 3, h: 1, singles: 1, doubles: 0, triples: 0, hr: 0, r: 0, rbi: 2, bb: 0, k: 1, hbp: 0, sf: 0, sh: 0, sb: 0, cs: 0, hardHitPct: 46.8, contactPct: 76.5, whiffPct: 17.5, avgEV: 85.5, maxEV: 97, avgLA: 12.6, pullPct: 49, centerPct: 33, oppoPct: 18 },
+  { gameId: 4, playerId: 9, pa: 4, ab: 4, h: 2, singles: 0, doubles: 2, triples: 0, hr: 0, r: 1, rbi: 2, bb: 0, k: 1, hbp: 0, sf: 0, sh: 0, sb: 0, cs: 0, hardHitPct: 47, contactPct: 84.2, whiffPct: 12.8, avgEV: 84.4, maxEV: 95.4, avgLA: 17.8, pullPct: 33, centerPct: 26, oppoPct: 41 },
+];
+
+export const gamePitching = [
+  { gameId: 1, playerId: 12, started: true, ip: 5, bf: 23, hAllowed: 7, rAllowed: 0, er: 0, bb: 2, k: 9, hbp: 0, hrAllowed: 0, pitchCount: 88, strikePct: 67.3, fpStrikePct: 68.8, whiffPct: 28.8, zonePct: 65.7, avgVelo: 88.6, maxVelo: 91, fastballPct: 63, changeupPct: 15, curvePct: 10, sliderPct: 12 },
+  { gameId: 1, playerId: 13, started: false, ip: 2, bf: 11, hAllowed: 3, rAllowed: 3, er: 3, bb: 1, k: 4, hbp: 0, hrAllowed: 0, pitchCount: 39, strikePct: 67, fpStrikePct: 69.2, whiffPct: 29.1, zonePct: 61.5, avgVelo: 88, maxVelo: 92.7, fastballPct: 47, changeupPct: 20, curvePct: 20, sliderPct: 13 },
+  { gameId: 2, playerId: 14, started: true, ip: 4, bf: 19, hAllowed: 7, rAllowed: 2, er: 2, bb: 2, k: 7, hbp: 0, hrAllowed: 0, pitchCount: 70, strikePct: 65.7, fpStrikePct: 64.6, whiffPct: 29.9, zonePct: 59.6, avgVelo: 85.5, maxVelo: 89.4, fastballPct: 65, changeupPct: 16, curvePct: 13, sliderPct: 6 },
+  { gameId: 2, playerId: 21, started: false, ip: 2, bf: 10, hAllowed: 3, rAllowed: 2, er: 2, bb: 1, k: 4, hbp: 0, hrAllowed: 0, pitchCount: 36, strikePct: 67.2, fpStrikePct: 68.2, whiffPct: 28.3, zonePct: 65.2, avgVelo: 87.6, maxVelo: 92.5, fastballPct: 50, changeupPct: 18, curvePct: 22, sliderPct: 10 },
+  { gameId: 2, playerId: 25, started: false, ip: 1, bf: 5, hAllowed: 1, rAllowed: 1, er: 1, bb: 1, k: 2, hbp: 0, hrAllowed: 0, pitchCount: 25, strikePct: 62.7, fpStrikePct: 60.5, whiffPct: 24.6, zonePct: 61.8, avgVelo: 84, maxVelo: 89, fastballPct: 54, changeupPct: 18, curvePct: 15, sliderPct: 13 },
+  { gameId: 3, playerId: 12, started: true, ip: 4, bf: 18, hAllowed: 7, rAllowed: 1, er: 1, bb: 2, k: 7, hbp: 0, hrAllowed: 0, pitchCount: 73, strikePct: 70.3, fpStrikePct: 64.9, whiffPct: 27.5, zonePct: 58.9, avgVelo: 87.1, maxVelo: 91, fastballPct: 68, changeupPct: 10, curvePct: 11, sliderPct: 11 },
+  { gameId: 3, playerId: 13, started: false, ip: 2, bf: 9, hAllowed: 3, rAllowed: 1, er: 1, bb: 1, k: 4, hbp: 0, hrAllowed: 0, pitchCount: 43, strikePct: 64.9, fpStrikePct: 67.7, whiffPct: 26.9, zonePct: 58.3, avgVelo: 87.5, maxVelo: 90.3, fastballPct: 50, changeupPct: 9, curvePct: 10, sliderPct: 31 },
+  { gameId: 3, playerId: 26, started: false, ip: 1, bf: 5, hAllowed: 2, rAllowed: 0, er: 0, bb: 1, k: 2, hbp: 0, hrAllowed: 0, pitchCount: 30, strikePct: 67, fpStrikePct: 59.9, whiffPct: 26.9, zonePct: 62, avgVelo: 84.2, maxVelo: 87.5, fastballPct: 55, changeupPct: 18, curvePct: 15, sliderPct: 12 },
+  { gameId: 4, playerId: 21, started: true, ip: 5, bf: 24, hAllowed: 7, rAllowed: 1, er: 1, bb: 3, k: 9, hbp: 0, hrAllowed: 0, pitchCount: 83, strikePct: 64.7, fpStrikePct: 66.7, whiffPct: 27.6, zonePct: 61.5, avgVelo: 87.4, maxVelo: 90.8, fastballPct: 61, changeupPct: 13, curvePct: 12, sliderPct: 14 },
+  { gameId: 4, playerId: 14, started: false, ip: 2, bf: 9, hAllowed: 4, rAllowed: 0, er: 0, bb: 1, k: 4, hbp: 0, hrAllowed: 0, pitchCount: 40, strikePct: 65.8, fpStrikePct: 62.6, whiffPct: 30.3, zonePct: 62.9, avgVelo: 85.6, maxVelo: 88.8, fastballPct: 68, changeupPct: 17, curvePct: 10, sliderPct: 5 },
+];
+
+export const gameDefense = [
+  { gameId: 1, playerId: 1, position: 'C', started: true, inningsPlayed: 7, totalChances: 10, putouts: 8, assists: 1, errors: 0, doublePlays: 0, caughtStealing: 0, passedBalls: 0 },
+  { gameId: 1, playerId: 6, position: '1B', started: true, inningsPlayed: 7, totalChances: 7, putouts: 5, assists: 2, errors: 0, doublePlays: 0, caughtStealing: 0, passedBalls: 0 },
+  { gameId: 1, playerId: 3, position: 'SS', started: true, inningsPlayed: 7, totalChances: 6, putouts: 3, assists: 1, errors: 0, doublePlays: 0, caughtStealing: 0, passedBalls: 0 },
+  { gameId: 1, playerId: 5, position: '3B', started: true, inningsPlayed: 7, totalChances: 9, putouts: 3, assists: 4, errors: 0, doublePlays: 0, caughtStealing: 0, passedBalls: 0 },
+  { gameId: 1, playerId: 8, position: 'LF', started: true, inningsPlayed: 7, totalChances: 2, putouts: 1, assists: 0, errors: 0, doublePlays: 0, caughtStealing: 0, passedBalls: 0 },
+  { gameId: 1, playerId: 7, position: 'CF', started: true, inningsPlayed: 7, totalChances: 4, putouts: 2, assists: 2, errors: 0, doublePlays: 0, caughtStealing: 0, passedBalls: 0 },
+  { gameId: 1, playerId: 9, position: 'RF', started: true, inningsPlayed: 7, totalChances: 3, putouts: 3, assists: 0, errors: 0, doublePlays: 0, caughtStealing: 0, passedBalls: 0 },
+  { gameId: 1, playerId: 4, position: '2B', started: true, inningsPlayed: 7, totalChances: 3, putouts: 1, assists: 1, errors: 0, doublePlays: 0, caughtStealing: 0, passedBalls: 0 },
+  { gameId: 1, playerId: 10, position: 'OF', started: false, inningsPlayed: 2, totalChances: 3, putouts: 0, assists: 2, errors: 1, doublePlays: 0, caughtStealing: 0, passedBalls: 0 },
+  { gameId: 1, playerId: 15, position: 'IF', started: false, inningsPlayed: 3, totalChances: 1, putouts: 0, assists: 1, errors: 0, doublePlays: 0, caughtStealing: 0, passedBalls: 0 },
+  { gameId: 2, playerId: 1, position: 'C', started: true, inningsPlayed: 7, totalChances: 9, putouts: 7, assists: 2, errors: 0, doublePlays: 0, caughtStealing: 0, passedBalls: 0 },
+  { gameId: 2, playerId: 6, position: '1B', started: true, inningsPlayed: 7, totalChances: 10, putouts: 5, assists: 4, errors: 0, doublePlays: 0, caughtStealing: 0, passedBalls: 0 },
+  { gameId: 2, playerId: 4, position: '2B', started: true, inningsPlayed: 7, totalChances: 8, putouts: 5, assists: 1, errors: 0, doublePlays: 0, caughtStealing: 0, passedBalls: 0 },
+  { gameId: 2, playerId: 5, position: '3B', started: true, inningsPlayed: 7, totalChances: 7, putouts: 5, assists: 1, errors: 0, doublePlays: 0, caughtStealing: 0, passedBalls: 0 },
+  { gameId: 2, playerId: 8, position: 'LF', started: true, inningsPlayed: 7, totalChances: 6, putouts: 3, assists: 2, errors: 0, doublePlays: 0, caughtStealing: 0, passedBalls: 0 },
+  { gameId: 2, playerId: 7, position: 'CF', started: true, inningsPlayed: 7, totalChances: 2, putouts: 2, assists: 0, errors: 0, doublePlays: 0, caughtStealing: 0, passedBalls: 0 },
+  { gameId: 2, playerId: 10, position: 'RF', started: true, inningsPlayed: 7, totalChances: 5, putouts: 4, assists: 1, errors: 0, doublePlays: 0, caughtStealing: 0, passedBalls: 0 },
+  { gameId: 2, playerId: 3, position: 'SS', started: true, inningsPlayed: 7, totalChances: 6, putouts: 4, assists: 2, errors: 1, doublePlays: 1, caughtStealing: 0, passedBalls: 0 },
+  { gameId: 2, playerId: 9, position: 'OF', started: false, inningsPlayed: 2, totalChances: 1, putouts: 1, assists: 0, errors: 0, doublePlays: 0, caughtStealing: 0, passedBalls: 0 },
+  { gameId: 2, playerId: 15, position: 'IF', started: false, inningsPlayed: 3, totalChances: 1, putouts: 1, assists: 0, errors: 0, doublePlays: 0, caughtStealing: 0, passedBalls: 0 },
+  { gameId: 3, playerId: 2, position: 'C', started: true, inningsPlayed: 7, totalChances: 7, putouts: 4, assists: 2, errors: 0, doublePlays: 0, caughtStealing: 1, passedBalls: 0 },
+  { gameId: 3, playerId: 6, position: '1B', started: true, inningsPlayed: 7, totalChances: 7, putouts: 2, assists: 4, errors: 0, doublePlays: 0, caughtStealing: 0, passedBalls: 0 },
+  { gameId: 3, playerId: 3, position: 'SS', started: true, inningsPlayed: 7, totalChances: 10, putouts: 3, assists: 5, errors: 1, doublePlays: 0, caughtStealing: 0, passedBalls: 0 },
+  { gameId: 3, playerId: 5, position: '3B', started: true, inningsPlayed: 7, totalChances: 6, putouts: 4, assists: 2, errors: 0, doublePlays: 0, caughtStealing: 0, passedBalls: 0 },
+  { gameId: 3, playerId: 8, position: 'LF', started: true, inningsPlayed: 7, totalChances: 5, putouts: 3, assists: 2, errors: 0, doublePlays: 0, caughtStealing: 0, passedBalls: 0 },
+  { gameId: 3, playerId: 7, position: 'CF', started: true, inningsPlayed: 7, totalChances: 2, putouts: 2, assists: 0, errors: 0, doublePlays: 0, caughtStealing: 0, passedBalls: 0 },
+  { gameId: 3, playerId: 9, position: 'RF', started: true, inningsPlayed: 7, totalChances: 5, putouts: 2, assists: 2, errors: 0, doublePlays: 0, caughtStealing: 0, passedBalls: 0 },
+  { gameId: 3, playerId: 4, position: '2B', started: true, inningsPlayed: 7, totalChances: 5, putouts: 1, assists: 3, errors: 0, doublePlays: 0, caughtStealing: 0, passedBalls: 0 },
+  { gameId: 3, playerId: 1, position: 'OF', started: false, inningsPlayed: 3, totalChances: 2, putouts: 2, assists: 0, errors: 0, doublePlays: 0, caughtStealing: 0, passedBalls: 0 },
+  { gameId: 3, playerId: 10, position: 'IF', started: false, inningsPlayed: 3, totalChances: 1, putouts: 1, assists: 0, errors: 0, doublePlays: 0, caughtStealing: 0, passedBalls: 0 },
+  { gameId: 4, playerId: 1, position: 'C', started: true, inningsPlayed: 7, totalChances: 5, putouts: 4, assists: 1, errors: 0, doublePlays: 0, caughtStealing: 0, passedBalls: 0 },
+  { gameId: 4, playerId: 27, position: '1B', started: true, inningsPlayed: 7, totalChances: 9, putouts: 2, assists: 5, errors: 0, doublePlays: 0, caughtStealing: 0, passedBalls: 0 },
+  { gameId: 4, playerId: 3, position: 'SS', started: true, inningsPlayed: 7, totalChances: 6, putouts: 1, assists: 3, errors: 0, doublePlays: 0, caughtStealing: 0, passedBalls: 0 },
+  { gameId: 4, playerId: 19, position: '3B', started: true, inningsPlayed: 7, totalChances: 5, putouts: 2, assists: 2, errors: 0, doublePlays: 0, caughtStealing: 0, passedBalls: 0 },
+  { gameId: 4, playerId: 8, position: 'LF', started: true, inningsPlayed: 7, totalChances: 4, putouts: 2, assists: 1, errors: 0, doublePlays: 0, caughtStealing: 0, passedBalls: 0 },
+  { gameId: 4, playerId: 7, position: 'CF', started: true, inningsPlayed: 7, totalChances: 6, putouts: 3, assists: 2, errors: 0, doublePlays: 0, caughtStealing: 0, passedBalls: 0 },
+  { gameId: 4, playerId: 22, position: 'RF', started: true, inningsPlayed: 7, totalChances: 2, putouts: 1, assists: 1, errors: 0, doublePlays: 0, caughtStealing: 0, passedBalls: 0 },
+  { gameId: 4, playerId: 5, position: '2B', started: true, inningsPlayed: 7, totalChances: 7, putouts: 4, assists: 1, errors: 0, doublePlays: 0, caughtStealing: 0, passedBalls: 0 },
+  { gameId: 4, playerId: 4, position: 'OF', started: false, inningsPlayed: 1, totalChances: 3, putouts: 2, assists: 1, errors: 0, doublePlays: 0, caughtStealing: 0, passedBalls: 0 },
+  { gameId: 4, playerId: 6, position: 'IF', started: false, inningsPlayed: 1, totalChances: 2, putouts: 1, assists: 1, errors: 0, doublePlays: 0, caughtStealing: 0, passedBalls: 0 },
+];
+
+export function getPlayerName(playerId) {
+  const p = players.find(p => p.id === playerId);
+  return p ? `${p.firstName} ${p.lastName}` : `Player ${playerId}`;
+}
+
+export function getPlayerById(playerId) {
+  return players.find(p => p.id === playerId);
+}

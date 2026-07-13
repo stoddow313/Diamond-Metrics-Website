@@ -1,3 +1,5 @@
+@import "tailwindcss";
+
 body {
   margin: 0;
   font-family: Arial, Helvetica, sans-serif;
@@ -86,6 +88,7 @@ main {
 
 .hero h1 {
   font-size: 64px;
+  font-weight: bold;
   line-height: 1.06;
   margin: 0 auto 22px;
   max-width: 1050px;
@@ -171,6 +174,7 @@ section {
 
 section h2 {
   font-size: 32px;
+  font-weight: bold;
   margin-bottom: 18px;
 }
 
@@ -197,6 +201,7 @@ section h2 {
   margin-top: 0;
   margin-bottom: 10px;
   font-size: 20px;
+  font-weight: bold;
 }
 
 .card p {
@@ -214,6 +219,7 @@ section h2 {
 
 .highlight-section h2 {
   margin-top: 0;
+  font-weight: bold;
 }
 
 .footer {
@@ -264,6 +270,25 @@ section h2 {
   text-transform: uppercase;
 }
 
+/* Variant for light backgrounds (e.g. public profile header) */
+.brandmark--dark .brandmark-title {
+  color: #0f172a;
+}
+
+.brandmark--dark .brandmark-subtitle {
+  color: #2563eb;
+}
+
+/* Horizontal scroll without a visible scrollbar (profile tab bar) */
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
 .metrics-preview {
   display: flex;
   flex-direction: column;
@@ -272,6 +297,7 @@ section h2 {
 
 .metrics-preview-header h2 {
   font-size: 32px;
+  font-weight: bold;
   margin: 0 0 14px;
 }
 
@@ -370,6 +396,7 @@ section h2 {
   margin-top: 0;
   margin-bottom: 12px;
   font-size: 22px;
+  font-weight: bold;
 }
 
 .contact-card p {
@@ -465,6 +492,7 @@ section h2 {
   margin-top: 0;
   margin-bottom: 12px;
   font-size: 20px;
+  font-weight: bold;
 }
 
 .dashboard-card ul {
@@ -502,6 +530,7 @@ section h2 {
 .evaluation-title {
   margin: 0 0 18px;
   font-size: 28px;
+  font-weight: bold;
   line-height: 1.2;
 }
 
@@ -567,6 +596,7 @@ section h2 {
 .visual-card h3 {
   margin: 0 0 18px;
   font-size: 24px;
+  font-weight: bold;
 }
 
 .bar-chart {
@@ -713,6 +743,7 @@ section h2 {
 .process-step h3 {
   margin: 0;
   font-size: 20px;
+  font-weight: bold;
 }
 
 .process-step p {
@@ -759,6 +790,7 @@ section h2 {
 .footer-brand h3 {
   margin: 0 0 8px;
   font-size: 22px;
+  font-weight: bold;
 }
 
 .footer-brand p,
@@ -859,6 +891,7 @@ section h2 {
 .program-option-card h3 {
   margin: 0;
   font-size: 24px;
+  font-weight: bold;
   line-height: 1.2;
 }
 
