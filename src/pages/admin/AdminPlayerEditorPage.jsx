@@ -3,6 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { api } from '../../lib/api';
 import { Field, TextInput, Select, PrimaryButton, GhostButton, ErrorNote } from '../../components/admin/ui';
 import { cardStyle } from '../../components/admin/theme';
+import StatImport from '../../components/admin/StatImport';
 
 const BIO_DEFAULTS = {
   first_name: '', last_name: '', school: '', city: '', state: '',
@@ -12,6 +13,38 @@ const BIO_DEFAULTS = {
 };
 
 const POSITIONS = ['C', '1B', '2B', '3B', 'SS', 'LF', 'CF', 'RF', 'OF', 'IF', 'UTIL', 'RHP', 'LHP'];
+
+// Secondary positions are stored as a comma-separated string (e.g. "2B, OF")
+// so no schema change is needed; players often cover several spots.
+function SecondaryPositionsPicker({ value, primary, onToggle }) {
+  const selected = (value || '').split(',').map(s => s.trim()).filter(Boolean);
+
+  return (
+    <Field label={`Secondary positions${selected.length ? ` (${selected.join(', ')})` : ''}`}>
+      <div className="flex flex-wrap gap-1.5 pt-0.5">
+        {POSITIONS.map(p => {
+          const isPrimary = p === primary;
+          const isOn = selected.includes(p);
+          return (
+            <button
+              key={p}
+              type="button"
+              disabled={isPrimary}
+              onClick={() => onToggle(p)}
+              title={isPrimary ? 'Already the primary position' : undefined}
+              className="px-2.5 py-1.5 rounded-lg text-xs font-bold border cursor-pointer transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+              style={isOn
+                ? { backgroundColor: '#38bdf8', borderColor: '#38bdf8', color: '#0f172a' }
+                : { backgroundColor: 'rgba(30, 41, 59, 0.95)', borderColor: '#334155', color: '#cfe8ff' }}
+            >
+              {p}
+            </button>
+          );
+        })}
+      </div>
+    </Field>
+  );
+}
 
 function SectionCard({ title, subtitle, children, actions }) {
   return (
@@ -70,6 +103,15 @@ export default function AdminPlayerEditorPage() {
       })
       .catch(err => setError(err.message));
   }, [playerId]);
+
+  // Re-pull games + stats (used after a CSV/XLSX import touches many games).
+  async function reloadGames() {
+    const { games, stats } = await api.getPlayer(playerId);
+    setGames(games);
+    const byGame = {};
+    for (const s of stats) (byGame[s.game_id] ??= {})[s.metric_key] = s.value;
+    setStatsByGame(byGame);
+  }
 
   const metricsByCategory = useMemo(() => {
     if (!catalog) return [];
@@ -146,12 +188,17 @@ export default function AdminPlayerEditorPage() {
                 {POSITIONS.map(p => <option key={p} value={p}>{p}</option>)}
               </Select>
             </Field>
-            <Field label="Secondary position">
-              <Select value={bio.secondary_position} onChange={e => setBio({ ...bio, secondary_position: e.target.value })}>
-                <option value="">—</option>
-                {POSITIONS.map(p => <option key={p} value={p}>{p}</option>)}
-              </Select>
-            </Field>
+            <div className="col-span-2">
+              <SecondaryPositionsPicker
+                value={bio.secondary_position}
+                primary={bio.primary_position}
+                onToggle={pos => setBio(prev => {
+                  const sel = (prev.secondary_position || '').split(',').map(s => s.trim()).filter(Boolean);
+                  const next = sel.includes(pos) ? sel.filter(p => p !== pos) : [...sel, pos];
+                  return { ...prev, secondary_position: next.join(', ') };
+                })}
+              />
+            </div>
             <Field label={'Height (e.g. 6\'2")'}><TextInput value={bio.height} onChange={e => setBio({ ...bio, height: e.target.value })} /></Field>
             <Field label="Weight (lbs)"><TextInput type="number" value={bio.weight_lbs} onChange={e => setBio({ ...bio, weight_lbs: e.target.value })} /></Field>
             <Field label="Bats">
@@ -199,6 +246,15 @@ export default function AdminPlayerEditorPage() {
       <SectionCard
         title="Games & Stats"
         subtitle="Log an event, then enter the stats captured for it. Values roll up into the public profile."
+        actions={
+          <StatImport
+            playerId={playerId}
+            games={games}
+            catalog={catalog}
+            onComplete={reloadGames}
+            onError={setError}
+          />
+        }
       >
         <NewGameForm
           gameTypes={catalog.gameTypes}

@@ -7,9 +7,11 @@
 //   unit       - display unit ('' for unitless scores/counts)
 //   category   - hitting | pitching | defense | running
 //   aggregate  - how to roll up per-game values into a career/profile number:
-//                'max' (best mark), 'avg' (mean across games), 'latest' (most recent)
+//                'max' (best mark), 'avg' (mean across games), 'latest' (most recent),
+//                'sum' (season total — box-score counting stats)
 //   decimals   - display precision
 //   lowerIsBetter - for times (60-yard dash etc.), best mark = min
+//   short      - compact column header for box-score tables (game summary only)
 
 export const METRICS = [
   // ── Hitting ──────────────────────────────────────────────────────────
@@ -46,9 +48,34 @@ export const METRICS = [
   { key: 'home_to_first',  label: 'Home-to-First Time',    unit: 's',    category: 'running',  aggregate: 'max',    decimals: 2, lowerIsBetter: true },
   { key: 'sprint_30',      label: '30-Yard Sprint',        unit: 's',    category: 'running',  aggregate: 'max',    decimals: 2, lowerIsBetter: true },
   { key: 'dash_60',        label: '60-Yard Dash',          unit: 's',    category: 'running',  aggregate: 'max',    decimals: 2, lowerIsBetter: true },
+
+  // ── Game Summary (box-score counting stats; season totals = sum) ─────
+  { key: 'bs_pa',          label: 'Plate Appearances',     short: 'PA',  unit: '', category: 'box', aggregate: 'sum', decimals: 0 },
+  { key: 'bs_ab',          label: 'At Bats',               short: 'AB',  unit: '', category: 'box', aggregate: 'sum', decimals: 0 },
+  { key: 'bs_r',           label: 'Runs',                  short: 'R',   unit: '', category: 'box', aggregate: 'sum', decimals: 0 },
+  { key: 'bs_h',           label: 'Hits',                  short: 'H',   unit: '', category: 'box', aggregate: 'sum', decimals: 0 },
+  { key: 'bs_2b',          label: 'Doubles',               short: '2B',  unit: '', category: 'box', aggregate: 'sum', decimals: 0 },
+  { key: 'bs_3b',          label: 'Triples',               short: '3B',  unit: '', category: 'box', aggregate: 'sum', decimals: 0 },
+  { key: 'bs_hr',          label: 'Home Runs',             short: 'HR',  unit: '', category: 'box', aggregate: 'sum', decimals: 0 },
+  { key: 'bs_rbi',         label: 'RBIs',                  short: 'RBI', unit: '', category: 'box', aggregate: 'sum', decimals: 0 },
+  { key: 'bs_bb',          label: 'Walks',                 short: 'BB',  unit: '', category: 'box', aggregate: 'sum', decimals: 0 },
+  { key: 'bs_k',           label: 'Strikeouts (Batting)',  short: 'K',   unit: '', category: 'box', aggregate: 'sum', decimals: 0 },
+  { key: 'bs_hbp',         label: 'Hit By Pitch',          short: 'HBP', unit: '', category: 'box', aggregate: 'sum', decimals: 0 },
+  { key: 'bs_sb',          label: 'Stolen Bases',          short: 'SB',  unit: '', category: 'box', aggregate: 'sum', decimals: 0 },
+  { key: 'bs_ip',          label: 'Innings Pitched',       short: 'IP',  unit: '', category: 'box', aggregate: 'sum', decimals: 1 },
+  { key: 'bs_bf',          label: 'Batters Faced',         short: 'BF',  unit: '', category: 'box', aggregate: 'sum', decimals: 0 },
+  { key: 'bs_ha',          label: 'Hits Allowed',          short: 'HA',  unit: '', category: 'box', aggregate: 'sum', decimals: 0 },
+  { key: 'bs_ra',          label: 'Runs Allowed',          short: 'RA',  unit: '', category: 'box', aggregate: 'sum', decimals: 0 },
+  { key: 'bs_er',          label: 'Earned Runs',           short: 'ER',  unit: '', category: 'box', aggregate: 'sum', decimals: 0 },
+  { key: 'bs_bba',         label: 'Walks Allowed',         short: 'BBA', unit: '', category: 'box', aggregate: 'sum', decimals: 0 },
+  { key: 'bs_kp',          label: 'Strikeouts (Pitching)', short: 'KP',  unit: '', category: 'box', aggregate: 'sum', decimals: 0 },
+  { key: 'bs_hra',         label: 'Home Runs Allowed',     short: 'HRA', unit: '', category: 'box', aggregate: 'sum', decimals: 0 },
+  { key: 'bs_pitches',     label: 'Pitches Thrown',        short: 'PIT', unit: '', category: 'box', aggregate: 'sum', decimals: 0 },
+  { key: 'bs_e',           label: 'Errors',                short: 'E',   unit: '', category: 'box', aggregate: 'sum', decimals: 0 },
 ];
 
 export const CATEGORIES = [
+  { key: 'box',      label: 'Game Summary' },
   { key: 'hitting',  label: 'Hitting' },
   { key: 'pitching', label: 'Pitching' },
   { key: 'defense',  label: 'Defense' },
