@@ -3,7 +3,7 @@ import { Link, useParams } from 'react-router-dom';
 import {
   Rocket, Zap, Flame, Target, Gauge, Timer, Activity, Dumbbell, Wind,
   Crosshair, Shield, TrendingUp, FileText, Share2, Mail, Bell,
-  MoreHorizontal, Star, User, Play, Dna,
+  MoreHorizontal, Star, User, Play, Dna, ClipboardList,
 } from 'lucide-react';
 import { api } from '../lib/api';
 import BrandMark from '../components/BrandMark';
@@ -26,6 +26,7 @@ const ATTR_LABELS = {
 
 const TABS = [
   { key: 'overview', label: 'Overview' },
+  { key: 'summary', label: 'Game Summary' },
   { key: 'hitting', label: 'Hitting' },
   { key: 'pitching', label: 'Pitching' },
   { key: 'running', label: 'Running' },
@@ -373,7 +374,7 @@ function OverviewTab({ data, heroMetrics, onViewAll }) {
   const bottomTrends = trendOrder
     .filter(k => !seen.has(k) && seen.add(k))
     .map(k => metrics[k])
-    .filter(m => m && m.series.length > 1 && m.key !== evTrend?.key)
+    .filter(m => m && m.series.length > 1 && m.key !== evTrend?.key && m.category !== 'box')
     .slice(0, hasAttrs ? 3 : 4);
 
   return (
@@ -415,6 +416,85 @@ function OverviewTab({ data, heroMetrics, onViewAll }) {
       <div className="xl:sticky xl:top-4 min-w-0">
         <RecentActivity games={games} onViewAll={onViewAll} />
       </div>
+    </div>
+  );
+}
+
+function GameSummaryTab({ data }) {
+  const { metrics, games, catalog } = data;
+  const boxMetrics = catalog.metrics.filter(m => m.category === 'box' && metrics[m.key]).map(m => metrics[m.key]);
+
+  if (boxMetrics.length === 0) {
+    return (
+      <EmptyPanel
+        icon={ClipboardList}
+        title="No box scores logged yet"
+        note="Game-by-game counting stats (plate appearances, hits, RBIs, innings pitched…) will appear here once logged."
+      />
+    );
+  }
+
+  const valueByGameAndKey = {};
+  for (const m of boxMetrics) {
+    for (const pt of m.series) valueByGameAndKey[`${pt.gameId}:${m.key}`] = pt.value;
+  }
+  const rows = [...games].reverse().filter(g => boxMetrics.some(m => valueByGameAndKey[`${g.id}:${m.key}`] !== undefined));
+
+  return (
+    <div className="flex flex-col gap-4">
+      {/* Season totals */}
+      <div>
+        <p className="text-[11px] font-bold uppercase tracking-widest text-slate-500 mb-2">
+          Season Totals · {rows.length} game{rows.length === 1 ? '' : 's'}
+        </p>
+        <div className="grid gap-3 grid-cols-3 sm:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8">
+          {boxMetrics.map(m => (
+            <div key={m.key} className="bg-white rounded-xl border border-slate-200 shadow-sm p-2.5 text-center">
+              <p className="text-lg font-extrabold text-slate-900 leading-none">{fmt(m.headline, m)}</p>
+              <p className="text-[9px] font-bold uppercase tracking-wider text-slate-400 mt-1 leading-tight" title={m.label}>{m.short}</p>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Box score game log */}
+      <Card title="Box Scores" className="overflow-x-auto">
+        <table className="w-full text-xs" style={{ minWidth: 120 + boxMetrics.length * 44 }}>
+          <thead>
+            <tr className="text-left text-[10px] uppercase tracking-wider text-slate-400 border-b border-slate-100">
+              <th className="py-2 pr-3 font-bold">Date</th>
+              <th className="py-2 pr-3 font-bold">Event</th>
+              {boxMetrics.map(m => (
+                <th key={m.key} className="py-2 px-1.5 font-bold text-right" title={m.label}>{m.short}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map(g => (
+              <tr key={g.id} className="border-b border-slate-50">
+                <td className="py-2 pr-3 text-slate-500 whitespace-nowrap">{niceDate(g.game_date)}</td>
+                <td className="py-2 pr-3 font-bold text-slate-700 whitespace-nowrap">{g.opponent || typeLabel(g.game_type)}</td>
+                {boxMetrics.map(m => {
+                  const v = valueByGameAndKey[`${g.id}:${m.key}`];
+                  return (
+                    <td key={m.key} className="py-2 px-1.5 text-right font-bold text-slate-900">
+                      {v === undefined ? <span className="text-slate-300 font-normal">—</span> : fmt(v, m)}
+                    </td>
+                  );
+                })}
+              </tr>
+            ))}
+          </tbody>
+          <tfoot>
+            <tr className="border-t-2 border-slate-200">
+              <td className="py-2 pr-3 text-[10px] font-bold uppercase tracking-wider text-slate-400" colSpan={2}>Totals</td>
+              {boxMetrics.map(m => (
+                <td key={m.key} className="py-2 px-1.5 text-right font-extrabold text-blue-700">{fmt(m.headline, m)}</td>
+              ))}
+            </tr>
+          </tfoot>
+        </table>
+      </Card>
     </div>
   );
 }
@@ -692,6 +772,7 @@ export default function PublicProfilePage() {
 
             {/* Tab content */}
             {tab === 'overview' && <OverviewTab data={data} heroMetrics={heroMetrics} onViewAll={() => selectTab('development')} />}
+            {tab === 'summary' && <GameSummaryTab data={data} />}
             {tab === 'hitting' && <CategoryTab categoryKey="hitting" data={data} extras={<HittingExtras data={data} />} />}
             {tab === 'pitching' && <CategoryTab categoryKey="pitching" data={data} extras={<PitchingExtras />} />}
             {tab === 'running' && <CategoryTab categoryKey="running" data={data} />}

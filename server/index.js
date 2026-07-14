@@ -263,6 +263,7 @@ app.get('/api/public/players/:slug', (req, res) => {
     let headline;
     if (def.aggregate === 'max') headline = def.lowerIsBetter ? Math.min(...values) : Math.max(...values);
     else if (def.aggregate === 'latest') headline = values[values.length - 1];
+    else if (def.aggregate === 'sum') headline = values.reduce((a, b) => a + b, 0);
     else headline = values.reduce((a, b) => a + b, 0) / values.length;
 
     metrics[def.key] = {
