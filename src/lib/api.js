@@ -58,4 +58,5 @@ export const api = {
 
   // public
   publicProfile: (slug) => request(`/api/public/players/${slug}`, { auth: false }),
+  proDayCard: (slug) => request(`/api/public/players/${slug}/card`, { auth: false }),
 };

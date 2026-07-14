@@ -102,4 +102,15 @@ export function heroSetForPosition(primaryPosition) {
 export const VALID_METRIC_KEYS = new Set(METRICS.map(m => m.key));
 
 // Game/event types the admin can log stats against.
-export const GAME_TYPES = ['game', 'practice', 'showcase', 'bullpen', 'scrimmage', 'athletic_testing'];
+// 'pro_day' events power the shareable Pro Day player card.
+export const GAME_TYPES = ['game', 'practice', 'showcase', 'bullpen', 'scrimmage', 'athletic_testing', 'pro_day'];
+
+// Position groups used for card archetypes and event-ranking cohorts.
+export function positionGroup(primaryPosition) {
+  const pos = (primaryPosition || '').toUpperCase();
+  if (pos === 'C') return 'C';
+  if (['RHP', 'LHP', 'P', 'SP', 'RP'].includes(pos)) return 'P';
+  if (['LF', 'CF', 'RF', 'OF'].includes(pos)) return 'OF';
+  if (['1B', '2B', '3B', 'SS', 'IF'].includes(pos)) return 'INF';
+  return 'UTIL';
+}
