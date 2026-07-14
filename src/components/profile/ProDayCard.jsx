@@ -322,8 +322,11 @@ export default function ProDayCardModal({ data, onClose, autoDownload = false })
     }
 
     const markup = new XMLSerializer().serializeToString(clone);
+    // No page stylesheets exist inside the SVG, so restore the box-sizing
+    // reset the card's fixed width depends on.
     const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}">` +
-      `<foreignObject width="100%" height="100%"><div xmlns="http://www.w3.org/1999/xhtml">${markup}</div></foreignObject></svg>`;
+      `<foreignObject width="100%" height="100%"><div xmlns="http://www.w3.org/1999/xhtml">` +
+      `<style>*{box-sizing:border-box;margin:0;padding:0}</style>${markup}</div></foreignObject></svg>`;
     const img = await new Promise((resolve, reject) => {
       const i = new Image();
       i.onload = () => resolve(i);
