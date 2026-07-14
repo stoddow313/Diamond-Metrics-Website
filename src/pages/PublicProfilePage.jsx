@@ -8,6 +8,7 @@ import {
 import { api } from '../lib/api';
 import BrandMark from '../components/BrandMark';
 import { TrendChart, Histogram, DonutChart, RingGauge, SprayChart } from '../components/profile/charts';
+import ProDayCardModal from '../components/profile/ProDayCard';
 
 /* ── Metric presentation config ──────────────────────────────────────────── */
 
@@ -670,6 +671,9 @@ export default function PublicProfilePage() {
   const [data, setData] = useState(null);
   const [error, setError] = useState('');
   const [copied, setCopied] = useState(false);
+  const [card, setCard] = useState(null); // pro day card payload, when one exists
+  const [cardOpen, setCardOpen] = useState(false);
+  const [cardAutoDownload, setCardAutoDownload] = useState(false);
   const [tab, setTab] = useState(() => {
     const h = window.location.hash.replace('#', '');
     return TABS.some(t => t.key === h) ? h : 'overview';
@@ -679,7 +683,26 @@ export default function PublicProfilePage() {
     api.publicProfile(slug)
       .then(setData)
       .catch(err => setError(err.status === 404 ? 'Player profile not found.' : err.message));
+    // Card is optional — 404 just means no Pro Day event is logged yet.
+    api.proDayCard(slug)
+      .then(cardData => {
+        setCard(cardData);
+        if (window.location.hash === '#card') setCardOpen(true);
+      })
+      .catch(() => setCard(null));
   }, [slug]);
+
+  function openCard(autoDownload = false) {
+    setCardAutoDownload(autoDownload);
+    setCardOpen(true);
+    window.history.replaceState(null, '', '#card');
+  }
+
+  function closeCard() {
+    setCardOpen(false);
+    setCardAutoDownload(false);
+    window.history.replaceState(null, '', `#${tab}`);
+  }
 
   function selectTab(key) {
     setTab(key);
@@ -736,6 +759,22 @@ export default function PublicProfilePage() {
         <div className="grid lg:grid-cols-[280px_minmax(0,1fr)] gap-4 items-start">
           <div className="lg:sticky lg:top-4 w-full max-w-md mx-auto lg:max-w-none">
             <PlayerCard player={player} />
+            {card && (
+              <div className="mt-3 flex flex-col gap-2">
+                <button
+                  onClick={() => openCard(false)}
+                  className="w-full py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold cursor-pointer"
+                >
+                  View Pro Day Card
+                </button>
+                <button
+                  onClick={() => openCard(true)}
+                  className="w-full py-2.5 rounded-xl border border-slate-300 text-slate-700 text-sm font-bold cursor-pointer hover:bg-white"
+                >
+                  Share Card
+                </button>
+              </div>
+            )}
           </div>
 
           <div className="min-w-0">
@@ -784,6 +823,10 @@ export default function PublicProfilePage() {
           </div>
         </div>
       </main>
+
+      {cardOpen && card && (
+        <ProDayCardModal data={card} onClose={closeCard} autoDownload={cardAutoDownload} />
+      )}
     </div>
   );
 }
