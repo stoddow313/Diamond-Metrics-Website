@@ -324,10 +324,13 @@ app.get('/api/public/players/:slug/card', (req, res) => {
     });
 
   // ── Rankings among participants of the same event (name + date) ──
+  // Every athlete who attended counts toward rankings — including those whose
+  // own profiles are private. Only aggregate ranks are exposed, never their
+  // names or values, so nothing private leaks.
   const participants = db.prepare(
     `SELECT g.id AS game_id, p.id AS player_id, p.primary_position, p.overall_rating
      FROM games g JOIN players p ON p.id = g.player_id
-     WHERE g.game_type = 'pro_day' AND g.game_date = ? AND LOWER(TRIM(g.opponent)) = ? AND p.is_public = 1`
+     WHERE g.game_type = 'pro_day' AND g.game_date = ? AND LOWER(TRIM(g.opponent)) = ?`
   ).all(proDay.game_date, (proDay.opponent || '').trim().toLowerCase());
 
   let rankings = null;
