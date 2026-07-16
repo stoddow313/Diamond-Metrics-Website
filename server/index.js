@@ -3,7 +3,7 @@ import { randomBytes } from 'node:crypto';
 import { db, verifyPassword, newSlug } from './db.js';
 import {
   METRICS, CATEGORIES, ATTRIBUTES, GAME_TYPES,
-  VALID_METRIC_KEYS, heroSetForPosition,
+  VALID_METRIC_KEYS, heroSetForPosition, positionGroup,
 } from './metricCatalog.js';
 
 const app = express();
@@ -282,6 +282,107 @@ app.get('/api/public/players/:slug', (req, res) => {
     metrics,
     heroKeys: heroSetForPosition(player.primary_position),
     catalog: { metrics: METRICS, categories: CATEGORIES },
+  });
+});
+
+// ── Pro Day card ─────────────────────────────────────────────────────────
+// Powers the shareable two-sided player card: the player's most recent
+// pro_day event, its measured results, and rankings among every player who
+// attended the same event (matched on event name + date).
+
+const METRIC_BY_KEY = new Map(METRICS.map(m => [m.key, m]));
+
+app.get('/api/public/players/:slug/card', (req, res) => {
+  const player = db.prepare(
+    `SELECT id, ${PUBLIC_PLAYER_COLS} FROM players WHERE slug = ? AND is_public = 1`
+  ).get(req.params.slug);
+  if (!player) return res.status(404).json({ error: 'Player not found' });
+
+  const proDay = db.prepare(
+    `SELECT * FROM games WHERE player_id = ? AND game_type = 'pro_day'
+     ORDER BY game_date DESC, id DESC LIMIT 1`
+  ).get(player.id);
+  if (!proDay) return res.status(404).json({ error: 'No Pro Day event logged for this player' });
+
+  const ownStats = {};
+  for (const row of db.prepare('SELECT metric_key, value FROM stat_entries WHERE game_id = ?').all(proDay.id)) {
+    ownStats[row.metric_key] = row.value;
+  }
+
+  // Card shows measured testing results — box-score counting stats stay off it.
+  const results = METRICS
+    .filter(m => m.category !== 'box' && ownStats[m.key] !== undefined)
+    .map(m => ({ key: m.key, label: m.label, unit: m.unit, decimals: m.decimals, value: ownStats[m.key] }));
+
+  // Front headline chips: position-adaptive hero metrics measured at this event.
+  const chips = heroSetForPosition(player.primary_position)
+    .filter(k => ownStats[k] !== undefined)
+    .slice(0, 4)
+    .map(k => {
+      const m = METRIC_BY_KEY.get(k);
+      return { key: k, label: m.label, unit: m.unit, decimals: m.decimals, value: ownStats[k] };
+    });
+
+  // ── Rankings among participants of the same event (name + date) ──
+  // Every athlete who attended counts toward rankings — including those whose
+  // own profiles are private. Only aggregate ranks are exposed, never their
+  // names or values, so nothing private leaks.
+  const participants = db.prepare(
+    `SELECT g.id AS game_id, p.id AS player_id, p.primary_position, p.overall_rating
+     FROM games g JOIN players p ON p.id = g.player_id
+     WHERE g.game_type = 'pro_day' AND g.game_date = ? AND LOWER(TRIM(g.opponent)) = ?`
+  ).all(proDay.game_date, (proDay.opponent || '').trim().toLowerCase());
+
+  let rankings = null;
+  if (participants.length >= 2) {
+    const gameIds = participants.map(p => p.game_id);
+    const allStats = db.prepare(
+      `SELECT game_id, metric_key, value FROM stat_entries
+       WHERE game_id IN (${gameIds.map(() => '?').join(',')})`
+    ).all(...gameIds);
+
+    const valuesByMetric = {};
+    for (const s of allStats) (valuesByMetric[s.metric_key] ??= []).push({ gameId: s.game_id, value: s.value });
+
+    const metricRanks = [];
+    for (const r of results) {
+      const def = METRIC_BY_KEY.get(r.key);
+      const values = valuesByMetric[r.key] || [];
+      if (values.length < 2) continue;
+      const better = values.filter(v =>
+        def.lowerIsBetter ? v.value < r.value : v.value > r.value
+      ).length;
+      metricRanks.push({ key: r.key, label: def.label, rank: better + 1, of: values.length });
+    }
+
+    // Overall rank within the player's position cohort, by overall rating.
+    const group = positionGroup(player.primary_position);
+    const cohort = participants.filter(p => positionGroup(p.primary_position) === group && p.overall_rating != null);
+    let overall = null;
+    if (player.overall_rating != null && cohort.length >= 2) {
+      const better = cohort.filter(p => p.overall_rating > player.overall_rating).length;
+      overall = { group, rank: better + 1, of: cohort.length };
+    }
+
+    rankings = { participantCount: participants.length, overall, metrics: metricRanks };
+  }
+
+  // Deterministic card ID from the event name initials + player id.
+  const initials = (proDay.opponent || 'Pro Day').split(/\s+/).map(w => w[0]).join('').toUpperCase().slice(0, 3) || 'PD';
+  const { id: _id, ...publicPlayer } = player;
+
+  res.json({
+    player: publicPlayer,
+    positionGroup: positionGroup(player.primary_position),
+    cardId: `DM-${initials}-${String(player.id).padStart(3, '0')}`,
+    event: {
+      date: proDay.game_date,
+      name: proDay.opponent || 'Pro Day',
+      location: proDay.location || '',
+    },
+    chips,
+    results,
+    rankings,
   });
 });
 
