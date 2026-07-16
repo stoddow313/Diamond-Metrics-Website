@@ -126,14 +126,35 @@ export default function StatImport({ playerId, games, catalog, onComplete, onErr
 
           const isoDate = toIsoDate(meta.game_date);
           if (!isoDate) throw new Error('missing or unrecognized game_date');
-          const gameType = norm(meta.game_type).replace(/\s+/g, '_');
-          const type = validTypes.has(gameType) ? gameType : 'game';
+
+          // "Pro Day", "pro-day", "PRO_DAY" all normalize to pro_day. An
+          // unrecognized type is a visible row error — never silently 'game'.
+          const rawType = String(meta.game_type || '').trim();
+          const gameType = rawType.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+          let type = 'game';
+          if (gameType) {
+            if (!validTypes.has(gameType)) {
+              throw new Error(`unknown event type "${rawType}" — valid types: ${[...validTypes].join(', ')}`);
+            }
+            type = gameType;
+          }
 
           if (Object.keys(stats).length === 0) throw new Error('no stat values in row');
 
           const key = `${isoDate}|${norm(meta.opponent)}`;
           let game = existing.get(key);
           if (game) {
+            // Re-importing a corrected file also fixes the event itself
+            // (e.g. a row previously typed as "game" becoming a pro day).
+            if (game.game_type !== type || (meta.location && meta.location !== game.location) || (meta.notes && meta.notes !== game.notes)) {
+              const res = await api.updateGame(game.id, {
+                game_type: type,
+                location: meta.location || game.location,
+                notes: meta.notes || game.notes,
+              });
+              existing.set(key, res.game);
+              game = res.game;
+            }
             updated++;
           } else {
             const res = await api.createGame(playerId, {
