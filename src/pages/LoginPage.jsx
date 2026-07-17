@@ -14,8 +14,8 @@ export default function LoginPage() {
     e.preventDefault();
     setError('');
     try {
-      await login(email, password);
-      navigate('/admin');
+      const user = await login(email, password);
+      navigate(user.role === 'player' ? '/me' : '/admin');
     } catch (err) {
       setError(err.message || 'Invalid email or password.');
     }
@@ -78,7 +78,11 @@ export default function LoginPage() {
 
         </div>
 
-        <p className="text-center text-xs mt-6" style={{ color: '#475569' }}>
+        <p className="text-center text-sm mt-6" style={{ color: '#94a3b8' }}>
+          New here?{' '}
+          <Link to="/signup" className="font-bold hover:underline" style={{ color: '#38bdf8' }}>Get your player account</Link>
+        </p>
+        <p className="text-center text-xs mt-3" style={{ color: '#475569' }}>
           <Link to="/" className="hover:underline" style={{ color: '#64748b' }}>Back to homepage</Link>
         </p>
       </div>

@@ -59,4 +59,12 @@ export const api = {
   // public
   publicProfile: (slug) => request(`/api/public/players/${slug}`, { auth: false }),
   proDayCard: (slug) => request(`/api/public/players/${slug}/card`, { auth: false }),
+
+  // invites (admin) + claim (public) + player portal
+  getInvite: (playerId) => request(`/api/players/${playerId}/invite`),
+  createInvite: (playerId) => request(`/api/players/${playerId}/invite`, { method: 'POST' }),
+  inviteInfo: (token) => request(`/api/invites/${token}`, { auth: false }),
+  claimInvite: (token, email, password) => request(`/api/invites/${token}/claim`, { method: 'POST', body: { email, password }, auth: false }),
+  portalProfile: () => request('/api/portal/profile'),
+  portalCard: () => request('/api/portal/card'),
 };

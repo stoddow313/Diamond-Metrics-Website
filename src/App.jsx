@@ -2,6 +2,8 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import LandingPage from './pages/LandingPage';
 import LoginPage from './pages/LoginPage';
+import ClaimPage from './pages/ClaimPage';
+import SignupInfoPage from './pages/SignupInfoPage';
 import AdminLayout from './components/admin/AdminLayout';
 import AdminPlayersPage from './pages/admin/AdminPlayersPage';
 import AdminPlayerEditorPage from './pages/admin/AdminPlayerEditorPage';
@@ -28,6 +30,15 @@ function AdminRoute({ children }) {
   const { user, loading } = useAuth();
   if (loading) return null;
   if (!user) return <Navigate to="/login" replace />;
+  if (user.role === 'player') return <Navigate to="/me" replace />;
+  return children;
+}
+
+function PlayerRoute({ children }) {
+  const { user, loading } = useAuth();
+  if (loading) return null;
+  if (!user) return <Navigate to="/login" replace />;
+  if (user.role !== 'player') return <Navigate to="/admin" replace />;
   return children;
 }
 
@@ -36,10 +47,21 @@ function AppRoutes() {
     <Routes>
       <Route path="/" element={<LandingPage />} />
       <Route path="/login" element={<LoginPage />} />
-      <Route path="/signup" element={<Navigate to="/login" replace />} />
+      <Route path="/signup" element={<SignupInfoPage />} />
+      <Route path="/claim/:token" element={<ClaimPage />} />
 
       {/* Public, shareable player profiles */}
       <Route path="/p/:slug" element={<PublicProfilePage />} />
+
+      {/* Player portal: claimed accounts see their own profile in isolation */}
+      <Route
+        path="/me"
+        element={
+          <PlayerRoute>
+            <PublicProfilePage portal />
+          </PlayerRoute>
+        }
+      />
 
       {/* Admin: player profile + stat management */}
       <Route

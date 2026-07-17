@@ -22,6 +22,10 @@ function Hero() {
           Request Program Info
         </a>
 
+        <a className="secondary-button" href="/p/joe-larsen" target="_blank" rel="noreferrer">
+          See a Sample Player Profile
+        </a>
+
         <a className="secondary-button" href="#services">
           View Services
         </a>
