@@ -1,6 +1,6 @@
 import express from 'express';
 import { randomBytes } from 'node:crypto';
-import { db, verifyPassword, newSlug } from './db.js';
+import { db, hashPassword, verifyPassword, newSlug } from './db.js';
 import {
   METRICS, CATEGORIES, ATTRIBUTES, GAME_TYPES,
   VALID_METRIC_KEYS, heroSetForPosition, positionGroup,
@@ -43,24 +43,92 @@ function requireAdmin(req, res, next) {
   next();
 }
 
+// Player (claimed-account) sessions are stored separately from admin sessions
+// so a portal token can never reach admin routes.
+function createPlayerSession(playerUserId) {
+  const token = randomBytes(32).toString('hex');
+  db.prepare(
+    `INSERT INTO player_sessions (token, player_user_id, expires_at)
+     VALUES (?, ?, datetime('now', '+${SESSION_TTL_DAYS} days'))`
+  ).run(token, playerUserId);
+  return token;
+}
+
+function playerFromToken(token) {
+  return db.prepare(
+    `SELECT ps.token, pu.id AS player_user_id, pu.email, p.*
+     FROM player_sessions ps
+     JOIN player_users pu ON pu.id = ps.player_user_id
+     JOIN players p ON p.id = pu.player_id
+     WHERE ps.token = ? AND ps.expires_at > datetime('now')`
+  ).get(token);
+}
+
+function requirePlayer(req, res, next) {
+  const header = req.headers.authorization || '';
+  const token = header.startsWith('Bearer ') ? header.slice(7) : null;
+  if (!token) return res.status(401).json({ error: 'Not authenticated' });
+  const row = playerFromToken(token);
+  if (!row) return res.status(401).json({ error: 'Session expired or invalid' });
+  req.player = row;
+  req.sessionToken = token;
+  next();
+}
+
+// One login endpoint for both roles: admins first, then claimed player accounts.
 app.post('/api/auth/login', (req, res) => {
   const { email, password } = req.body || {};
   if (!email || !password) return res.status(400).json({ error: 'Email and password are required' });
+  const normEmail = String(email).toLowerCase().trim();
 
-  const admin = db.prepare('SELECT * FROM admins WHERE email = ?').get(String(email).toLowerCase().trim());
-  if (!admin || !verifyPassword(password, admin.password_hash)) {
-    return res.status(401).json({ error: 'Invalid email or password' });
+  const admin = db.prepare('SELECT * FROM admins WHERE email = ?').get(normEmail);
+  if (admin && verifyPassword(password, admin.password_hash)) {
+    const token = createSession(admin.id);
+    return res.json({ token, admin: { id: admin.id, email: admin.email, name: admin.name, role: 'admin' } });
   }
-  const token = createSession(admin.id);
-  res.json({ token, admin: { id: admin.id, email: admin.email, name: admin.name, role: 'admin' } });
+
+  const pu = db.prepare(
+    `SELECT pu.*, p.first_name, p.last_name, p.slug FROM player_users pu
+     JOIN players p ON p.id = pu.player_id WHERE pu.email = ?`
+  ).get(normEmail);
+  if (pu && verifyPassword(password, pu.password_hash)) {
+    const token = createPlayerSession(pu.id);
+    return res.json({
+      token,
+      admin: { email: pu.email, name: `${pu.first_name} ${pu.last_name}`, role: 'player', slug: pu.slug },
+    });
+  }
+
+  res.status(401).json({ error: 'Invalid email or password' });
 });
 
-app.get('/api/auth/me', requireAdmin, (req, res) => {
-  res.json({ admin: { ...req.admin, role: 'admin' } });
+app.get('/api/auth/me', (req, res) => {
+  const header = req.headers.authorization || '';
+  const token = header.startsWith('Bearer ') ? header.slice(7) : null;
+  if (!token) return res.status(401).json({ error: 'Not authenticated' });
+
+  const adminRow = db.prepare(
+    `SELECT a.id, a.email, a.name FROM sessions s JOIN admins a ON a.id = s.admin_id
+     WHERE s.token = ? AND s.expires_at > datetime('now')`
+  ).get(token);
+  if (adminRow) return res.json({ admin: { ...adminRow, role: 'admin' } });
+
+  const playerRow = playerFromToken(token);
+  if (playerRow) {
+    return res.json({
+      admin: { email: playerRow.email, name: `${playerRow.first_name} ${playerRow.last_name}`, role: 'player', slug: playerRow.slug },
+    });
+  }
+  res.status(401).json({ error: 'Session expired or invalid' });
 });
 
-app.post('/api/auth/logout', requireAdmin, (req, res) => {
-  db.prepare('DELETE FROM sessions WHERE token = ?').run(req.sessionToken);
+app.post('/api/auth/logout', (req, res) => {
+  const header = req.headers.authorization || '';
+  const token = header.startsWith('Bearer ') ? header.slice(7) : null;
+  if (token) {
+    db.prepare('DELETE FROM sessions WHERE token = ?').run(token);
+    db.prepare('DELETE FROM player_sessions WHERE token = ?').run(token);
+  }
   res.json({ ok: true });
 });
 
@@ -234,12 +302,9 @@ const PUBLIC_PLAYER_COLS = `
   attr_power, attr_contact, attr_speed, attr_arm, attr_defense, attr_athleticism
 `;
 
-app.get('/api/public/players/:slug', (req, res) => {
-  const player = db.prepare(
-    `SELECT id, ${PUBLIC_PLAYER_COLS} FROM players WHERE slug = ? AND is_public = 1`
-  ).get(req.params.slug);
-  if (!player) return res.status(404).json({ error: 'Player not found' });
-
+// Shared by the public route (by slug, public profiles only) and the player
+// portal (own profile, regardless of visibility).
+function buildProfilePayload(player) {
   const games = db.prepare(
     'SELECT id, game_date, game_type, opponent, location, notes FROM games WHERE player_id = ? ORDER BY game_date ASC, id ASC'
   ).all(player.id);
@@ -276,13 +341,21 @@ app.get('/api/public/players/:slug', (req, res) => {
   }
 
   const { id: _id, ...publicPlayer } = player;
-  res.json({
+  return {
     player: publicPlayer,
     games,
     metrics,
     heroKeys: heroSetForPosition(player.primary_position),
     catalog: { metrics: METRICS, categories: CATEGORIES },
-  });
+  };
+}
+
+app.get('/api/public/players/:slug', (req, res) => {
+  const player = db.prepare(
+    `SELECT id, ${PUBLIC_PLAYER_COLS} FROM players WHERE slug = ? AND is_public = 1`
+  ).get(req.params.slug);
+  if (!player) return res.status(404).json({ error: 'Player not found' });
+  res.json(buildProfilePayload(player));
 });
 
 // ── Pro Day card ─────────────────────────────────────────────────────────
@@ -292,17 +365,12 @@ app.get('/api/public/players/:slug', (req, res) => {
 
 const METRIC_BY_KEY = new Map(METRICS.map(m => [m.key, m]));
 
-app.get('/api/public/players/:slug/card', (req, res) => {
-  const player = db.prepare(
-    `SELECT id, ${PUBLIC_PLAYER_COLS} FROM players WHERE slug = ? AND is_public = 1`
-  ).get(req.params.slug);
-  if (!player) return res.status(404).json({ error: 'Player not found' });
-
+function buildCardPayload(player) {
   const proDay = db.prepare(
     `SELECT * FROM games WHERE player_id = ? AND game_type = 'pro_day'
      ORDER BY game_date DESC, id DESC LIMIT 1`
   ).get(player.id);
-  if (!proDay) return res.status(404).json({ error: 'No Pro Day event logged for this player' });
+  if (!proDay) return null;
 
   const ownStats = {};
   for (const row of db.prepare('SELECT metric_key, value FROM stat_entries WHERE game_id = ?').all(proDay.id)) {
@@ -371,7 +439,7 @@ app.get('/api/public/players/:slug/card', (req, res) => {
   const initials = (proDay.opponent || 'Pro Day').split(/\s+/).map(w => w[0]).join('').toUpperCase().slice(0, 3) || 'PD';
   const { id: _id, ...publicPlayer } = player;
 
-  res.json({
+  return {
     player: publicPlayer,
     positionGroup: positionGroup(player.primary_position),
     cardId: `DM-${initials}-${String(player.id).padStart(3, '0')}`,
@@ -383,7 +451,108 @@ app.get('/api/public/players/:slug/card', (req, res) => {
     chips,
     results,
     rankings,
+  };
+}
+
+app.get('/api/public/players/:slug/card', (req, res) => {
+  const player = db.prepare(
+    `SELECT id, ${PUBLIC_PLAYER_COLS} FROM players WHERE slug = ? AND is_public = 1`
+  ).get(req.params.slug);
+  if (!player) return res.status(404).json({ error: 'Player not found' });
+  const payload = buildCardPayload(player);
+  if (!payload) return res.status(404).json({ error: 'No Pro Day event logged for this player' });
+  res.json(payload);
+});
+
+// ── Invites & player portal ──────────────────────────────────────────────
+// Admin generates a per-player invite link; the recipient claims it with an
+// email + password, then signs in to see their own profile in isolation
+// (their portal works even when the public profile is disabled).
+
+app.post('/api/players/:id/invite', requireAdmin, (req, res) => {
+  const player = db.prepare('SELECT id FROM players WHERE id = ?').get(req.params.id);
+  if (!player) return res.status(404).json({ error: 'Player not found' });
+
+  const account = db.prepare('SELECT email FROM player_users WHERE player_id = ?').get(player.id);
+  if (account) return res.status(409).json({ error: `Account already claimed by ${account.email}` });
+
+  db.prepare('DELETE FROM invites WHERE player_id = ?').run(player.id);
+  const token = randomBytes(16).toString('hex');
+  db.prepare(
+    `INSERT INTO invites (token, player_id, expires_at) VALUES (?, ?, datetime('now', '+30 days'))`
+  ).run(token, player.id);
+  const invite = db.prepare('SELECT token, expires_at, claimed_at FROM invites WHERE player_id = ?').get(player.id);
+  res.status(201).json({ invite });
+});
+
+app.get('/api/players/:id/invite', requireAdmin, (req, res) => {
+  const player = db.prepare('SELECT id FROM players WHERE id = ?').get(req.params.id);
+  if (!player) return res.status(404).json({ error: 'Player not found' });
+  const invite = db.prepare(
+    `SELECT token, expires_at, claimed_at FROM invites WHERE player_id = ? AND expires_at > datetime('now')`
+  ).get(player.id) || null;
+  const account = db.prepare('SELECT email, created_at FROM player_users WHERE player_id = ?').get(player.id) || null;
+  res.json({ invite, account });
+});
+
+// Public: the claim page looks the invite up before showing the form.
+app.get('/api/invites/:token', (req, res) => {
+  const invite = db.prepare(
+    `SELECT i.token, i.expires_at, i.claimed_at, p.first_name, p.last_name
+     FROM invites i JOIN players p ON p.id = i.player_id WHERE i.token = ?`
+  ).get(req.params.token);
+  if (!invite) return res.status(404).json({ error: 'Invite not found' });
+  res.json({
+    player: { first_name: invite.first_name, last_name: invite.last_name },
+    claimed: !!invite.claimed_at,
+    expired: db.prepare(`SELECT 1 FROM invites WHERE token = ? AND expires_at <= datetime('now')`).get(req.params.token) != null,
   });
+});
+
+app.post('/api/invites/:token/claim', (req, res) => {
+  const invite = db.prepare(
+    `SELECT * FROM invites WHERE token = ? AND expires_at > datetime('now')`
+  ).get(req.params.token);
+  if (!invite) return res.status(404).json({ error: 'This invite link is invalid or has expired' });
+  if (invite.claimed_at) return res.status(409).json({ error: 'This invite has already been claimed' });
+
+  const email = String((req.body || {}).email || '').toLowerCase().trim();
+  const password = String((req.body || {}).password || '');
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return res.status(400).json({ error: 'A valid email is required' });
+  if (password.length < 8) return res.status(400).json({ error: 'Password must be at least 8 characters' });
+  if (db.prepare('SELECT 1 FROM player_users WHERE email = ?').get(email) || db.prepare('SELECT 1 FROM admins WHERE email = ?').get(email)) {
+    return res.status(409).json({ error: 'An account with this email already exists' });
+  }
+
+  const info = db.prepare(
+    'INSERT INTO player_users (player_id, email, password_hash) VALUES (?, ?, ?)'
+  ).run(invite.player_id, email, hashPassword(password));
+  db.prepare(`UPDATE invites SET claimed_at = datetime('now') WHERE token = ?`).run(invite.token);
+
+  const player = db.prepare('SELECT first_name, last_name, slug FROM players WHERE id = ?').get(invite.player_id);
+  const token = createPlayerSession(info.lastInsertRowid);
+  res.status(201).json({
+    token,
+    admin: { email, name: `${player.first_name} ${player.last_name}`, role: 'player', slug: player.slug },
+  });
+});
+
+// Portal: the claimed account's own data, visibility-independent.
+// Re-select clean columns — req.player carries session-join fields that must
+// not spread into the payload.
+function portalPlayer(req) {
+  return db.prepare(`SELECT id, ${PUBLIC_PLAYER_COLS} FROM players WHERE id = ?`).get(req.player.id);
+}
+
+app.get('/api/portal/profile', requirePlayer, (req, res) => {
+  const payload = buildProfilePayload(portalPlayer(req));
+  res.json({ ...payload, is_public: !!req.player.is_public });
+});
+
+app.get('/api/portal/card', requirePlayer, (req, res) => {
+  const payload = buildCardPayload(portalPlayer(req));
+  if (!payload) return res.status(404).json({ error: 'No Pro Day event logged for this player' });
+  res.json(payload);
 });
 
 app.listen(PORT, () => {

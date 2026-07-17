@@ -242,6 +242,9 @@ export default function AdminPlayerEditorPage() {
         </SectionCard>
       </form>
 
+      {/* ── Player account invite ── */}
+      <InvitePanel playerId={playerId} onError={setError} />
+
       {/* ── Games & stats ── */}
       <SectionCard
         title="Games & Stats"
@@ -294,6 +297,64 @@ export default function AdminPlayerEditorPage() {
         )}
       </SectionCard>
     </div>
+  );
+}
+
+// Invite panel: generate a claim link for the player/parent, or show who
+// has already claimed the account.
+function InvitePanel({ playerId, onError }) {
+  const [state, setState] = useState(null); // { invite, account }
+  const [copied, setCopied] = useState(false);
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    api.getInvite(playerId).then(setState).catch(err => onError(err.message));
+  }, [playerId, onError]);
+
+  async function generate() {
+    setBusy(true);
+    try {
+      const { invite } = await api.createInvite(playerId);
+      setState(s => ({ ...s, invite }));
+    } catch (err) {
+      onError(err.message);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function copy() {
+    await navigator.clipboard.writeText(`${window.location.origin}/claim/${state.invite.token}`);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }
+
+  if (!state) return null;
+
+  return (
+    <SectionCard
+      title="Player Account"
+      subtitle="Send an invite link so the player or parent can claim their account and sign in to see their own profile."
+    >
+      {state.account ? (
+        <p className="text-sm" style={{ color: '#4ade80' }}>
+          ✓ Claimed by <b>{state.account.email}</b> — they can sign in at /login.
+        </p>
+      ) : state.invite ? (
+        <div className="flex flex-wrap items-center gap-3">
+          <code className="text-xs px-3 py-2 rounded-lg" style={{ backgroundColor: 'rgba(30,41,59,0.95)', color: '#7dd3fc' }}>
+            {window.location.origin}/claim/{state.invite.token}
+          </code>
+          <PrimaryButton type="button" onClick={copy}>{copied ? 'Copied ✓' : 'Copy invite link'}</PrimaryButton>
+          <GhostButton type="button" disabled={busy} onClick={generate}>Regenerate</GhostButton>
+          <span className="text-xs" style={{ color: '#64748b' }}>Expires {state.invite.expires_at.slice(0, 10)}</span>
+        </div>
+      ) : (
+        <PrimaryButton type="button" disabled={busy} onClick={generate}>
+          {busy ? 'Generating…' : 'Generate invite link'}
+        </PrimaryButton>
+      )}
+    </SectionCard>
   );
 }
 

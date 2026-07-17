@@ -82,6 +82,32 @@ db.exec(`
     UNIQUE (game_id, metric_key)
   );
   CREATE INDEX IF NOT EXISTS idx_stats_metric ON stat_entries(metric_key);
+
+  -- Player/parent account claiming: admin generates an invite link per player;
+  -- the recipient claims it with an email + password and can then sign in to
+  -- see that player's data in isolation.
+  CREATE TABLE IF NOT EXISTS invites (
+    token      TEXT PRIMARY KEY,
+    player_id  INTEGER NOT NULL UNIQUE REFERENCES players(id) ON DELETE CASCADE,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    expires_at TEXT NOT NULL,
+    claimed_at TEXT
+  );
+
+  CREATE TABLE IF NOT EXISTS player_users (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    player_id     INTEGER NOT NULL UNIQUE REFERENCES players(id) ON DELETE CASCADE,
+    email         TEXT NOT NULL UNIQUE,
+    password_hash TEXT NOT NULL,
+    created_at    TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+
+  CREATE TABLE IF NOT EXISTS player_sessions (
+    token          TEXT PRIMARY KEY,
+    player_user_id INTEGER NOT NULL REFERENCES player_users(id) ON DELETE CASCADE,
+    created_at     TEXT NOT NULL DEFAULT (datetime('now')),
+    expires_at     TEXT NOT NULL
+  );
 `);
 
 // ── Password hashing (scrypt, no native deps beyond node:crypto) ────────

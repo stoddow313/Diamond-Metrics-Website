@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
+import { useAuth } from '../context/AuthContext';
 import {
   Rocket, Zap, Flame, Target, Gauge, Timer, Activity, Dumbbell, Wind,
   Crosshair, Shield, TrendingUp, FileText, Share2, Mail, Bell,
@@ -666,8 +667,10 @@ function PlayerCard({ player }) {
 
 /* ── Page ────────────────────────────────────────────────────────────────── */
 
-export default function PublicProfilePage() {
+export default function PublicProfilePage({ portal = false }) {
   const { slug } = useParams();
+  const { logout } = useAuth();
+  const navigate = useNavigate();
   const [data, setData] = useState(null);
   const [error, setError] = useState('');
   const [copied, setCopied] = useState(false);
@@ -680,17 +683,22 @@ export default function PublicProfilePage() {
   });
 
   useEffect(() => {
-    api.publicProfile(slug)
+    (portal ? api.portalProfile() : api.publicProfile(slug))
       .then(setData)
       .catch(err => setError(err.status === 404 ? 'Player profile not found.' : err.message));
     // Card is optional — 404 just means no Pro Day event is logged yet.
-    api.proDayCard(slug)
+    (portal ? api.portalCard() : api.proDayCard(slug))
       .then(cardData => {
         setCard(cardData);
         if (window.location.hash === '#card') setCardOpen(true);
       })
       .catch(() => setCard(null));
-  }, [slug]);
+  }, [slug, portal]);
+
+  async function handleSignOut() {
+    await logout();
+    navigate('/login');
+  }
 
   function openCard(autoDownload = false) {
     setCardAutoDownload(autoDownload);
@@ -716,7 +724,8 @@ export default function PublicProfilePage() {
 
   async function copyLink() {
     try {
-      await navigator.clipboard.writeText(window.location.origin + window.location.pathname);
+      // Always share the public /p/ link — in the portal the current path is /me.
+      await navigator.clipboard.writeText(`${window.location.origin}/p/${data.player.slug}`);
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     } catch { /* clipboard unavailable */ }
@@ -746,12 +755,27 @@ export default function PublicProfilePage() {
       <header className="border-b border-slate-200 bg-white">
         <div className="max-w-[1400px] mx-auto px-4 md:px-6 py-3 flex items-center justify-between gap-3">
           <Link to="/" className="min-w-0"><BrandMark dark /></Link>
-          <button
-            onClick={copyLink}
-            className="flex items-center gap-2 text-xs font-bold px-3.5 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 cursor-pointer whitespace-nowrap shrink-0"
-          >
-            <Share2 size={13} /> {copied ? 'Link copied ✓' : 'Share profile'}
-          </button>
+          <div className="flex items-center gap-2 shrink-0">
+            {portal && (
+              <span className="hidden sm:inline text-xs font-bold text-slate-400 uppercase tracking-wider mr-1">My Profile</span>
+            )}
+            {(!portal || data.is_public) && (
+              <button
+                onClick={copyLink}
+                className="flex items-center gap-2 text-xs font-bold px-3.5 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 cursor-pointer whitespace-nowrap"
+              >
+                <Share2 size={13} /> {copied ? 'Link copied ✓' : 'Share profile'}
+              </button>
+            )}
+            {portal && (
+              <button
+                onClick={handleSignOut}
+                className="text-xs font-bold px-3.5 py-2 rounded-lg border border-slate-300 text-slate-600 hover:bg-slate-50 cursor-pointer whitespace-nowrap"
+              >
+                Sign out
+              </button>
+            )}
+          </div>
         </div>
       </header>
 
@@ -825,7 +849,7 @@ export default function PublicProfilePage() {
       </main>
 
       {cardOpen && card && (
-        <ProDayCardModal data={card} onClose={closeCard} autoDownload={cardAutoDownload} />
+        <ProDayCardModal data={card} onClose={closeCard} autoShare={cardAutoDownload} />
       )}
     </div>
   );
