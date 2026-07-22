@@ -9,6 +9,11 @@ const DB_PATH = process.env.DM_DB_PATH || path.join(__dirname, 'data', 'diamond-
 import fs from 'node:fs';
 fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
 
+// Player photo uploads live next to the database, so in production they sit
+// on the same persistent disk and survive deploys.
+export const UPLOADS_DIR = process.env.DM_UPLOADS_DIR || path.join(path.dirname(DB_PATH), 'uploads');
+fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+
 export const db = new Database(DB_PATH);
 db.pragma('journal_mode = WAL');
 db.pragma('foreign_keys = ON');

@@ -1,6 +1,8 @@
 import express from 'express';
 import { randomBytes } from 'node:crypto';
-import { db, hashPassword, verifyPassword, newSlug } from './db.js';
+import fs from 'node:fs';
+import path from 'node:path';
+import { db, hashPassword, verifyPassword, newSlug, UPLOADS_DIR } from './db.js';
 import {
   METRICS, CATEGORIES, ATTRIBUTES, GAME_TYPES,
   VALID_METRIC_KEYS, heroSetForPosition, positionGroup,
@@ -11,7 +13,11 @@ const app = express();
 const PORT = process.env.PORT || process.env.DM_API_PORT || 3001;
 const SESSION_TTL_DAYS = 30;
 
-app.use(express.json());
+// Limit sized for base64 photo uploads (clients downscale before sending).
+app.use(express.json({ limit: '8mb' }));
+
+// Player photos uploaded through the portal.
+app.use('/api/uploads', express.static(UPLOADS_DIR, { maxAge: '7d', immutable: true }));
 
 app.get('/api/health', (_req, res) => res.json({ ok: true }));
 
@@ -553,6 +559,66 @@ app.get('/api/portal/card', requirePlayer, (req, res) => {
   const payload = buildCardPayload(portalPlayer(req));
   if (!payload) return res.status(404).json({ error: 'No Pro Day event logged for this player' });
   res.json(payload);
+});
+
+// Players own their demographics; measurements, ratings, and projections
+// stay admin-only (they're scouting output, not identity).
+const PLAYER_EDITABLE_FIELDS = [
+  'first_name', 'last_name', 'school', 'city', 'state', 'grad_year',
+  'primary_position', 'secondary_position', 'height', 'weight_lbs',
+  'bats', 'throws', 'committed_to',
+];
+
+app.put('/api/portal/profile', requirePlayer, (req, res) => {
+  const data = {};
+  for (const f of PLAYER_EDITABLE_FIELDS) {
+    if (f in (req.body || {})) data[f] = req.body[f] === '' ? null : req.body[f];
+  }
+  if (!data.first_name || !data.last_name) {
+    if ('first_name' in data || 'last_name' in data) {
+      return res.status(400).json({ error: 'First and last name cannot be empty' });
+    }
+  }
+  if (Object.keys(data).length === 0) return res.status(400).json({ error: 'No editable fields provided' });
+
+  const sets = Object.keys(data).map(c => `${c} = @${c}`).join(', ');
+  db.prepare(`UPDATE players SET ${sets}, updated_at = datetime('now') WHERE id = @id`)
+    .run({ ...data, id: req.player.id });
+  res.json({ ...buildProfilePayload(portalPlayer(req)), is_public: !!req.player.is_public });
+});
+
+const PHOTO_TYPES = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp' };
+
+app.post('/api/portal/photo', requirePlayer, (req, res) => {
+  const image = String((req.body || {}).image || '');
+  const match = image.match(/^data:(image\/(?:jpeg|png|webp));base64,(.+)$/);
+  if (!match) return res.status(400).json({ error: 'Send a JPEG, PNG, or WebP image' });
+
+  const buffer = Buffer.from(match[2], 'base64');
+  if (buffer.length > 5 * 1024 * 1024) return res.status(413).json({ error: 'Image too large (5 MB max)' });
+
+  const filename = `player-${req.player.id}-${randomBytes(6).toString('hex')}.${PHOTO_TYPES[match[1]]}`;
+  fs.writeFileSync(path.join(UPLOADS_DIR, filename), buffer);
+
+  // Clean up the previous upload if it was one of ours.
+  const old = db.prepare('SELECT photo_url FROM players WHERE id = ?').get(req.player.id)?.photo_url || '';
+  if (old.startsWith('/api/uploads/')) {
+    const oldPath = path.join(UPLOADS_DIR, path.basename(old));
+    fs.rm(oldPath, { force: true }, () => {});
+  }
+
+  const photoUrl = `/api/uploads/${filename}`;
+  db.prepare(`UPDATE players SET photo_url = ?, updated_at = datetime('now') WHERE id = ?`).run(photoUrl, req.player.id);
+  res.status(201).json({ photo_url: photoUrl });
+});
+
+app.delete('/api/portal/photo', requirePlayer, (req, res) => {
+  const old = db.prepare('SELECT photo_url FROM players WHERE id = ?').get(req.player.id)?.photo_url || '';
+  if (old.startsWith('/api/uploads/')) {
+    fs.rm(path.join(UPLOADS_DIR, path.basename(old)), { force: true }, () => {});
+  }
+  db.prepare(`UPDATE players SET photo_url = '', updated_at = datetime('now') WHERE id = ?`).run(req.player.id);
+  res.json({ ok: true });
 });
 
 app.listen(PORT, () => {
