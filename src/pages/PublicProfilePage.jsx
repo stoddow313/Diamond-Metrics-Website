@@ -10,6 +10,7 @@ import { api } from '../lib/api';
 import BrandMark from '../components/BrandMark';
 import { TrendChart, Histogram, DonutChart, RingGauge, SprayChart } from '../components/profile/charts';
 import ProDayCardModal from '../components/profile/ProDayCard';
+import PortalEditModal from '../components/profile/PortalEditModal';
 
 /* ── Metric presentation config ──────────────────────────────────────────── */
 
@@ -677,6 +678,7 @@ export default function PublicProfilePage({ portal = false }) {
   const [card, setCard] = useState(null); // pro day card payload, when one exists
   const [cardOpen, setCardOpen] = useState(false);
   const [cardAutoDownload, setCardAutoDownload] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
   const [tab, setTab] = useState(() => {
     const h = window.location.hash.replace('#', '');
     return TABS.some(t => t.key === h) ? h : 'overview';
@@ -758,6 +760,14 @@ export default function PublicProfilePage({ portal = false }) {
           <div className="flex items-center gap-2 shrink-0">
             {portal && (
               <span className="hidden sm:inline text-xs font-bold text-slate-400 uppercase tracking-wider mr-1">My Profile</span>
+            )}
+            {portal && (
+              <button
+                onClick={() => setEditOpen(true)}
+                className="text-xs font-bold px-3.5 py-2 rounded-lg border border-blue-600 text-blue-600 hover:bg-blue-50 cursor-pointer whitespace-nowrap"
+              >
+                Edit profile
+              </button>
             )}
             {(!portal || data.is_public) && (
               <button
@@ -850,6 +860,19 @@ export default function PublicProfilePage({ portal = false }) {
 
       {cardOpen && card && (
         <ProDayCardModal data={card} onClose={closeCard} autoShare={cardAutoDownload} />
+      )}
+
+      {editOpen && portal && (
+        <PortalEditModal
+          player={player}
+          onClose={() => setEditOpen(false)}
+          onSaved={payload => {
+            setData(payload);
+            setEditOpen(false);
+            // Position or name changes can alter the card too — refresh it.
+            api.portalCard().then(setCard).catch(() => setCard(null));
+          }}
+        />
       )}
     </div>
   );

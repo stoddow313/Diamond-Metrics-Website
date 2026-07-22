@@ -67,4 +67,7 @@ export const api = {
   claimInvite: (token, email, password) => request(`/api/invites/${token}/claim`, { method: 'POST', body: { email, password }, auth: false }),
   portalProfile: () => request('/api/portal/profile'),
   portalCard: () => request('/api/portal/card'),
+  updatePortalProfile: (fields) => request('/api/portal/profile', { method: 'PUT', body: fields }),
+  uploadPortalPhoto: (image) => request('/api/portal/photo', { method: 'POST', body: { image } }),
+  deletePortalPhoto: () => request('/api/portal/photo', { method: 'DELETE' }),
 };
