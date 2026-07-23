@@ -1076,6 +1076,106 @@ section h2 {
   line-height: 1.5;
   color: #cbd5e1;
 }
+
+.metrics-section {
+  padding: 48px 0;
+}
+
+.metrics-section-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1.05fr) minmax(320px, 0.75fr);
+  gap: 48px;
+  align-items: end;
+  margin-bottom: 32px;
+}
+
+.metrics-section-header h2 {
+  max-width: 680px;
+  margin: 0;
+  font-size: clamp(36px, 4.5vw, 56px);
+  line-height: 1.04;
+  letter-spacing: -0.04em;
+}
+
+.metrics-section-header .section-text {
+  margin: 0;
+}
+
+.metric-groups {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.metric-group {
+  grid-column: span 4;
+  min-width: 0;
+  padding: 24px;
+  border: 1px solid #1e3a5f;
+  border-radius: 18px;
+  background:
+    linear-gradient(155deg, rgba(30, 41, 59, 0.94), rgba(8, 26, 61, 0.88));
+}
+
+.metric-group:nth-child(1),
+.metric-group:nth-child(2) {
+  grid-column: span 6;
+}
+
+.metric-group-heading {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.metric-group-icon {
+  width: 42px;
+  height: 42px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  border: 1px solid rgba(56, 189, 248, 0.34);
+  border-radius: 12px;
+  background: rgba(56, 189, 248, 0.1);
+  color: #7dd3fc;
+}
+
+.metric-group h3 {
+  margin: 0;
+  font-size: 23px;
+  line-height: 1.15;
+}
+
+.metric-group ul {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 9px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.metric-group li {
+  padding: 8px 11px;
+  border: 1px solid rgba(51, 65, 85, 0.92);
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.72);
+  color: #dbeafe;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+.metrics-scope-note {
+  max-width: 760px;
+  margin: 20px 0 0;
+  color: #93c5fd;
+  font-size: 13px;
+  line-height: 1.55;
+}
+
 .process-section {
   padding: clamp(34px, 5vw, 58px);
   border: 1px solid rgba(56, 189, 248, 0.2);
@@ -1337,6 +1437,18 @@ section h2 {
     max-width: 720px;
   }
 
+  .metrics-section-header {
+    grid-template-columns: 1fr;
+    gap: 16px;
+    align-items: start;
+  }
+
+  .metric-group,
+  .metric-group:nth-child(1),
+  .metric-group:nth-child(2) {
+    grid-column: span 6;
+  }
+
   .metrics-dashboard {
     grid-template-columns: 1fr;
   }
@@ -1581,6 +1693,24 @@ section h2 {
 
   .process-cta {
     width: 100%;
+  }
+
+  .metrics-section {
+    padding: 20px 0;
+  }
+
+  .metrics-section-header h2 {
+    font-size: 36px;
+  }
+
+  .metric-groups {
+    grid-template-columns: 1fr;
+  }
+
+  .metric-group,
+  .metric-group:nth-child(1),
+  .metric-group:nth-child(2) {
+    grid-column: span 1;
   }
 
   .velocity-bands {

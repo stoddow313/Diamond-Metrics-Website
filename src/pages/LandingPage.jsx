@@ -37,6 +37,7 @@ export default function LandingPage() {
         <Hero />
         <ProductPreview />
         <Process />
+        <Metrics />
         <UseCases />
         <AccessibleCapture />
         <ProDay />
@@ -45,7 +46,6 @@ export default function LandingPage() {
         <DashboardPreview />
         <VisualInsights />
         <Services />
-        <Metrics />
         <WhoWeServe />
         <Benefits />
         <Credibility />
