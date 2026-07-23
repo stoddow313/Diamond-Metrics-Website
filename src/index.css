@@ -1292,6 +1292,80 @@ section h2 {
   margin-top: auto;
 }
 
+.credibility-section {
+  padding: clamp(36px, 5vw, 58px);
+  border: 1px solid rgba(56, 189, 248, 0.2);
+  border-radius: 24px;
+  background:
+    radial-gradient(circle at 0% 100%, rgba(37, 99, 235, 0.14), transparent 36%),
+    rgba(15, 23, 42, 0.58);
+}
+
+.credibility-header {
+  max-width: 800px;
+  margin-bottom: 32px;
+}
+
+.credibility-header h2 {
+  margin: 0;
+  font-size: clamp(36px, 4.5vw, 54px);
+  line-height: 1.05;
+  letter-spacing: -0.04em;
+}
+
+.credibility-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 18px;
+}
+
+.credibility-proof {
+  min-width: 0;
+  padding: 24px;
+  border: 1px solid rgba(51, 65, 85, 0.9);
+  border-radius: 18px;
+  background: rgba(8, 26, 61, 0.7);
+}
+
+.credibility-proof-icon {
+  width: 42px;
+  height: 42px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin-bottom: 24px;
+  border: 1px solid rgba(56, 189, 248, 0.34);
+  border-radius: 12px;
+  background: rgba(56, 189, 248, 0.1);
+  color: #7dd3fc;
+}
+
+.credibility-proof > strong {
+  display: block;
+  margin-bottom: 8px;
+  color: white;
+  font-size: clamp(28px, 3.4vw, 42px);
+  font-weight: 900;
+  line-height: 1;
+  letter-spacing: -0.035em;
+}
+
+.credibility-proof h3 {
+  margin: 0 0 12px;
+  color: #7dd3fc;
+  font-size: 13px;
+  font-weight: 850;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.credibility-proof p {
+  margin: 0;
+  color: #dbeafe;
+  font-size: 14px;
+  line-height: 1.65;
+}
+
 .process-section {
   padding: clamp(34px, 5vw, 58px);
   border: 1px solid rgba(56, 189, 248, 0.2);
@@ -1843,6 +1917,19 @@ section h2 {
 
   .audience-cta {
     width: 100%;
+  }
+
+  .credibility-section {
+    padding: 28px 20px;
+    border-radius: 20px;
+  }
+
+  .credibility-header h2 {
+    font-size: 36px;
+  }
+
+  .credibility-grid {
+    grid-template-columns: 1fr;
   }
 
   .velocity-bands {
