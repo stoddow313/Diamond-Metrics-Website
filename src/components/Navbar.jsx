@@ -32,7 +32,7 @@ function Navbar() {
             if (event.target.closest('a')) setMenuOpen(false)
           }}
         >
-          <a href="#process">How It Works</a>
+          <a href="#how-it-works">How It Works</a>
           <a href="#metrics">What We Measure</a>
           <a href="#who-we-serve">For Programs</a>
           <a href="#contact">Contact</a>
