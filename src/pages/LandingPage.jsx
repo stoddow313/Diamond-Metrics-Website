@@ -2,6 +2,7 @@ import { useEffect } from "react";
 import { useLocation } from "react-router-dom";
 import Navbar from "../components/Navbar";
 import Hero from "../components/Hero";
+import ProductPreview from "../components/ProductPreview";
 import UseCases from "../components/UseCases";
 import AccessibleCapture from "../components/AccessibleCapture";
 import ProDay from "../components/ProDay";
@@ -34,6 +35,7 @@ export default function LandingPage() {
       <Navbar />
       <main>
         <Hero />
+        <ProductPreview />
         <UseCases />
         <AccessibleCapture />
         <ProDay />
