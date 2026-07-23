@@ -1,24 +1,43 @@
+import { useState } from 'react'
 import { Link } from 'react-router-dom'
+import { Menu, X } from 'lucide-react'
 import BrandMark from './BrandMark'
 
 function Navbar() {
+  const [menuOpen, setMenuOpen] = useState(false)
+
   return (
-    <header className="header">
+    <header className="header marketing-header">
       <div className="nav">
-        <BrandMark />
-        <nav className="nav-links">
-          <a href="#services">Services</a>
-          <a href="#metrics">Metrics</a>
-          <a href="#process">How It Works</a>
+        <Link className="nav-brand" to="/" aria-label="Diamond Metrics home">
+          <BrandMark />
+        </Link>
+
+        <button
+          className="nav-menu-toggle"
+          type="button"
+          aria-label={menuOpen ? 'Close navigation menu' : 'Open navigation menu'}
+          aria-expanded={menuOpen}
+          aria-controls="primary-navigation"
+          onClick={() => setMenuOpen((open) => !open)}
+        >
+          {menuOpen ? <X size={24} aria-hidden="true" /> : <Menu size={24} aria-hidden="true" />}
+        </button>
+
+        <nav
+          id="primary-navigation"
+          className={`nav-links${menuOpen ? ' nav-links--open' : ''}`}
+          aria-label="Primary navigation"
+          onClick={(event) => {
+            if (event.target.closest('a')) setMenuOpen(false)
+          }}
+        >
+          <a href="#how-it-works">How It Works</a>
+          <a href="#metrics">What We Measure</a>
+          <a href="#who-we-serve">For Programs</a>
           <a href="#contact">Contact</a>
-          <Link to="/login" style={{ color: '#38bdf8', fontWeight: 700 }}>Sign In</Link>
-          <Link
-            to="/signup"
-            style={{
-              backgroundColor: '#38bdf8', color: '#0f172a', fontWeight: 700,
-              padding: '8px 16px', borderRadius: 10,
-            }}
-          >
+          <Link className="nav-sign-in" to="/login">Sign In</Link>
+          <Link className="nav-sign-up" to="/signup">
             Sign Up
           </Link>
         </nav>

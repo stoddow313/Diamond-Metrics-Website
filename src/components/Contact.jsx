@@ -5,9 +5,9 @@ function Contact() {
 
   if (state.succeeded) {
     return (
-      <section id="contact">
+      <section id="contact" className="contact-section" aria-labelledby="contact-success-title">
         <p className="eyebrow">Message Sent</p>
-        <h2>Thanks for reaching out.</h2>
+        <h2 id="contact-success-title">Thanks for reaching out.</h2>
         <p className="section-text">
           We received your message and will follow up shortly.
         </p>
@@ -16,27 +16,33 @@ function Contact() {
   }
 
   return (
-    <section id="contact">
-      <p className="eyebrow">Get In Touch</p>
-      <h2>Let’s talk about your program.</h2>
+    <section id="contact" className="contact-section" aria-labelledby="contact-title">
+      <p className="eyebrow">Let’s Get Started</p>
+      <h2 id="contact-title">Ready to see what your performance can say?</h2>
       <p className="section-text">
-        Interested in bringing baseball analytics to your school or team? Send
-        us a message and we’ll follow up with more information.
+        Tell us whether you’re a player, parent, coach, or program, and we’ll
+        help identify the right next step.
       </p>
 
       <div className="contact-layout">
         <div className="contact-card">
-          <h3>Contact Information</h3>
+          <h3>Start the Conversation</h3>
           <p>
-            Reach out directly if you would like to discuss tryouts, player
-            development, in-season reporting, or broader analytics support.
+            Reach out about player profiles, Pro Days, tryout evaluations,
+            season-long packages, or other analytics support.
           </p>
 
           <div className="contact-details">
             <p>
-              <strong>Email:</strong>{" "}
-              <a href="mailto:william@diamondmetrics.ai">
-                william@diamondmetrics.ai
+              <strong>General inquiries:</strong>{" "}
+              <a href="mailto:info@diamondmetrics.ai">
+                info@diamondmetrics.ai
+              </a>
+            </p>
+            <p>
+              <strong>Player and account support:</strong>{" "}
+              <a href="mailto:support@diamondmetrics.ai">
+                support@diamondmetrics.ai
               </a>
             </p>
             <p>
@@ -68,12 +74,12 @@ function Contact() {
           </div>
 
           <div className="form-row">
-            <label htmlFor="organization">School / Organization</label>
+            <label htmlFor="organization">School / Team</label>
             <input
               id="organization"
               name="organization"
               type="text"
-              placeholder="School or organization name"
+              placeholder="School or team name"
             />
           </div>
 
@@ -99,10 +105,10 @@ function Contact() {
               <option value="" disabled>
                 Select your role
               </option>
-              <option>Coach</option>
-              <option>Athletic Director</option>
               <option>Parent</option>
               <option>Player</option>
+              <option>Coach</option>
+              <option>Athletic Director</option>
               <option>Other</option>
             </select>
           </div>
@@ -113,7 +119,7 @@ function Contact() {
               id="message"
               name="message"
               rows="5"
-              placeholder="Tell us a little about your program and what you're looking for."
+              placeholder="Tell us what type of evaluation, event, player profile, or season support you're interested in."
               required
             ></textarea>
             <ValidationError
@@ -127,8 +133,8 @@ function Contact() {
             <p className="form-note">
               Something went wrong. Please try again or email
               {" "}
-              <a href="mailto:william@diamondmetrics.ai">
-                william@diamondmetrics.ai
+              <a href="mailto:info@diamondmetrics.ai">
+                info@diamondmetrics.ai
               </a>.
             </p>
           )}
@@ -138,7 +144,7 @@ function Contact() {
             className="primary-button form-button"
             disabled={state.submitting}
           >
-            {state.submitting ? "Sending..." : "Send Inquiry"}
+            {state.submitting ? "Sending..." : "Get Started"}
           </button>
         </form>
       </div>

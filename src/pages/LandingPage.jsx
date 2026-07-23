@@ -2,18 +2,10 @@ import { useEffect } from "react";
 import { useLocation } from "react-router-dom";
 import Navbar from "../components/Navbar";
 import Hero from "../components/Hero";
-import UseCases from "../components/UseCases";
-import AccessibleCapture from "../components/AccessibleCapture";
-import ProDay from "../components/ProDay";
-import ProgramOptions from "../components/ProgramOptions";
-import MetricsPreview from "../components/MetricsPreview";
-import DashboardPreview from "../components/DashboardPreview";
-import VisualInsights from "../components/VisualInsights";
-import Services from "../components/Services";
+import ProductPreview from "../components/ProductPreview";
 import Metrics from "../components/Metrics";
 import Process from "../components/Process";
 import WhoWeServe from "../components/WhoWeServe";
-import Benefits from "../components/Benefits";
 import Credibility from "../components/Credibility";
 import Contact from "../components/Contact";
 import Footer from "../components/Footer";
@@ -30,22 +22,14 @@ export default function LandingPage() {
   }, [hash]);
 
   return (
-    <div className="container">
+    <div className="container marketing-page">
       <Navbar />
       <main>
         <Hero />
-        <UseCases />
-        <AccessibleCapture />
-        <ProDay />
-        <ProgramOptions />
-        <MetricsPreview />
-        <DashboardPreview />
-        <VisualInsights />
-        <Services />
-        <Metrics />
+        <ProductPreview />
         <Process />
+        <Metrics />
         <WhoWeServe />
-        <Benefits />
         <Credibility />
         <Contact />
       </main>

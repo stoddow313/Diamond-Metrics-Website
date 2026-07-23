@@ -1,44 +1,59 @@
+import { BarChart3, Share2, Video } from 'lucide-react';
+import { createElement } from 'react';
+import { Link } from 'react-router-dom';
+
+const steps = [
+  {
+    number: '01',
+    icon: Video,
+    title: 'Capture the Performance',
+    description:
+      'Attend a Diamond Metrics event or submit qualifying footage of your player.',
+  },
+  {
+    number: '02',
+    icon: BarChart3,
+    title: 'We Analyze the Film',
+    description:
+      'We evaluate the performance and translate it into meaningful baseball metrics.',
+  },
+  {
+    number: '03',
+    icon: Share2,
+    title: 'See and Share the Results',
+    description:
+      'Receive a clear player profile highlighting strengths, development opportunities, and progress.',
+  },
+];
+
 function Process() {
   return (
-    <section id="process">
+    <section id="how-it-works" className="process-section" aria-labelledby="process-title">
       <p className="eyebrow">How It Works</p>
-      <h2>A simple workflow for coaches and programs.</h2>
+      <h2 id="process-title">From baseball footage to player insight.</h2>
       <p className="section-text">
-        Diamond Metrics is designed to fit real evaluation and development workflows,
-        from capture to reporting.
+        A straightforward process designed to make advanced performance
+        information understandable, useful, and easy to share.
       </p>
 
       <div className="process-flow">
-        <div className="process-step">
-          <div className="process-number">1</div>
-          <h3>Capture</h3>
-          <p>Record tryouts, evaluations, or performance sessions.</p>
-        </div>
-
-        <div className="process-arrow">→</div>
-
-        <div className="process-step">
-          <div className="process-number">2</div>
-          <h3>Tag</h3>
-          <p>Organize key events and measurable outputs into a structured workflow.</p>
-        </div>
-
-        <div className="process-arrow">→</div>
-
-        <div className="process-step">
-          <div className="process-number">3</div>
-          <h3>Analyze</h3>
-          <p>Turn raw data into reports, rankings, and evaluation insights.</p>
-        </div>
-
-        <div className="process-arrow">→</div>
-
-        <div className="process-step">
-          <div className="process-number">4</div>
-          <h3>Report</h3>
-          <p>Deliver coach-friendly summaries for decisions and development.</p>
-        </div>
+        {steps.map(({ number, icon: Icon, title, description }) => (
+          <article className="process-step" key={number}>
+            <div className="process-step-top">
+              <div className="process-icon" aria-hidden="true">
+                {createElement(Icon, { size: 24 })}
+              </div>
+              <span className="process-number">{number}</span>
+            </div>
+            <h3>{title}</h3>
+            <p>{description}</p>
+          </article>
+        ))}
       </div>
+
+      <Link className="secondary-button process-cta" to="/p/joe-larsen">
+        Explore a Sample Player Profile
+      </Link>
     </section>
   );
 }

@@ -1,40 +1,52 @@
+import { Link } from 'react-router-dom';
+
 function Hero() {
   return (
-    <section className="hero">
-      <p className="eyebrow">Baseball Analytics for High School Programs</p>
+    <section className="hero" aria-labelledby="hero-title">
+      <div className="hero-copy">
+        <p className="eyebrow">Baseball Performance, Made Visible</p>
 
-      <h1>Bring MLB-informed baseball analytics to your high school program.</h1>
+        <h1 id="hero-title">Built to Be Seen</h1>
 
+        <p className="hero-subheading">
+          Professional-level baseball insights for developing players.
+        </p>
 
-      <p className="hero-text">
-        Diamond Metrics helps coaches and athletic departments turn video and
-        performance data into actionable insights for evaluation, development,
-        and recruiting support.
-      </p>
+        <p className="hero-text">
+          Diamond Metrics turns baseball footage into measurable player
+          data—helping athletes understand their strengths, track their
+          progress, and showcase their performance.
+        </p>
 
-      <p className="hero-proof">
-        Already used in a Utah 6A high school tryout setting and built with
-        MLB-informed evaluation experience.
-      </p>
+        <p className="hero-proof">
+          See their strengths. Track their progress. Show their growth.
+        </p>
 
-      <div className="hero-buttons">
-        <a className="primary-button" href="#contact">
-          Request Program Info
-        </a>
+        <div className="hero-buttons">
+          <Link className="primary-button" to="/p/joe-larsen">
+            View a Sample Player Profile
+          </Link>
 
-        <a className="secondary-button" href="/p/joe-larsen" target="_blank" rel="noreferrer">
-          See a Sample Player Profile
-        </a>
-
-        <a className="secondary-button" href="#services">
-          View Services
-        </a>
+          <a className="secondary-button" href="#contact">
+            Get Started
+          </a>
+        </div>
       </div>
 
-      <div className="hero-badges">
-        <span className="hero-badge">Video Capture</span>
-        <span className="hero-badge">Tagging Workflows</span>
-        <span className="hero-badge">Coach-Friendly Reports</span>
+      <div className="hero-visual">
+        <picture>
+          <source
+            media="(max-width: 700px)"
+            srcSet="/images/marketing/hero-demo-mobile.webp"
+          />
+          <img
+            src="/images/marketing/hero-demo-desktop.webp"
+            alt="Demo Diamond Metrics player profile showing hard-hit rate, sprint speed, exit velocity, and an overall rating"
+            width="1959"
+            height="803"
+            fetchPriority="high"
+          />
+        </picture>
       </div>
     </section>
   );
