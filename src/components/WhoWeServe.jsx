@@ -45,12 +45,14 @@ function WhoWeServe() {
           <h3>Evaluate more clearly. Develop more intentionally.</h3>
           <p>
             Add organized performance data to the evaluation and development
-            workflows your staff already uses.
+            workflows your staff already uses—from one-day evaluations to
+            season-long team support.
           </p>
           <ul>
             <li>Run structured Pro Days and tryout evaluations</li>
             <li>Establish preseason and player-development benchmarks</li>
-            <li>Receive coach-friendly team and player reporting</li>
+            <li>Track team and player performance throughout the season</li>
+            <li>Receive coach-friendly reports and development summaries</li>
           </ul>
           <a className="secondary-button audience-cta" href="#contact">
             Discuss Your Program
