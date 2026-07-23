@@ -30,7 +30,7 @@ export default function LandingPage() {
   }, [hash]);
 
   return (
-    <div className="container">
+    <div className="container marketing-page">
       <Navbar />
       <main>
         <Hero />
