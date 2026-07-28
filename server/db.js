@@ -113,7 +113,58 @@ db.exec(`
     created_at     TEXT NOT NULL DEFAULT (datetime('now')),
     expires_at     TEXT NOT NULL
   );
+
+  -- Shared events: rating-engine comparisons link participants by event id,
+  -- never by matching event-name text (requirements §8).
+  CREATE TABLE IF NOT EXISTS events (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    name       TEXT NOT NULL,
+    event_date TEXT NOT NULL,
+    location   TEXT DEFAULT '',
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE (name, event_date)
+  );
+
+  -- Calculated-rating snapshots: raw measurements stay in stat_entries;
+  -- derived ratings live here with full provenance (requirements §10).
+  CREATE TABLE IF NOT EXISTS player_ratings (
+    player_id           INTEGER PRIMARY KEY REFERENCES players(id) ON DELETE CASCADE,
+    game_id             INTEGER,
+    benchmark_group     TEXT,
+    benchmark_source    TEXT,
+    benchmark_version   TEXT,
+    calculation_version TEXT,
+    calculated_at       TEXT,
+    payload             TEXT NOT NULL
+  );
 `);
+
+// Additive column migrations (SQLite has no ADD COLUMN IF NOT EXISTS).
+function addColumnIfMissing(table, column, ddl) {
+  const cols = db.prepare(`PRAGMA table_info(${table})`).all().map(c => c.name);
+  if (!cols.includes(column)) db.exec(`ALTER TABLE ${table} ADD COLUMN ${ddl}`);
+}
+addColumnIfMissing('players', 'date_of_birth', 'date_of_birth TEXT');
+addColumnIfMissing('games', 'event_id', 'event_id INTEGER REFERENCES events(id)');
+
+// One-time backfill: link existing pro_day games to shared events using the
+// legacy (date, name) grouping, so historical data joins the id-based model.
+{
+  const orphans = db.prepare(
+    `SELECT id, game_date, TRIM(opponent) AS name, location FROM games
+     WHERE game_type = 'pro_day' AND event_id IS NULL`
+  ).all();
+  const findEvent = db.prepare('SELECT id FROM events WHERE LOWER(name) = LOWER(?) AND event_date = ?');
+  const makeEvent = db.prepare('INSERT INTO events (name, event_date, location) VALUES (?, ?, ?)');
+  const linkGame = db.prepare('UPDATE games SET event_id = ? WHERE id = ?');
+  for (const g of orphans) {
+    const name = g.name || 'Pro Day';
+    const existing = findEvent.get(name, g.game_date);
+    const eventId = existing ? existing.id : makeEvent.run(name, g.game_date, g.location || '').lastInsertRowid;
+    linkGame.run(eventId, g.id);
+  }
+  if (orphans.length) console.log(`[db] Linked ${orphans.length} pro day game(s) to shared events`);
+}
 
 // ── Password hashing (scrypt, no native deps beyond node:crypto) ────────
 export function hashPassword(password) {

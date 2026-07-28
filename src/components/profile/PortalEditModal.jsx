@@ -12,6 +12,7 @@ const FIELD_DEFS = [
   { key: 'last_name', label: 'Last name', required: true },
   { key: 'school', label: 'High school' },
   { key: 'grad_year', label: 'Grad class', type: 'number', placeholder: '2027' },
+  { key: 'date_of_birth', label: 'Date of birth', type: 'date' },
   { key: 'city', label: 'City' },
   { key: 'state', label: 'State' },
   { key: 'height', label: 'Height', placeholder: `6'2"` },

@@ -134,8 +134,27 @@ function MiniRing({ label, value }) {
 
 const ATTRS = ['power', 'contact', 'speed', 'arm', 'defense', 'athleticism'];
 
+const TIER_COLORS = {
+  Diamond: '#7dd3fc', Gold: '#fbbf24', Silver: '#cbd5e1', Bronze: '#e8965a', Development: '#94a3b8',
+};
+
+const SKILL_LABELS = {
+  power: 'Power', contact: 'Contact', speed: 'Speed', arm: 'Arm',
+  defense: 'Defense', athleticism: 'Athleticism',
+  pitch_velocity: 'Pitch Velo', command: 'Command', catching: 'Catching',
+};
+
+// Engine-calculated ratings when a Pro Day exists; legacy stored values otherwise.
+function displayRatings(data) {
+  const r = data.ratings || null;
+  const overall = r?.overall?.value ?? data.player.overall_rating ?? null;
+  const ring = a => r?.skills?.[a]?.rating ?? data.player[`attr_${a}`] ?? null;
+  return { r, overall, ring };
+}
+
 export function CardFront({ data }) {
   const { player, chips, event } = data;
+  const { r, overall, ring } = displayRatings(data);
   const metallicText = {
     background: 'linear-gradient(180deg, #f4f8ff 12%, #c3d2ec 42%, #8298bf 55%, #eef4ff 92%)',
     WebkitBackgroundClip: 'text', backgroundClip: 'text', color: 'transparent',
@@ -155,8 +174,13 @@ export function CardFront({ data }) {
       {/* medallion column + photo */}
       <div style={{ display: 'flex', gap: 10, marginTop: 10, flex: 1, minHeight: 0 }}>
         <div style={{ width: 112, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 7 }}>
-          <Medallion rating={player.overall_rating} />
-          <Stars rating={player.overall_rating} />
+          <Medallion rating={overall} />
+          <Stars rating={overall} />
+          {r?.tier && (
+            <div style={{ ...label9, fontSize: 8, color: TIER_COLORS[r.tier] || ACCENT, textShadow: `0 0 10px ${TIER_COLORS[r.tier] || ACCENT}55` }}>
+              ◆ {r.tier} Tier
+            </div>
+          )}
           {player.college_projection && (
             <div style={{ textAlign: 'center' }}>
               <div style={label9}>College Projection</div>
@@ -234,11 +258,11 @@ export function CardFront({ data }) {
 
       {/* attribute rings */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6, 1fr)', gap: 2, marginTop: 9 }}>
-        {ATTRS.map(a => <MiniRing key={a} label={a} value={player[`attr_${a}`]} />)}
+        {ATTRS.map(a => <MiniRing key={a} label={a} value={ring(a)} />)}
       </div>
 
       <div style={{ textAlign: 'center', marginTop: 8, ...label9, color: ACCENT }}>
-        {event.name} · Diamond Metrics
+        {r ? `${r.label} · ` : ''}{event.name}
       </div>
     </Face>
   );
@@ -246,6 +270,7 @@ export function CardFront({ data }) {
 
 export function CardBack({ data, qrDataUrl, profileUrl }) {
   const { player, event, results, rankings, cardId, positionGroup } = data;
+  const { r } = displayRatings(data);
   const rankTiles = rankings
     ? [
         rankings.overall && { label: `Overall ${rankings.overall.group} Rank`, rank: rankings.overall.rank, of: rankings.overall.of },
@@ -272,6 +297,13 @@ export function CardBack({ data, qrDataUrl, profileUrl }) {
           {event.location && <span>· {event.location}</span>}
           <span>· {cardId}</span>
         </div>
+        {r && (
+          <div style={{ display: 'flex', gap: 8, marginTop: 5, flexWrap: 'wrap', alignItems: 'center' }}>
+            {r.archetype && <span style={{ fontSize: 9.5, fontWeight: 800, color: '#fff' }}>{r.archetype}</span>}
+            {r.tier && <span style={{ ...label9, fontSize: 7.5, color: TIER_COLORS[r.tier] || ACCENT }}>◆ {r.tier} Tier</span>}
+            <span style={{ ...label9, fontSize: 7.5 }}>{r.label}</span>
+          </div>
+        )}
       </div>
 
       <div style={{ marginTop: 10, flex: 1, minHeight: 0, overflow: 'hidden' }}>
@@ -301,6 +333,30 @@ export function CardBack({ data, qrDataUrl, profileUrl }) {
                   <div style={{ ...label9, fontSize: 6 }}>of {t.of}</div>
                 </div>
               ))}
+            </div>
+          </div>
+        )}
+
+        {/* strengths / development areas from the rating engine */}
+        {r && (r.strengths.length > 0 || r.developmentAreas.length > 0) && (
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 5, marginTop: 10 }}>
+            <div style={{ ...glassPanel, padding: '6px 8px' }}>
+              <div style={{ ...label9, fontSize: 6.5, color: '#4ade80', marginBottom: 3 }}>Strengths</div>
+              {r.strengths.map(s => (
+                <div key={s} style={{ fontSize: 10, fontWeight: 800, color: '#fff', lineHeight: 1.5 }}>
+                  ⚡ {SKILL_LABELS[s] || s}{r.skills[s] ? ` · ${r.skills[s].rating}` : ''}
+                </div>
+              ))}
+            </div>
+            <div style={{ ...glassPanel, padding: '6px 8px' }}>
+              <div style={{ ...label9, fontSize: 6.5, color: GOLD, marginBottom: 3 }}>Development Focus</div>
+              {r.developmentAreas.length === 0
+                ? <div style={{ fontSize: 10, color: '#8fa5cd' }}>—</div>
+                : r.developmentAreas.map(s => (
+                  <div key={s} style={{ fontSize: 10, fontWeight: 800, color: '#fff', lineHeight: 1.5 }}>
+                    ◎ {SKILL_LABELS[s] || s}{r.skills[s] ? ` · ${r.skills[s].rating}` : ''}
+                  </div>
+                ))}
             </div>
           </div>
         )}

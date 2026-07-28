@@ -351,7 +351,13 @@ function OverviewTab({ data, heroMetrics, onViewAll }) {
     : metrics.avg_velo?.series?.length > 1 ? metrics.avg_velo
     : metrics.max_velo?.series?.length > 1 ? metrics.max_velo : null;
 
-  const attrs = Object.keys(ATTR_LABELS).map(a => ({ key: a, label: ATTR_LABELS[a], value: player[`attr_${a}`] }));
+  // Engine-calculated skills take precedence; legacy stored attributes are
+  // the fallback for players without Pro Day data.
+  const attrs = Object.keys(ATTR_LABELS).map(a => ({
+    key: a,
+    label: ATTR_LABELS[a],
+    value: data.ratings?.skills?.[a]?.rating ?? player[`attr_${a}`],
+  }));
   const hasAttrs = attrs.some(a => a.value !== null && a.value !== undefined);
 
   // Analytics row (mockup row 2): spray / distribution / breakdown / trend.
@@ -576,8 +582,9 @@ function BiomechanicsTab() {
 
 /* ── Player card (dark sidebar) ──────────────────────────────────────────── */
 
-function PlayerCard({ player }) {
-  const stars = player.overall_rating != null ? Math.round(player.overall_rating / 20) : null;
+function PlayerCard({ player, ratings }) {
+  const overall = ratings?.overall?.value ?? player.overall_rating;
+  const stars = overall != null ? Math.round(overall / 20) : null;
   return (
     <aside className="rounded-2xl overflow-hidden text-white flex flex-col" style={{ background: 'linear-gradient(180deg, #0b1730 0%, #060e21 100%)' }}>
       {player.photo_url ? (
@@ -637,12 +644,15 @@ function PlayerCard({ player }) {
         )}
       </div>
 
-      {(player.overall_rating != null || player.college_projection) && (
+      {(overall != null || player.college_projection) && (
         <div className="grid grid-cols-2 border-t" style={{ borderColor: '#1b2c4f', backgroundColor: 'rgba(0,0,0,0.25)' }}>
-          {player.overall_rating != null && (
+          {overall != null && (
             <div className="p-4 text-center border-r" style={{ borderColor: '#1b2c4f' }}>
               <p className="text-[9px] font-bold uppercase tracking-widest" style={{ color: '#7d92b8' }}>Overall Rating</p>
-              <p className="text-4xl font-extrabold mt-1">{player.overall_rating}<span className="text-sm" style={{ color: '#7d92b8' }}>/100</span></p>
+              <p className="text-4xl font-extrabold mt-1">{overall}<span className="text-sm" style={{ color: '#7d92b8' }}>/100</span></p>
+              {ratings?.overall && (
+                <p className="text-[8px] font-bold uppercase tracking-widest mt-0.5" style={{ color: '#4da3ff' }}>{ratings.label}</p>
+              )}
             </div>
           )}
           <div className="p-4 text-center flex flex-col items-center justify-center">
@@ -792,7 +802,7 @@ export default function PublicProfilePage({ portal = false }) {
       <main className="max-w-[1400px] mx-auto px-4 md:px-6 mt-5">
         <div className="grid lg:grid-cols-[280px_minmax(0,1fr)] gap-4 items-start">
           <div className="lg:sticky lg:top-4 w-full max-w-md mx-auto lg:max-w-none">
-            <PlayerCard player={player} />
+            <PlayerCard player={player} ratings={data.ratings} />
             {card && (
               <div className="mt-3 flex flex-col gap-2">
                 <button

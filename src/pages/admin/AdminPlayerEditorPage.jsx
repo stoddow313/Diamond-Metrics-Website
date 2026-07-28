@@ -7,9 +7,15 @@ import StatImport from '../../components/admin/StatImport';
 
 const BIO_DEFAULTS = {
   first_name: '', last_name: '', school: '', city: '', state: '',
-  grad_year: '', primary_position: '', secondary_position: '',
+  grad_year: '', date_of_birth: '', primary_position: '', secondary_position: '',
   height: '', weight_lbs: '', bats: '', throws: '',
-  committed_to: '', college_projection: '', overall_rating: '', photo_url: '', is_public: 1,
+  committed_to: '', college_projection: '', photo_url: '', is_public: 1,
+};
+
+const SKILL_LABELS = {
+  power: 'Power', contact: 'Contact', speed: 'Speed', arm: 'Arm',
+  defense: 'Defense', athleticism: 'Athleticism',
+  pitch_velocity: 'Pitch Velocity', command: 'Command', catching: 'Catching',
 };
 
 const POSITIONS = ['C', '1B', '2B', '3B', 'SS', 'LF', 'CF', 'RF', 'OF', 'IF', 'UTIL', 'RHP', 'LHP'];
@@ -78,7 +84,7 @@ export default function AdminPlayerEditorPage() {
   const [catalog, setCatalog] = useState(null);
   const [player, setPlayer] = useState(null);
   const [bio, setBio] = useState(BIO_DEFAULTS);
-  const [attrs, setAttrs] = useState({});
+  const [ratings, setRatings] = useState(null); // engine-calculated, read-only
   const [games, setGames] = useState([]);
   const [statsByGame, setStatsByGame] = useState({});
   const [error, setError] = useState('');
@@ -87,15 +93,13 @@ export default function AdminPlayerEditorPage() {
 
   useEffect(() => {
     Promise.all([api.catalog(), api.getPlayer(playerId)])
-      .then(([cat, { player, games, stats }]) => {
+      .then(([cat, { player, games, stats, ratings }]) => {
         setCatalog(cat);
         setPlayer(player);
+        setRatings(ratings);
         const bioNext = { ...BIO_DEFAULTS };
         for (const k of Object.keys(BIO_DEFAULTS)) bioNext[k] = player[k] ?? '';
         setBio(bioNext);
-        const attrsNext = {};
-        for (const a of cat.attributes) attrsNext[a] = player[`attr_${a}`] ?? '';
-        setAttrs(attrsNext);
         setGames(games);
         const byGame = {};
         for (const s of stats) (byGame[s.game_id] ??= {})[s.metric_key] = s.value;
@@ -104,10 +108,11 @@ export default function AdminPlayerEditorPage() {
       .catch(err => setError(err.message));
   }, [playerId]);
 
-  // Re-pull games + stats (used after a CSV/XLSX import touches many games).
+  // Re-pull games, stats, and recalculated ratings (after edits or imports).
   async function reloadGames() {
-    const { games, stats } = await api.getPlayer(playerId);
+    const { games, stats, ratings } = await api.getPlayer(playerId);
     setGames(games);
+    setRatings(ratings);
     const byGame = {};
     for (const s of stats) (byGame[s.game_id] ??= {})[s.metric_key] = s.value;
     setStatsByGame(byGame);
@@ -126,10 +131,10 @@ export default function AdminPlayerEditorPage() {
     setBioSave('saving');
     setError('');
     try {
-      const payload = { ...bio };
-      for (const a of catalog.attributes) payload[`attr_${a}`] = attrs[a];
-      const { player: updated } = await api.updatePlayer(playerId, payload);
+      const { player: updated } = await api.updatePlayer(playerId, { ...bio });
       setPlayer(updated);
+      // DOB or position changes can shift the benchmark group — recalculate.
+      await reloadGames();
       setBioSave('saved');
       setTimeout(() => setBioSave(null), 2000);
     } catch (err) {
@@ -211,21 +216,12 @@ export default function AdminPlayerEditorPage() {
                 <option value="">—</option><option>R</option><option>L</option>
               </Select>
             </Field>
+            <Field label="Date of birth (sets age-group benchmarks)">
+              <TextInput type="date" value={bio.date_of_birth || ''} onChange={e => setBio({ ...bio, date_of_birth: e.target.value })} />
+            </Field>
             <Field label="Committed to"><TextInput placeholder="BYU" value={bio.committed_to} onChange={e => setBio({ ...bio, committed_to: e.target.value })} /></Field>
             <Field label="College projection"><TextInput placeholder="4 Year Starter" value={bio.college_projection} onChange={e => setBio({ ...bio, college_projection: e.target.value })} /></Field>
-            <Field label="Overall rating (0-100)"><TextInput type="number" min="0" max="100" value={bio.overall_rating} onChange={e => setBio({ ...bio, overall_rating: e.target.value })} /></Field>
             <Field label="Photo URL"><TextInput placeholder="https://…" value={bio.photo_url} onChange={e => setBio({ ...bio, photo_url: e.target.value })} /></Field>
-          </div>
-
-          <div className="mt-6 pt-5 border-t" style={{ borderColor: '#1e3a5f' }}>
-            <p className="text-xs font-bold uppercase tracking-wider mb-3" style={{ color: '#64748b' }}>Attribute ratings (0–100)</p>
-            <div className="grid grid-cols-3 md:grid-cols-6 gap-4">
-              {catalog.attributes.map(a => (
-                <Field key={a} label={a.charAt(0).toUpperCase() + a.slice(1)}>
-                  <TextInput type="number" min="0" max="100" value={attrs[a] ?? ''} onChange={e => setAttrs({ ...attrs, [a]: e.target.value })} />
-                </Field>
-              ))}
-            </div>
           </div>
 
           <div className="mt-5 flex items-center gap-2">
@@ -241,6 +237,9 @@ export default function AdminPlayerEditorPage() {
           </div>
         </SectionCard>
       </form>
+
+      {/* ── Calculated ratings (read-only, requirements §10) ── */}
+      <RatingsPanel ratings={ratings} />
 
       {/* ── Player account invite ── */}
       <InvitePanel playerId={playerId} onError={setError} />
@@ -284,11 +283,13 @@ export default function AdminPlayerEditorPage() {
                 onSaveStats={async (stats) => {
                   const { stats: saved } = await api.saveGameStats(g.id, stats);
                   setStatsByGame(s => ({ ...s, [g.id]: saved }));
+                  api.getPlayer(playerId).then(d => setRatings(d.ratings)).catch(() => {});
                 }}
                 onDelete={async () => {
                   if (!confirm('Delete this game and its stats?')) return;
                   await api.deleteGame(g.id);
                   setGames(gs => gs.filter(x => x.id !== g.id));
+                  api.getPlayer(playerId).then(d => setRatings(d.ratings)).catch(() => {});
                 }}
                 onError={setError}
               />
@@ -297,6 +298,84 @@ export default function AdminPlayerEditorPage() {
         )}
       </SectionCard>
     </div>
+  );
+}
+
+// Engine-calculated ratings are read-only: admins enter raw measurements and
+// the rating engine derives everything shown here (requirements V1 §10).
+function RatingsPanel({ ratings }) {
+  if (!ratings) {
+    return (
+      <SectionCard
+        title="Calculated Ratings"
+        subtitle="Ratings are generated automatically from Pro Day measurements — no manual entry."
+      >
+        <p className="text-sm" style={{ color: '#94a3b8' }}>
+          No Pro Day event logged yet. Log one (or import its CSV) and Overall, skills,
+          archetype, and tier will calculate from the raw measurements.
+        </p>
+      </SectionCard>
+    );
+  }
+
+  const dash = <span style={{ color: '#475569' }}>—</span>;
+  const skillEntries = Object.entries(SKILL_LABELS).filter(([k]) => k in ratings.skills);
+
+  return (
+    <SectionCard
+      title="Calculated Ratings"
+      subtitle={`${ratings.label} · read-only, derived from raw Pro Day measurements`}
+    >
+      <div className="flex flex-wrap items-center gap-6 mb-5">
+        <div>
+          <p className="text-4xl font-extrabold text-white">
+            {ratings.overall ? ratings.overall.value : dash}
+            <span className="text-sm ml-1" style={{ color: '#64748b' }}>/100</span>
+          </p>
+          <p className="text-xs font-bold uppercase tracking-wider" style={{ color: '#38bdf8' }}>
+            Overall{ratings.overall?.provisional ? ' · provisional' : ''}
+          </p>
+        </div>
+        {ratings.tier && (
+          <div>
+            <p className="text-lg font-bold" style={{ color: '#fbbf24' }}>{ratings.tier}</p>
+            <p className="text-xs font-bold uppercase tracking-wider" style={{ color: '#64748b' }}>Tier</p>
+          </div>
+        )}
+        {ratings.archetype && (
+          <div>
+            <p className="text-lg font-bold text-white">{ratings.archetype}</p>
+            <p className="text-xs font-bold uppercase tracking-wider" style={{ color: '#64748b' }}>Archetype</p>
+          </div>
+        )}
+        {ratings.isTwoWay && ratings.secondaryOverall && (
+          <div>
+            <p className="text-lg font-bold text-white">{ratings.secondaryOverall.value} <span className="text-xs" style={{ color: '#64748b' }}>({ratings.secondaryOverall.formulaLabel})</span></p>
+            <p className="text-xs font-bold uppercase tracking-wider" style={{ color: '#64748b' }}>Two-way second overall</p>
+          </div>
+        )}
+      </div>
+
+      <div className="grid grid-cols-3 md:grid-cols-5 lg:grid-cols-9 gap-3 mb-4">
+        {skillEntries.map(([key, label]) => (
+          <div key={key} className="rounded-xl border px-2 py-2 text-center" style={{ borderColor: '#1e3a5f', backgroundColor: 'rgba(30,41,59,0.5)' }}>
+            <p className="text-xl font-extrabold text-white">{ratings.skills[key] ? ratings.skills[key].rating : dash}</p>
+            <p className="text-[9px] font-bold uppercase tracking-wider" style={{ color: '#64748b' }}>
+              {label}{ratings.skills[key]?.partial ? '*' : ''}
+            </p>
+          </div>
+        ))}
+      </div>
+
+      <div className="flex flex-wrap gap-x-6 gap-y-1 text-xs" style={{ color: '#94a3b8' }}>
+        <span>Age group: <b className="text-white">{ratings.ageGroup ?? '—'}</b>{ratings.ageSource === 'grad_class' ? ' (from grad class — add DOB for accuracy)' : ''}</span>
+        <span>Benchmarks: <b className="text-white">{ratings.benchmark.version ?? '—'}</b></span>
+        {ratings.strengths.length > 0 && <span>Strengths: <b style={{ color: '#4ade80' }}>{ratings.strengths.map(s => SKILL_LABELS[s]).join(', ')}</b></span>}
+        {ratings.developmentAreas.length > 0 && <span>Development: <b style={{ color: '#fbbf24' }}>{ratings.developmentAreas.map(s => SKILL_LABELS[s]).join(', ')}</b></span>}
+        <span>Calculated {new Date(ratings.calculatedAt).toLocaleString()}</span>
+      </div>
+      <p className="text-[11px] mt-2" style={{ color: '#475569' }}>* partial input data — rating provisional. Em dash = insufficient measurements (missing data never counts as zero).</p>
+    </SectionCard>
   );
 }
 
