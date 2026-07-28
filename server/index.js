@@ -7,6 +7,7 @@ import {
   METRICS, CATEGORIES, ATTRIBUTES, GAME_TYPES,
   VALID_METRIC_KEYS, heroSetForPosition, positionGroup,
 } from './metricCatalog.js';
+import { computeRatings } from './ratingEngine.js';
 
 const app = express();
 // Render (and most hosts) inject PORT; DM_API_PORT is the local-dev override.
@@ -146,12 +147,14 @@ app.get('/api/metrics/catalog', (_req, res) => {
 
 // ── Players (admin) ──────────────────────────────────────────────────────
 
+// Overall and attribute ratings are engine-calculated (requirements §10) and
+// no longer writable — the legacy columns remain only as display fallback for
+// players without Pro Day data.
 const PLAYER_FIELDS = [
   'first_name', 'last_name', 'school', 'city', 'state', 'grad_year',
-  'primary_position', 'secondary_position', 'height', 'weight_lbs',
-  'bats', 'throws', 'committed_to', 'college_projection',
-  'overall_rating', 'photo_url', 'is_public',
-  ...ATTRIBUTES.map(a => `attr_${a}`),
+  'date_of_birth', 'primary_position', 'secondary_position', 'height',
+  'weight_lbs', 'bats', 'throws', 'committed_to', 'college_projection',
+  'photo_url', 'is_public',
 ];
 
 function playerFromBody(body) {
@@ -195,7 +198,7 @@ app.get('/api/players/:id', requireAdmin, (req, res) => {
     `SELECT s.game_id, s.metric_key, s.value FROM stat_entries s
      JOIN games g ON g.id = s.game_id WHERE g.player_id = ?`
   ).all(player.id);
-  res.json({ player, games, stats });
+  res.json({ player, games, stats, ratings: ratePlayer(player) });
 });
 
 app.put('/api/players/:id', requireAdmin, (req, res) => {
@@ -220,6 +223,23 @@ app.delete('/api/players/:id', requireAdmin, (req, res) => {
 
 // ── Games + stats (admin) ────────────────────────────────────────────────
 
+// Pro day games link to a shared event row (find-or-create on name + date) so
+// rating comparisons join on event id, not name text (requirements §8).
+function linkEventForGame(gameId) {
+  const game = db.prepare('SELECT * FROM games WHERE id = ?').get(gameId);
+  if (!game) return;
+  if (game.game_type !== 'pro_day') {
+    if (game.event_id) db.prepare('UPDATE games SET event_id = NULL WHERE id = ?').run(game.id);
+    return;
+  }
+  const name = (game.opponent || '').trim() || 'Pro Day';
+  const existing = db.prepare('SELECT id FROM events WHERE LOWER(name) = LOWER(?) AND event_date = ?').get(name, game.game_date);
+  const eventId = existing
+    ? existing.id
+    : db.prepare('INSERT INTO events (name, event_date, location) VALUES (?, ?, ?)').run(name, game.game_date, game.location || '').lastInsertRowid;
+  if (game.event_id !== eventId) db.prepare('UPDATE games SET event_id = ? WHERE id = ?').run(eventId, game.id);
+}
+
 app.post('/api/players/:id/games', requireAdmin, (req, res) => {
   const player = db.prepare('SELECT id FROM players WHERE id = ?').get(req.params.id);
   if (!player) return res.status(404).json({ error: 'Player not found' });
@@ -231,6 +251,7 @@ app.post('/api/players/:id/games', requireAdmin, (req, res) => {
   const info = db.prepare(
     'INSERT INTO games (player_id, game_date, game_type, opponent, location, notes) VALUES (?, ?, ?, ?, ?, ?)'
   ).run(player.id, game_date, game_type, opponent, location, notes);
+  linkEventForGame(info.lastInsertRowid);
   const game = db.prepare('SELECT * FROM games WHERE id = ?').get(info.lastInsertRowid);
   res.status(201).json({ game });
 });
@@ -253,6 +274,7 @@ app.put('/api/games/:id', requireAdmin, (req, res) => {
     notes ?? game.notes,
     game.id
   );
+  linkEventForGame(game.id);
   res.json({ game: db.prepare('SELECT * FROM games WHERE id = ?').get(game.id) });
 });
 
@@ -353,6 +375,9 @@ function buildProfilePayload(player) {
     metrics,
     heroKeys: heroSetForPosition(player.primary_position),
     catalog: { metrics: METRICS, categories: CATEGORIES },
+    // Engine-calculated skills/overall (null when no Pro Day data exists;
+    // clients fall back to the legacy stored ratings in that case).
+    ratings: ratePlayer(player),
   };
 }
 
@@ -370,12 +395,77 @@ app.get('/api/public/players/:slug', (req, res) => {
 // attended the same event (matched on event name + date).
 
 const METRIC_BY_KEY = new Map(METRICS.map(m => [m.key, m]));
+const MEASURABLE_KEYS = new Set(METRICS.filter(m => m.category !== 'box').map(m => m.key));
 
-function buildCardPayload(player) {
-  const proDay = db.prepare(
+function latestProDay(playerId) {
+  return db.prepare(
     `SELECT * FROM games WHERE player_id = ? AND game_type = 'pro_day'
      ORDER BY game_date DESC, id DESC LIMIT 1`
-  ).get(player.id);
+  ).get(playerId) || null;
+}
+
+function statsForGame(gameId) {
+  const stats = {};
+  for (const row of db.prepare('SELECT metric_key, value FROM stat_entries WHERE game_id = ?').all(gameId)) {
+    if (MEASURABLE_KEYS.has(row.metric_key)) stats[row.metric_key] = row.value;
+  }
+  return stats;
+}
+
+// Participants are linked by event id, never by event-name text (§8).
+function eventParticipants(eventId) {
+  if (!eventId) return [];
+  return db.prepare(
+    `SELECT g.id AS game_id, p.id AS player_id, p.primary_position, p.overall_rating
+     FROM games g JOIN players p ON p.id = g.player_id
+     WHERE g.game_type = 'pro_day' AND g.event_id = ?`
+  ).all(eventId);
+}
+
+// Run the rating engine for a player's latest Pro Day, persist the snapshot
+// with provenance (§10), and return the ratings payload (null = no pro day).
+function ratePlayer(player) {
+  const proDay = latestProDay(player.id);
+  if (!proDay) return null;
+
+  const row = db.prepare('SELECT date_of_birth, grad_year, primary_position, secondary_position FROM players WHERE id = ?').get(player.id);
+  const stats = statsForGame(proDay.id);
+  const participants = eventParticipants(proDay.event_id).map(p => statsForGame(p.game_id));
+
+  const ratings = computeRatings({
+    stats,
+    participants,
+    dateOfBirth: row.date_of_birth,
+    gradYear: row.grad_year,
+    eventDate: proDay.game_date,
+    primaryPosition: row.primary_position,
+    secondaryPosition: row.secondary_position,
+  });
+
+  db.prepare(
+    `INSERT INTO player_ratings (player_id, game_id, benchmark_group, benchmark_source, benchmark_version, calculation_version, calculated_at, payload)
+     VALUES (@player_id, @game_id, @benchmark_group, @benchmark_source, @benchmark_version, @calculation_version, @calculated_at, @payload)
+     ON CONFLICT(player_id) DO UPDATE SET
+       game_id = excluded.game_id, benchmark_group = excluded.benchmark_group,
+       benchmark_source = excluded.benchmark_source, benchmark_version = excluded.benchmark_version,
+       calculation_version = excluded.calculation_version, calculated_at = excluded.calculated_at,
+       payload = excluded.payload`
+  ).run({
+    player_id: player.id,
+    game_id: proDay.id,
+    benchmark_group: ratings.benchmark.group,
+    benchmark_source: ratings.benchmark.source,
+    benchmark_version: ratings.benchmark.version,
+    calculation_version: ratings.calculationVersion,
+    calculated_at: ratings.calculatedAt,
+    payload: JSON.stringify(ratings),
+  });
+
+  return ratings;
+}
+
+function buildCardPayload(player) {
+  const proDay = latestProDay(player.id);
   if (!proDay) return null;
 
   const ownStats = {};
@@ -397,15 +487,11 @@ function buildCardPayload(player) {
       return { key: k, label: m.label, unit: m.unit, decimals: m.decimals, value: ownStats[k] };
     });
 
-  // ── Rankings among participants of the same event (name + date) ──
+  // ── Rankings among participants linked to the same event id (§8) ──
   // Every athlete who attended counts toward rankings — including those whose
   // own profiles are private. Only aggregate ranks are exposed, never their
   // names or values, so nothing private leaks.
-  const participants = db.prepare(
-    `SELECT g.id AS game_id, p.id AS player_id, p.primary_position, p.overall_rating
-     FROM games g JOIN players p ON p.id = g.player_id
-     WHERE g.game_type = 'pro_day' AND g.game_date = ? AND LOWER(TRIM(g.opponent)) = ?`
-  ).all(proDay.game_date, (proDay.opponent || '').trim().toLowerCase());
+  const participants = eventParticipants(proDay.event_id);
 
   let rankings = null;
   if (participants.length >= 2) {
@@ -450,6 +536,7 @@ function buildCardPayload(player) {
     positionGroup: positionGroup(player.primary_position),
     cardId: `DM-${initials}-${String(player.id).padStart(3, '0')}`,
     event: {
+      id: proDay.event_id,
       date: proDay.game_date,
       name: proDay.opponent || 'Pro Day',
       location: proDay.location || '',
@@ -457,6 +544,7 @@ function buildCardPayload(player) {
     chips,
     results,
     rankings,
+    ratings: ratePlayer(player),
   };
 }
 
@@ -552,7 +640,9 @@ function portalPlayer(req) {
 
 app.get('/api/portal/profile', requirePlayer, (req, res) => {
   const payload = buildProfilePayload(portalPlayer(req));
-  res.json({ ...payload, is_public: !!req.player.is_public });
+  // DOB stays out of public payloads; the player sees their own for editing.
+  const dob = db.prepare('SELECT date_of_birth FROM players WHERE id = ?').get(req.player.id)?.date_of_birth || null;
+  res.json({ ...payload, player: { ...payload.player, date_of_birth: dob }, is_public: !!req.player.is_public });
 });
 
 app.get('/api/portal/card', requirePlayer, (req, res) => {
@@ -565,8 +655,8 @@ app.get('/api/portal/card', requirePlayer, (req, res) => {
 // stay admin-only (they're scouting output, not identity).
 const PLAYER_EDITABLE_FIELDS = [
   'first_name', 'last_name', 'school', 'city', 'state', 'grad_year',
-  'primary_position', 'secondary_position', 'height', 'weight_lbs',
-  'bats', 'throws', 'committed_to',
+  'date_of_birth', 'primary_position', 'secondary_position', 'height',
+  'weight_lbs', 'bats', 'throws', 'committed_to',
 ];
 
 app.put('/api/portal/profile', requirePlayer, (req, res) => {

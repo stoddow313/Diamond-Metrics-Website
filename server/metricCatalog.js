@@ -20,6 +20,7 @@ export const METRICS = [
   { key: 'hard_hit_pct',   label: 'Hard Hit %',            unit: '%',    category: 'hitting',  aggregate: 'avg',    decimals: 0 },
   { key: 'contact_pct',    label: 'Contact %',             unit: '%',    category: 'hitting',  aggregate: 'avg',    decimals: 0 },
   { key: 'launch_angle',   label: 'Launch Angle (Avg)',    unit: '°',    category: 'hitting',  aggregate: 'avg',    decimals: 1 },
+  { key: 'quality_la_pct', label: 'Quality Launch Angle %', unit: '%',   category: 'hitting',  aggregate: 'avg',    decimals: 0 },
   { key: 'pull_pct',       label: 'Pull %',                unit: '%',    category: 'hitting',  aggregate: 'avg',    decimals: 0 },
   { key: 'middle_pct',     label: 'Middle %',              unit: '%',    category: 'hitting',  aggregate: 'avg',    decimals: 0 },
   { key: 'oppo_pct',       label: 'Opposite Field %',      unit: '%',    category: 'hitting',  aggregate: 'avg',    decimals: 0 },
@@ -34,6 +35,7 @@ export const METRICS = [
   { key: 'strike_pct',     label: 'Strike %',              unit: '%',    category: 'pitching', aggregate: 'avg',    decimals: 0 },
   { key: 'whiff_pct',      label: 'Whiff %',               unit: '%',    category: 'pitching', aggregate: 'avg',    decimals: 0 },
   { key: 'command_score',  label: 'Command Score',         unit: '',     category: 'pitching', aggregate: 'avg',    decimals: 0 },
+  { key: 'target_accuracy', label: 'Target Accuracy',      unit: '%',    category: 'pitching', aggregate: 'avg',    decimals: 0 },
 
   // ── Defense ──────────────────────────────────────────────────────────
   { key: 'arm_strength',   label: 'Arm Strength',          unit: 'mph',  category: 'defense',  aggregate: 'max',    decimals: 0 },
@@ -42,6 +44,7 @@ export const METRICS = [
   { key: 'range_score',    label: 'Range Score',           unit: '',     category: 'defense',  aggregate: 'avg',    decimals: 0 },
   { key: 'pop_time',       label: 'Pop Time',              unit: 's',    category: 'defense',  aggregate: 'max',    decimals: 2, lowerIsBetter: true },
   { key: 'blocking_score', label: 'Blocking Score',        unit: '',     category: 'defense',  aggregate: 'avg',    decimals: 0 },
+  { key: 'fielding_success', label: 'Fielding Success %',  unit: '%',    category: 'defense',  aggregate: 'avg',    decimals: 0 },
 
   // ── Running ──────────────────────────────────────────────────────────
   { key: 'sprint_speed',   label: 'Sprint Speed',          unit: 'ft/s', category: 'running',  aggregate: 'max',    decimals: 1 },
