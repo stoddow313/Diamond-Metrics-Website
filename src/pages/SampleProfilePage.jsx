@@ -1,10 +1,11 @@
-import { useEffect, useState } from 'react';
+import { createElement, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import MarketingLayout from '../components/MarketingLayout';
 import ProductPreview from '../components/ProductPreview';
 import MarketingCta from '../components/MarketingCta';
 import { ProDayCardShowcase } from '../components/profile/ProDayCard';
 import { api } from '../lib/api';
+import { ChartNoAxesCombined, Play, Share2, Trophy } from 'lucide-react';
 
 const groups = [
   ['Hitting', ['Maximum exit velocity', 'Average exit velocity', 'Launch angle', 'Hard-hit rate', 'Contact rate', 'Pull / middle / opposite-field tendencies', 'Batted-ball results']],
@@ -49,6 +50,25 @@ export default function SampleProfilePage() {
       </section>
       <ProductPreview />
       <div className="centered-action"><Link className="primary-button" to="/p/joe-larsen">Open Joe Larsen’s Full Demo Profile</Link></div>
+      <section className="profile-value-section">
+        <div className="profile-value-heading">
+          <div>
+            <p className="eyebrow">More Than a Stat Line</p>
+            <h2>One place to understand the player behind the numbers.</h2>
+          </div>
+          <p>Each profile organizes current performance, supporting video, and development history so families and coaches can quickly see what happened and what comes next.</p>
+        </div>
+        <div className="profile-value-grid">
+          {[
+            [Trophy, 'Standout Results', 'Surface personal bests, event results, and position-specific performance in a clear snapshot.'],
+            [Play, 'Video-Backed Plays', 'Connect key measurements and performance moments directly to the footage behind them.'],
+            [ChartNoAxesCombined, 'Development Trends', 'Compare evaluations over time to recognize progress, patterns, and new priorities.'],
+            [Share2, 'One Shareable Profile', 'Give families and coaches a consistent link to the player’s growing performance record.'],
+          ].map(([Icon, title, text]) => (
+            <article key={title}>{createElement(Icon, { size: 25, 'aria-hidden': true })}<h3>{title}</h3><p>{text}</p></article>
+          ))}
+        </div>
+      </section>
       <section className="metrics-library">
         <p className="eyebrow">Gain Insights Into</p>
         <h2>Position-specific measurements connected to the performance.</h2>

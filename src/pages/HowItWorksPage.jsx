@@ -1,4 +1,4 @@
-import { Camera, Check, HelpCircle } from 'lucide-react';
+import { Camera, Check, Focus, HelpCircle, Smartphone, Video } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import MarketingLayout from '../components/MarketingLayout';
 import MarketingCta from '../components/MarketingCta';
@@ -34,12 +34,27 @@ export default function HowItWorksPage() {
       </section>
 
       <section className="footage-guide">
-        <div className="footage-art"><Camera size={68} aria-hidden="true" /><span>Phone or available camera</span></div>
+        <div className="footage-art" aria-label="Example of a player kept fully visible while recording">
+          <div className="filming-status"><span /> Recording</div>
+          <div className="filming-phone">
+            <div className="filming-screen">
+              <div className="field-horizon" />
+              <div className="player-silhouette"><i /><b /></div>
+              <div className="camera-frame"><span /><span /><span /><span /></div>
+            </div>
+          </div>
+          <div className="filming-callouts">
+            <span><Smartphone size={17} /> Phone or camera</span>
+            <span><Focus size={17} /> Full play visible</span>
+            <span><Video size={17} /> Stable position</span>
+          </div>
+        </div>
         <div>
           <p className="eyebrow">Footage Guidance</p>
           <h2>Better Footage Creates Better Insight</h2>
+          <p className="section-text">A clear, steady angle gives our analysts the best view of the player, the ball, and the complete result of the play.</p>
           <ul>{['Keep the camera stable', 'Capture the full play', 'Keep the player visible', 'Avoid excessive zooming', 'Include the player’s name, position, and jersey number'].map(item => <li key={item}><Check size={18} />{item}</li>)}</ul>
-          <p className="fine-print">Follow our filming guidance to give the Diamond Metrics team a clear view of every performance.</p>
+          <div className="filming-tip"><Camera size={20} /><span><strong>Simple rule:</strong> prioritize keeping the entire play in frame over getting a tight close-up.</span></div>
         </div>
       </section>
 
