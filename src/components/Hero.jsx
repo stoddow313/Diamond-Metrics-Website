@@ -46,8 +46,6 @@ function Hero() {
       </div>
 
       <div className="hero-data" aria-label="Demo player performance">
-        <p className="hero-data-label">Demo Profile</p>
-
         <div className="hero-metric-list">
           <div className="hero-metric">
             <span className="hero-metric-value">48%</span>
