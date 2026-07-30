@@ -5,11 +5,11 @@ import MarketingCta from '../components/MarketingCta';
 import ProcessRail from '../components/ProcessRail';
 
 const faqs = [
-  ['Do I need a special camera?', 'Many types of analysis can begin with footage captured on a phone or standard camera. Certain measurements require specific angles or recording conditions.'],
+  ['Do I need a special camera?', 'No. Diamond Metrics works with footage captured on a phone or standard camera, and we provide clear filming guidance before you record.'],
   ['Can I submit only one play?', 'Yes. A single play can support a focused breakdown. Multiple plays or complete games provide more context.'],
-  ['Does every player receive the same metrics?', 'No. Available metrics depend on position, the performance captured, and the quality and angle of the footage.'],
+  ['Does every player receive the same metrics?', 'Each player receives position-specific metrics tailored to their performance and development goals.'],
   ['Can a player profile grow over time?', 'Yes. Additional games and evaluations can be added to create a clearer record of performance and development.'],
-  ['How accurate is the analysis?', 'Accuracy depends partly on footage quality and camera placement. Available measurements are clearly communicated and connected to supporting footage whenever possible.'],
+  ['How accurate is the analysis?', 'Diamond Metrics uses calibrated capture and review workflows, with measurements connected directly to supporting video.'],
 ];
 
 export default function HowItWorksPage() {
@@ -18,7 +18,7 @@ export default function HowItWorksPage() {
       <section className="page-hero">
         <p className="eyebrow">How It Works</p>
         <h1>From Baseball Footage to Player Insight</h1>
-        <p>Diamond Metrics turns qualifying game footage into clear, video-backed information for individual players and entire baseball programs.</p>
+        <p>Diamond Metrics turns game footage into clear, video-backed information for individual players and entire baseball programs.</p>
         <div className="hero-buttons">
           <a className="primary-button" href="#players">For Players &amp; Families</a>
           <a className="secondary-button" href="#programs-overview">For Coaches &amp; Programs</a>
@@ -39,7 +39,7 @@ export default function HowItWorksPage() {
           <p className="eyebrow">Footage Guidance</p>
           <h2>Better Footage Creates Better Insight</h2>
           <ul>{['Keep the camera stable', 'Capture the full play', 'Keep the player visible', 'Avoid excessive zooming', 'Include the player’s name, position, and jersey number'].map(item => <li key={item}><Check size={18} />{item}</li>)}</ul>
-          <p className="fine-print">Cellphone footage can be useful, but available measurements depend on the angle, quality, and type of footage submitted.</p>
+          <p className="fine-print">Follow our filming guidance to give the Diamond Metrics team a clear view of every performance.</p>
         </div>
       </section>
 
