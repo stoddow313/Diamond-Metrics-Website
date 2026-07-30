@@ -139,6 +139,23 @@ main {
   text-align: left;
 }
 
+.hero::before {
+  content: "";
+  position: absolute;
+  z-index: 1;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(
+    90deg,
+    #06122b 0%,
+    #06122b 39%,
+    rgba(6, 18, 43, .98) 48%,
+    rgba(6, 18, 43, .78) 56%,
+    rgba(6, 18, 43, .18) 68%,
+    transparent 76%
+  );
+}
+
 .hero-copy {
   width: min(56%, 590px);
   position: relative;
@@ -230,11 +247,11 @@ main {
 }
 
 .hero-visual {
-  width: min(75%, 820px);
+  width: min(72%, 780px);
   position: absolute;
   z-index: 0;
   top: 50%;
-  right: -80px;
+  right: 0;
   transform: translateY(-50%);
   overflow: hidden;
   border: 1px solid rgba(56, 189, 248, 0.32);
@@ -243,8 +260,6 @@ main {
   box-shadow:
     0 28px 80px rgba(0, 0, 0, 0.42),
     0 0 48px rgba(37, 99, 235, 0.12);
-  -webkit-mask-image: linear-gradient(90deg, transparent 0%, rgba(0, 0, 0, .28) 10%, #000 24%);
-  mask-image: linear-gradient(90deg, transparent 0%, rgba(0, 0, 0, .28) 10%, #000 24%);
 }
 
 .hero-visual::after {
@@ -2716,6 +2731,10 @@ section h2 {
     padding: 64px 0 20px;
     overflow: visible;
     text-align: center;
+  }
+
+  .hero::before {
+    display: none;
   }
 
   .hero-copy {
