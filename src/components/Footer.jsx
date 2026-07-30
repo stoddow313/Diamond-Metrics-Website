@@ -31,10 +31,10 @@ function Footer() {
         </div>
 
         <div className="footer-links">
-          <a href="#how-it-works">How It Works</a>
-          <a href="#metrics">What We Measure</a>
-          <a href="#who-we-serve">For Programs</a>
-          <a href="#contact">Contact</a>
+          <Link to="/how-it-works">How It Works</Link>
+          <Link to="/sample-profile">Sample Profile</Link>
+          <Link to="/programs">For Programs</Link>
+          <Link to="/#contact">Contact</Link>
           <Link to="/login">Sign In</Link>
         </div>
 

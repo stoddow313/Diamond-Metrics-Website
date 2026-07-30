@@ -4,32 +4,28 @@ function Hero() {
   return (
     <section className="hero" aria-labelledby="hero-title">
       <div className="hero-copy">
-        <p className="eyebrow">Baseball Performance, Made Visible</p>
+        <p className="eyebrow">Built to Be Seen</p>
 
-        <h1 id="hero-title">Built to Be Seen</h1>
+        <h1 id="hero-title">Turn Game Footage Into Player Insight</h1>
 
         <p className="hero-subheading">
-          Professional-level baseball insights for developing players.
+          The game is already on your phone. See what it can tell you.
         </p>
 
         <p className="hero-text">
-          Diamond Metrics turns baseball footage into measurable player
-          data—helping athletes understand their strengths, track their
-          progress, and showcase their performance.
-        </p>
-
-        <p className="hero-proof">
-          See their strengths. Track their progress. Show their growth.
+          Upload baseball footage from your phone and receive video-backed
+          analytics that help you understand performance, track progress, and
+          know what to work on next.
         </p>
 
         <div className="hero-buttons">
-          <Link className="primary-button" to="/p/joe-larsen">
-            View a Sample Player Profile
+          <Link className="primary-button" to="/signup">
+            Analyze Your Player
           </Link>
 
-          <a className="secondary-button" href="#contact">
-            Get Started
-          </a>
+          <Link className="secondary-button" to="/sample-profile">
+            View a Sample Profile
+          </Link>
         </div>
       </div>
 

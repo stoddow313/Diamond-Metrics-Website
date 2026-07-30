@@ -1,39 +1,27 @@
-import { useEffect } from "react";
-import { useLocation } from "react-router-dom";
-import Navbar from "../components/Navbar";
+import MarketingLayout from "../components/MarketingLayout";
 import Hero from "../components/Hero";
 import ProductPreview from "../components/ProductPreview";
-import Metrics from "../components/Metrics";
-import Process from "../components/Process";
-import WhoWeServe from "../components/WhoWeServe";
-import Credibility from "../components/Credibility";
-import Contact from "../components/Contact";
-import Footer from "../components/Footer";
+import ProcessRail from "../components/ProcessRail";
+import MarketingCta from "../components/MarketingCta";
+import { Link } from "react-router-dom";
 
 export default function LandingPage() {
-  const { hash } = useLocation();
-
-  // React Router doesn't scroll to #anchors on client-side navigation
-  // (e.g. the signup page's "Contact us" → /#contact), so do it ourselves.
-  useEffect(() => {
-    if (!hash) return;
-    const el = document.getElementById(hash.slice(1));
-    if (el) el.scrollIntoView({ behavior: "smooth", block: "start" });
-  }, [hash]);
-
   return (
-    <div className="container marketing-page">
-      <Navbar />
-      <main>
-        <Hero />
-        <ProductPreview />
-        <Process />
-        <Metrics />
-        <WhoWeServe />
-        <Credibility />
-        <Contact />
-      </main>
-      <Footer />
-    </div>
+    <MarketingLayout>
+      <Hero />
+      <ProductPreview />
+      <ProcessRail />
+      <section className="split-feature">
+        <div>
+          <p className="eyebrow">See What Your Footage Becomes</p>
+          <h2>A clear record of performance and progress.</h2>
+          <p className="section-text">Explore a sample player profile featuring performance metrics, key plays, development trends, and a clear record of progress.</p>
+          <p className="feature-proof">Advanced player insight—without specialized equipment or an elite-program budget.</p>
+          <Link className="primary-button" to="/sample-profile">Explore the Sample Profile</Link>
+        </div>
+        <img src="/images/marketing/joe-larsen-preview.webp" alt="Joe Larsen sample Diamond Metrics player" loading="lazy" />
+      </section>
+      <MarketingCta />
+    </MarketingLayout>
   );
 }
