@@ -291,10 +291,10 @@ main {
 .hero-data {
   position: absolute;
   z-index: 2;
-  top: 58px;
-  right: 34px;
+  top: 62px;
+  right: 22px;
   bottom: 46px;
-  width: 238px;
+  width: 194px;
   display: flex;
   flex-direction: column;
   color: #fff;
@@ -302,39 +302,53 @@ main {
 }
 
 .hero-data-label {
-  margin: 0 0 24px;
+  margin: 0 0 20px;
   color: #60a5fa;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 800;
   letter-spacing: 0.18em;
+  text-align: right;
   text-transform: uppercase;
 }
 
 .hero-metric-list {
   display: grid;
-  gap: 16px;
+  gap: 17px;
 }
 
 .hero-metric {
-  display: grid;
-  gap: 2px;
-  padding: 11px 14px;
-  border: 1px solid rgba(96, 165, 250, 0.3);
-  border-radius: 14px;
-  background: rgba(3, 9, 20, 0.66);
-  backdrop-filter: blur(8px);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: #dbeafe;
+  font-size: 13px;
+  font-weight: 700;
 }
 
 .hero-metric-value {
+  width: 58px;
+  height: 58px;
+  flex: 0 0 58px;
+  display: grid;
+  place-items: center;
+  border: 4px solid #2563eb;
+  border-right-color: #60a5fa;
+  border-radius: 50%;
   color: #f8fafc;
-  font-size: 18px;
-  font-weight: 850;
+  background: rgba(3, 9, 20, 0.72);
+  box-shadow:
+    0 0 16px rgba(37, 99, 235, 0.7),
+    inset 0 0 12px rgba(37, 99, 235, 0.28);
+  font-size: 13px;
+  font-weight: 900;
+  letter-spacing: -0.02em;
 }
 
 .hero-metric span:last-child {
   color: #bfdbfe;
   font-size: 13px;
-  font-weight: 650;
+  font-weight: 700;
+  line-height: 1.25;
 }
 
 .hero-rating {
@@ -346,18 +360,18 @@ main {
 }
 
 .hero-rating span {
-  font-size: 18px;
+  font-size: 15px;
   font-weight: 800;
 }
 
 .hero-rating strong {
-  font-size: 72px;
+  font-size: 64px;
   line-height: 0.85;
   letter-spacing: -0.06em;
 }
 
 .hero-rating small {
-  font-size: 16px;
+  font-size: 14px;
   font-weight: 800;
 }
 
