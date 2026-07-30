@@ -130,12 +130,21 @@ main {
 }
 
 .hero {
-  min-height: min(690px, calc(100vh - 108px));
+  min-height: min(640px, calc(100vh - 108px));
   position: relative;
   display: flex;
   align-items: center;
+  isolation: isolate;
   overflow: hidden;
-  padding: 54px 0 46px;
+  padding: 52px 46px;
+  border: 1px solid rgba(56, 189, 248, 0.28);
+  border-radius: 30px;
+  background:
+    radial-gradient(circle at 82% 42%, rgba(37, 99, 235, 0.12), transparent 34%),
+    #06122b;
+  box-shadow:
+    0 28px 80px rgba(0, 0, 0, 0.34),
+    inset 0 1px 0 rgba(255, 255, 255, 0.025);
   text-align: left;
 }
 
@@ -157,7 +166,7 @@ main {
 }
 
 .hero-copy {
-  width: min(56%, 590px);
+  width: min(54%, 590px);
   position: relative;
   z-index: 2;
   display: flex;
@@ -250,19 +259,16 @@ main {
 }
 
 .hero-visual {
-  width: min(72%, 780px);
+  width: min(76%, 820px);
   position: absolute;
   z-index: 0;
   top: 50%;
-  right: 0;
+  right: 22px;
   transform: translateY(-50%);
   overflow: hidden;
-  border: 1px solid rgba(56, 189, 248, 0.32);
-  border-radius: 26px;
-  background: #030914;
-  box-shadow:
-    0 28px 80px rgba(0, 0, 0, 0.42),
-    0 0 48px rgba(37, 99, 235, 0.12);
+  border-radius: 22px;
+  background: transparent;
+  box-shadow: 0 0 54px rgba(37, 99, 235, 0.12);
 }
 
 .hero-visual::after {
@@ -2731,7 +2737,7 @@ section h2 {
     justify-content: center;
     gap: 36px;
     min-height: auto;
-    padding: 64px 0 20px;
+    padding: 52px 28px 28px;
     overflow: visible;
     text-align: center;
   }
