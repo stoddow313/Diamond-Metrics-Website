@@ -32,13 +32,12 @@ function Navbar() {
             if (event.target.closest('a')) setMenuOpen(false)
           }}
         >
-          <a href="#how-it-works">How It Works</a>
-          <a href="#metrics">What We Measure</a>
-          <a href="#who-we-serve">For Programs</a>
-          <a href="#contact">Contact</a>
+          <Link to="/how-it-works">How It Works</Link>
+          <Link to="/sample-profile">Sample Profile</Link>
+          <Link to="/programs">For Programs</Link>
           <Link className="nav-sign-in" to="/login">Sign In</Link>
           <Link className="nav-sign-up" to="/signup">
-            Sign Up
+            Analyze Your Player
           </Link>
         </nav>
       </div>

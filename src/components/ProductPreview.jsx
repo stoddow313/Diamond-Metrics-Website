@@ -12,13 +12,14 @@ function ProductPreview() {
   return (
     <section className="product-preview" aria-labelledby="product-preview-title">
       <div className="product-preview-copy">
-        <p className="eyebrow">Your Performance, in One Place</p>
+        <p className="eyebrow">See More in Every Play</p>
         <h2 id="product-preview-title">
-          More than numbers. A profile built to show the complete player.
+          You already record the moments that matter.
         </h2>
         <p className="section-text">
-          Review measurable performance, follow progress across games and
-          events, and share a clear player profile with coaches and recruiters.
+          Diamond Metrics turns that footage into clear player data—giving
+          players, parents, and coaches a better way to understand performance
+          beyond the box score.
         </p>
 
         <ul className="product-benefits" aria-label="Player profile benefits">
@@ -36,7 +37,7 @@ function ProductPreview() {
           </li>
         </ul>
 
-        <Link className="primary-button product-preview-cta" to="/p/joe-larsen">
+        <Link className="primary-button product-preview-cta" to="/sample-profile">
           Explore the Sample Profile
           <ArrowUpRight size={18} aria-hidden="true" />
         </Link>

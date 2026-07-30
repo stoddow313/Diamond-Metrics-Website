@@ -1,7 +1,10 @@
 import { useForm, ValidationError } from "@formspree/react";
+import { useSearchParams } from "react-router-dom";
 
 function Contact() {
   const [state, handleSubmit] = useForm("xgonkqrq");
+  const [searchParams] = useSearchParams();
+  const inquiry = searchParams.get("inquiry") || "";
 
   if (state.succeeded) {
     return (
@@ -61,6 +64,16 @@ function Contact() {
             value="New Diamond Metrics Inquiry"
           />
           <input type="text" name="_gotcha" style={{ display: "none" }} />
+
+          <div className="form-row">
+            <label htmlFor="inquiry">What can we help with?</label>
+            <select key={inquiry} id="inquiry" name="inquiry" defaultValue={inquiry}>
+              <option value="">General question</option>
+              <option value="player-analysis">Analyze my player</option>
+              <option value="pro-day">Schedule a Pro Day</option>
+              <option value="program">Program analytics</option>
+            </select>
+          </div>
 
           <div className="form-row">
             <label htmlFor="name">Name</label>
@@ -144,7 +157,7 @@ function Contact() {
             className="primary-button form-button"
             disabled={state.submitting}
           >
-            {state.submitting ? "Sending..." : "Get Started"}
+            {state.submitting ? "Sending..." : "Contact Us"}
           </button>
         </form>
       </div>
