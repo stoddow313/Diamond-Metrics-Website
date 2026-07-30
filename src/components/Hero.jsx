@@ -32,17 +32,42 @@ function Hero() {
       <div className="hero-visual">
         <picture>
           <source
-            media="(max-width: 700px)"
+            media="(max-width: 900px)"
             srcSet="/images/marketing/hero-demo-mobile.webp"
           />
           <img
-            src="/images/marketing/hero-demo-desktop.webp"
-            alt="Demo Diamond Metrics player profile showing hard-hit rate, sprint speed, exit velocity, and an overall rating"
-            width="1959"
-            height="803"
+            src="/images/marketing/hero-full-bleed-v2.webp"
+            alt="Baseball player preparing to hit under the lights in a night stadium"
+            width="1774"
+            height="887"
             fetchPriority="high"
           />
         </picture>
+      </div>
+
+      <div className="hero-data" aria-label="Demo player performance">
+        <p className="hero-data-label">Demo Profile</p>
+
+        <div className="hero-metric-list">
+          <div className="hero-metric">
+            <span className="hero-metric-value">48%</span>
+            <span>Hard-Hit Rate</span>
+          </div>
+          <div className="hero-metric">
+            <span className="hero-metric-value">18.7 mph</span>
+            <span>Sprint Speed</span>
+          </div>
+          <div className="hero-metric">
+            <span className="hero-metric-value">91.3 mph</span>
+            <span>Max Exit Velocity</span>
+          </div>
+        </div>
+
+        <div className="hero-rating">
+          <span>Overall Rating</span>
+          <strong>87</strong>
+          <small>/100</small>
+        </div>
       </div>
     </section>
   );
