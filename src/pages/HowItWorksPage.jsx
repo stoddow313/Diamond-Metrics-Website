@@ -1,15 +1,15 @@
-import { Camera, Check, HelpCircle } from 'lucide-react';
+import { Camera, Check, Focus, HelpCircle, Smartphone, Video } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import MarketingLayout from '../components/MarketingLayout';
 import MarketingCta from '../components/MarketingCta';
 import ProcessRail from '../components/ProcessRail';
 
 const faqs = [
-  ['Do I need a special camera?', 'Many types of analysis can begin with footage captured on a phone or standard camera. Certain measurements require specific angles or recording conditions.'],
+  ['Do I need a special camera?', 'No. Diamond Metrics works with footage captured on a phone or standard camera, and we provide clear filming guidance before you record.'],
   ['Can I submit only one play?', 'Yes. A single play can support a focused breakdown. Multiple plays or complete games provide more context.'],
-  ['Does every player receive the same metrics?', 'No. Available metrics depend on position, the performance captured, and the quality and angle of the footage.'],
+  ['Does every player receive the same metrics?', 'Each player receives position-specific metrics tailored to their performance and development goals.'],
   ['Can a player profile grow over time?', 'Yes. Additional games and evaluations can be added to create a clearer record of performance and development.'],
-  ['How accurate is the analysis?', 'Accuracy depends partly on footage quality and camera placement. Available measurements are clearly communicated and connected to supporting footage whenever possible.'],
+  ['How accurate is the analysis?', 'Diamond Metrics uses calibrated capture and review workflows, with measurements connected directly to supporting video.'],
 ];
 
 export default function HowItWorksPage() {
@@ -18,7 +18,7 @@ export default function HowItWorksPage() {
       <section className="page-hero">
         <p className="eyebrow">How It Works</p>
         <h1>From Baseball Footage to Player Insight</h1>
-        <p>Diamond Metrics turns qualifying game footage into clear, video-backed information for individual players and entire baseball programs.</p>
+        <p>Diamond Metrics turns game footage into clear, video-backed information for individual players and entire baseball programs.</p>
         <div className="hero-buttons">
           <a className="primary-button" href="#players">For Players &amp; Families</a>
           <a className="secondary-button" href="#programs-overview">For Coaches &amp; Programs</a>
@@ -34,12 +34,27 @@ export default function HowItWorksPage() {
       </section>
 
       <section className="footage-guide">
-        <div className="footage-art"><Camera size={68} aria-hidden="true" /><span>Phone or available camera</span></div>
+        <div className="footage-art" aria-label="Example of a player kept fully visible while recording">
+          <div className="filming-status"><span /> Recording</div>
+          <div className="filming-phone">
+            <div className="filming-screen">
+              <div className="field-horizon" />
+              <div className="player-silhouette"><i /><b /></div>
+              <div className="camera-frame"><span /><span /><span /><span /></div>
+            </div>
+          </div>
+          <div className="filming-callouts">
+            <span><Smartphone size={17} /> Phone or camera</span>
+            <span><Focus size={17} /> Full play visible</span>
+            <span><Video size={17} /> Stable position</span>
+          </div>
+        </div>
         <div>
           <p className="eyebrow">Footage Guidance</p>
           <h2>Better Footage Creates Better Insight</h2>
+          <p className="section-text">A clear, steady angle gives our analysts the best view of the player, the ball, and the complete result of the play.</p>
           <ul>{['Keep the camera stable', 'Capture the full play', 'Keep the player visible', 'Avoid excessive zooming', 'Include the player’s name, position, and jersey number'].map(item => <li key={item}><Check size={18} />{item}</li>)}</ul>
-          <p className="fine-print">Cellphone footage can be useful, but available measurements depend on the angle, quality, and type of footage submitted.</p>
+          <div className="filming-tip"><Camera size={20} /><span><strong>Simple rule:</strong> prioritize keeping the entire play in frame over getting a tight close-up.</span></div>
         </div>
       </section>
 

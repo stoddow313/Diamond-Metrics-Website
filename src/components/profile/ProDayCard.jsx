@@ -375,6 +375,51 @@ export function CardBack({ data, qrDataUrl, profileUrl }) {
   );
 }
 
+export function ProDayCardShowcase({ data }) {
+  const [flipped, setFlipped] = useState(false);
+  const [scale, setScale] = useState(1);
+  const reducedMotion = typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const profileUrl = `${window.location.origin}/p/${data.player.slug}`;
+
+  useEffect(() => {
+    const resize = () => setScale(Math.min(1, (window.innerWidth - 64) / OUTER_W));
+    resize();
+    window.addEventListener('resize', resize);
+    return () => window.removeEventListener('resize', resize);
+  }, []);
+
+  return (
+    <div className="pro-day-showcase-card">
+      <div style={{ width: OUTER_W * scale, height: OUTER_H * scale }}>
+        <div style={{ transform: `scale(${scale})`, transformOrigin: 'top left', width: OUTER_W, height: OUTER_H }}>
+          <button
+            type="button"
+            className="pro-day-card-button"
+            onClick={() => setFlipped(value => !value)}
+            aria-label={flipped ? 'Show Joe Larsen card front' : 'Show Joe Larsen card back'}
+            style={{ width: OUTER_W, height: OUTER_H }}
+          >
+            <div style={{
+              position: 'relative', width: '100%', height: '100%',
+              transformStyle: 'preserve-3d',
+              transition: reducedMotion ? 'none' : 'transform 0.65s cubic-bezier(0.35, 0.1, 0.3, 1)',
+              transform: flipped ? 'rotateY(180deg)' : 'rotateY(0deg)',
+            }}>
+              <div style={{ position: 'absolute', inset: 0, backfaceVisibility: 'hidden', WebkitBackfaceVisibility: 'hidden' }}>
+                <ChromeFrame><CardFront data={data} /></ChromeFrame>
+              </div>
+              <div style={{ position: 'absolute', inset: 0, backfaceVisibility: 'hidden', WebkitBackfaceVisibility: 'hidden', transform: 'rotateY(180deg)' }}>
+                <ChromeFrame><CardBack data={data} profileUrl={profileUrl} /></ChromeFrame>
+              </div>
+            </div>
+          </button>
+        </div>
+      </div>
+      <p>Click the card to view the back</p>
+    </div>
+  );
+}
+
 export default function ProDayCardModal({ data, onClose, autoShare = false }) {
   const [qrDataUrl, setQrDataUrl] = useState(null);
   const [flipped, setFlipped] = useState(false);
