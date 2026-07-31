@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { X, Download, Star, Share2 } from 'lucide-react';
+import { getPlayerCardStillUrl } from '../../data/playerMedia';
 
 // Two-sided collectible Pro Day card ("prestige" treatment): prismatic chrome
 // frame, holographic foil ground, rating medallion, embossed nameplate.
@@ -155,6 +156,7 @@ function displayRatings(data) {
 export function CardFront({ data }) {
   const { player, chips, event } = data;
   const { r, overall, ring } = displayRatings(data);
+  const playerPhotoUrl = player.photo_url || getPlayerCardStillUrl(player);
   const metallicText = {
     background: 'linear-gradient(180deg, #f4f8ff 12%, #c3d2ec 42%, #8298bf 55%, #eef4ff 92%)',
     WebkitBackgroundClip: 'text', backgroundClip: 'text', color: 'transparent',
@@ -196,13 +198,13 @@ export function CardFront({ data }) {
         </div>
         <div style={{
           flex: 1, borderRadius: 14, position: 'relative', overflow: 'hidden',
-          background: player.photo_url
-            ? `url(${player.photo_url}) center/cover`
+          background: playerPhotoUrl
+            ? `url(${playerPhotoUrl}) center/cover`
             : 'radial-gradient(circle at 50% 35%, #16305e 0%, #0a1730 75%)',
           border: '1px solid rgba(148,207,255,0.45)',
           boxShadow: '0 0 18px rgba(77,163,255,0.3), inset 0 0 24px rgba(77,163,255,0.12)',
         }}>
-          {!player.photo_url && (
+          {!playerPhotoUrl && (
             <span style={{
               position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center',
               fontSize: 46, fontWeight: 900, color: '#1e3a5f',
@@ -476,9 +478,10 @@ export default function ProDayCardModal({ data, onClose, autoShare = false }) {
     }
     for (const el of clone.querySelectorAll('*')) {
       const bg = el.style?.backgroundImage || el.style?.background || '';
-      const match = bg.match(/url\(["']?(https?:[^"')]+)["']?\)/);
-      if (match) {
-        const dataUrl = await fetchAsDataUrl(match[1]);
+      const match = bg.match(/url\(["']?([^"')]+)["']?\)/);
+      if (match && !match[1].startsWith('data:')) {
+        const absoluteUrl = new URL(match[1], window.location.origin).href;
+        const dataUrl = await fetchAsDataUrl(absoluteUrl);
         el.style.background = bg.replace(match[1], dataUrl);
       }
     }

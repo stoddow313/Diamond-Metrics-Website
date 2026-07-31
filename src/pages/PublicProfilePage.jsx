@@ -11,6 +11,7 @@ import BrandMark from '../components/BrandMark';
 import { TrendChart, Histogram, DonutChart, RingGauge, SprayChart } from '../components/profile/charts';
 import ProDayCardModal from '../components/profile/ProDayCard';
 import PortalEditModal from '../components/profile/PortalEditModal';
+import { getPlayerIntroUrl } from '../data/playerMedia';
 
 /* ── Metric presentation config ──────────────────────────────────────────── */
 
@@ -585,9 +586,21 @@ function BiomechanicsTab() {
 function PlayerCard({ player, ratings }) {
   const overall = ratings?.overall?.value ?? player.overall_rating;
   const stars = overall != null ? Math.round(overall / 20) : null;
+  const introUrl = getPlayerIntroUrl(player);
   return (
     <aside className="rounded-2xl overflow-hidden text-white flex flex-col" style={{ background: 'linear-gradient(180deg, #0b1730 0%, #060e21 100%)' }}>
-      {player.photo_url ? (
+      {introUrl ? (
+        <video
+          className="w-full aspect-video object-cover bg-slate-950"
+          src={introUrl}
+          aria-label={`${player.first_name} ${player.last_name} player introduction`}
+          autoPlay
+          loop
+          muted
+          playsInline
+          preload="metadata"
+        />
+      ) : player.photo_url ? (
         <div className="h-44 lg:h-52 bg-cover bg-center" style={{ backgroundImage: `url(${player.photo_url})` }} />
       ) : (
         <div className="h-20 lg:h-28 flex items-center justify-center" style={{ background: 'radial-gradient(circle at 50% 30%, #12264d 0%, #0b1730 70%)' }}>
