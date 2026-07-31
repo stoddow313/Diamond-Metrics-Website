@@ -43,6 +43,57 @@ const TABS = [
 const VIDEO_CATEGORIES = ['Hitting', 'Pitching', 'Defense', 'Running', 'Showcase Highlights'];
 const REPORT_TYPES = ['Hitting Report', 'Pitching Report', 'Athletic Testing Report', 'Showcase Report'];
 
+const PLAYER_INTRO_SLUGS = new Set([
+  'berto-archuleta',
+  'camden-jakobson',
+  'clark-yerka',
+  'cody-jones',
+  'cohen-smith',
+  'cole-hansgen',
+  'dane-anderson',
+  'daniel-zarate',
+  'dayne-price',
+  'eli-smith',
+  'franklyn-semu',
+  'gavin-odell',
+  'gavin-uriarte',
+  'graysen-merkley',
+  'harvey-tomsick',
+  'isaac-rasmussen',
+  'jacob-seager',
+  'james-burton',
+  'jameson-butterbaugh',
+  'jase-headrick',
+  'jax-cline',
+  'jake-bell',
+  'kallman-berry',
+  'kaysen-monty',
+  'keeton-keele',
+  'knox-williams',
+  'kolven-clark',
+  'luke-child',
+  'madden-berni',
+  'mckay-green',
+  'miles-miller',
+  'nicholas-dalton',
+  'noah-miller',
+  'oliver-thorne',
+  'paxton-larsen',
+  'reagan-bess',
+  'saxon-steele',
+  'tatum-brown',
+  'will-mabey',
+]);
+
+function playerIntroUrl(player) {
+  const slug = `${player.first_name}-${player.last_name}`
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '');
+
+  return PLAYER_INTRO_SLUGS.has(slug) ? `/player-intros/${slug}.mp4` : null;
+}
+
 function fmt(value, def) {
   if (value === null || value === undefined) return '—';
   let s = Number(value).toFixed(def.decimals);
@@ -585,9 +636,21 @@ function BiomechanicsTab() {
 function PlayerCard({ player, ratings }) {
   const overall = ratings?.overall?.value ?? player.overall_rating;
   const stars = overall != null ? Math.round(overall / 20) : null;
+  const introUrl = playerIntroUrl(player);
   return (
     <aside className="rounded-2xl overflow-hidden text-white flex flex-col" style={{ background: 'linear-gradient(180deg, #0b1730 0%, #060e21 100%)' }}>
-      {player.photo_url ? (
+      {introUrl ? (
+        <video
+          className="w-full aspect-video object-cover bg-slate-950"
+          src={introUrl}
+          aria-label={`${player.first_name} ${player.last_name} player introduction`}
+          autoPlay
+          loop
+          muted
+          playsInline
+          preload="metadata"
+        />
+      ) : player.photo_url ? (
         <div className="h-44 lg:h-52 bg-cover bg-center" style={{ backgroundImage: `url(${player.photo_url})` }} />
       ) : (
         <div className="h-20 lg:h-28 flex items-center justify-center" style={{ background: 'radial-gradient(circle at 50% 30%, #12264d 0%, #0b1730 70%)' }}>
