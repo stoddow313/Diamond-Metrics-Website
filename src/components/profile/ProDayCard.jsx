@@ -478,9 +478,10 @@ export default function ProDayCardModal({ data, onClose, autoShare = false }) {
     }
     for (const el of clone.querySelectorAll('*')) {
       const bg = el.style?.backgroundImage || el.style?.background || '';
-      const match = bg.match(/url\(["']?(https?:[^"')]+)["']?\)/);
-      if (match) {
-        const dataUrl = await fetchAsDataUrl(match[1]);
+      const match = bg.match(/url\(["']?([^"')]+)["']?\)/);
+      if (match && !match[1].startsWith('data:')) {
+        const absoluteUrl = new URL(match[1], window.location.origin).href;
+        const dataUrl = await fetchAsDataUrl(absoluteUrl);
         el.style.background = bg.replace(match[1], dataUrl);
       }
     }
