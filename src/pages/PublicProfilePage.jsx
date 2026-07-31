@@ -11,6 +11,7 @@ import BrandMark from '../components/BrandMark';
 import { TrendChart, Histogram, DonutChart, RingGauge, SprayChart } from '../components/profile/charts';
 import ProDayCardModal from '../components/profile/ProDayCard';
 import PortalEditModal from '../components/profile/PortalEditModal';
+import { getPlayerIntroUrl } from '../data/playerMedia';
 
 /* ── Metric presentation config ──────────────────────────────────────────── */
 
@@ -42,57 +43,6 @@ const TABS = [
 
 const VIDEO_CATEGORIES = ['Hitting', 'Pitching', 'Defense', 'Running', 'Showcase Highlights'];
 const REPORT_TYPES = ['Hitting Report', 'Pitching Report', 'Athletic Testing Report', 'Showcase Report'];
-
-const PLAYER_INTRO_SLUGS = new Set([
-  'berto-archuleta',
-  'camden-jakobson',
-  'clark-yerka',
-  'cody-jones',
-  'cohen-smith',
-  'cole-hansgen',
-  'dane-anderson',
-  'daniel-zarate',
-  'dayne-price',
-  'eli-smith',
-  'franklyn-semu',
-  'gavin-odell',
-  'gavin-uriarte',
-  'graysen-merkley',
-  'harvey-tomsick',
-  'isaac-rasmussen',
-  'jacob-seager',
-  'james-burton',
-  'jameson-butterbaugh',
-  'jase-headrick',
-  'jax-cline',
-  'jake-bell',
-  'kallman-berry',
-  'kaysen-monty',
-  'keeton-keele',
-  'knox-williams',
-  'kolven-clark',
-  'luke-child',
-  'madden-berni',
-  'mckay-green',
-  'miles-miller',
-  'nicholas-dalton',
-  'noah-miller',
-  'oliver-thorne',
-  'paxton-larsen',
-  'reagan-bess',
-  'saxon-steele',
-  'tatum-brown',
-  'will-mabey',
-]);
-
-function playerIntroUrl(player) {
-  const slug = `${player.first_name}-${player.last_name}`
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-|-$/g, '');
-
-  return PLAYER_INTRO_SLUGS.has(slug) ? `/player-intros/${slug}.mp4` : null;
-}
 
 function fmt(value, def) {
   if (value === null || value === undefined) return '—';
@@ -636,7 +586,7 @@ function BiomechanicsTab() {
 function PlayerCard({ player, ratings }) {
   const overall = ratings?.overall?.value ?? player.overall_rating;
   const stars = overall != null ? Math.round(overall / 20) : null;
-  const introUrl = playerIntroUrl(player);
+  const introUrl = getPlayerIntroUrl(player);
   return (
     <aside className="rounded-2xl overflow-hidden text-white flex flex-col" style={{ background: 'linear-gradient(180deg, #0b1730 0%, #060e21 100%)' }}>
       {introUrl ? (
