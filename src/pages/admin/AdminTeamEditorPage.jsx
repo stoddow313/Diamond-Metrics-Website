@@ -3,6 +3,7 @@ import { Link, useParams } from 'react-router-dom';
 import { api } from '../../lib/api';
 import { Field, TextInput, Select, PrimaryButton, GhostButton, ErrorNote } from '../../components/admin/ui';
 import { cardStyle } from '../../components/admin/theme';
+import AccessPanel from '../../components/admin/AccessPanel';
 
 // Team editor: identity, dated roster memberships (archive keeps history),
 // and the team's tournament entries. Memberships never delete — archiving
@@ -172,6 +173,15 @@ export default function AdminTeamEditorPage() {
           </details>
         )}
       </section>
+
+      {/* coach access */}
+      <AccessPanel
+        kind="teams"
+        id={teamId}
+        title="Coach access"
+        subtitle="Coaches see this team's roster and schedule — not full player profiles. Send the invite link so they can claim their account."
+        onError={setError}
+      />
 
       {/* tournament participation */}
       <section className="rounded-2xl border p-6" style={cardStyle}>

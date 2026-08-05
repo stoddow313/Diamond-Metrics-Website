@@ -15,7 +15,7 @@ export default function LoginPage() {
     setError('');
     try {
       const user = await login(email, password);
-      navigate(user.role === 'player' ? '/me' : '/admin');
+      navigate({ player: '/me', staff: '/staff' }[user.role] || '/admin');
     } catch (err) {
       setError(err.message || 'Invalid email or password.');
     }

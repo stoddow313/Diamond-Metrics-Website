@@ -6,7 +6,9 @@ import SampleProfilePage from './pages/SampleProfilePage';
 import ProgramsPage from './pages/ProgramsPage';
 import LoginPage from './pages/LoginPage';
 import ClaimPage from './pages/ClaimPage';
+import ClaimStaffPage from './pages/ClaimStaffPage';
 import SignupInfoPage from './pages/SignupInfoPage';
+import { StaffLayout, StaffHomePage, StaffTeamPage, StaffTournamentPage } from './pages/staff/StaffPages';
 import AdminLayout from './components/admin/AdminLayout';
 import AdminPlayersPage from './pages/admin/AdminPlayersPage';
 import AdminPlayerEditorPage from './pages/admin/AdminPlayerEditorPage';
@@ -33,19 +35,13 @@ import PublicProfilePage from './pages/PublicProfilePage';
  * import AdminReviewPage from './pages/admin/AdminReviewPage';
  * ──────────────────────────────────────────────────────────────────────── */
 
-function AdminRoute({ children }) {
-  const { user, loading } = useAuth();
-  if (loading) return null;
-  if (!user) return <Navigate to="/login" replace />;
-  if (user.role === 'player') return <Navigate to="/me" replace />;
-  return children;
-}
+const HOME_BY_ROLE = { admin: '/admin', player: '/me', staff: '/staff' };
 
-function PlayerRoute({ children }) {
+function RoleRoute({ role, children }) {
   const { user, loading } = useAuth();
   if (loading) return null;
   if (!user) return <Navigate to="/login" replace />;
-  if (user.role !== 'player') return <Navigate to="/admin" replace />;
+  if (user.role !== role) return <Navigate to={HOME_BY_ROLE[user.role] || '/login'} replace />;
   return children;
 }
 
@@ -59,6 +55,7 @@ function AppRoutes() {
       <Route path="/login" element={<LoginPage />} />
       <Route path="/signup" element={<SignupInfoPage />} />
       <Route path="/claim/:token" element={<ClaimPage />} />
+      <Route path="/claim-staff/:token" element={<ClaimStaffPage />} />
 
       {/* Public, shareable player profiles */}
       <Route path="/p/:slug" element={<PublicProfilePage />} />
@@ -67,19 +64,33 @@ function AppRoutes() {
       <Route
         path="/me"
         element={
-          <PlayerRoute>
+          <RoleRoute role="player">
             <PublicProfilePage portal />
-          </PlayerRoute>
+          </RoleRoute>
         }
       />
+
+      {/* Staff portal: coaches/directors see assigned teams and tournaments */}
+      <Route
+        path="/staff"
+        element={
+          <RoleRoute role="staff">
+            <StaffLayout />
+          </RoleRoute>
+        }
+      >
+        <Route index element={<StaffHomePage />} />
+        <Route path="teams/:teamId" element={<StaffTeamPage />} />
+        <Route path="tournaments/:tournamentId" element={<StaffTournamentPage />} />
+      </Route>
 
       {/* Admin: player profile + stat management */}
       <Route
         path="/admin"
         element={
-          <AdminRoute>
+          <RoleRoute role="admin">
             <AdminLayout />
-          </AdminRoute>
+          </RoleRoute>
         }
       >
         <Route index element={<AdminPlayersPage />} />

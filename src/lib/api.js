@@ -81,6 +81,16 @@ export const api = {
   createTournamentGame: (tournamentId, g) => request(`/api/tournaments/${tournamentId}/games`, { method: 'POST', body: g }),
   updateTournamentGame: (id, g) => request(`/api/tournament-games/${id}`, { method: 'PUT', body: g }),
 
+  // staff (coach/director) access
+  getAccess: (kind, id) => request(`/api/${kind}/${id}/access`),           // kind: 'teams' | 'tournaments'
+  addAccess: (kind, id, email) => request(`/api/${kind}/${id}/access`, { method: 'POST', body: { email } }),
+  removeAccess: (kind, id) => request(`/api/${kind === 'teams' ? 'team' : 'tournament'}-access/${id}`, { method: 'DELETE' }),
+  staffInviteInfo: (token) => request(`/api/staff-invites/${token}`, { auth: false }),
+  claimStaffInvite: (token, name, password) => request(`/api/staff-invites/${token}/claim`, { method: 'POST', body: { name, password }, auth: false }),
+  staffOverview: () => request('/api/staff/overview'),
+  staffTeam: (id) => request(`/api/staff/teams/${id}`),
+  staffTournament: (id) => request(`/api/staff/tournaments/${id}`),
+
   // public
   publicProfile: (slug) => request(`/api/public/players/${slug}`, { auth: false }),
   proDayCard: (slug) => request(`/api/public/players/${slug}/card`, { auth: false }),
