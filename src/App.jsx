@@ -10,6 +10,10 @@ import SignupInfoPage from './pages/SignupInfoPage';
 import AdminLayout from './components/admin/AdminLayout';
 import AdminPlayersPage from './pages/admin/AdminPlayersPage';
 import AdminPlayerEditorPage from './pages/admin/AdminPlayerEditorPage';
+import AdminTeamsPage from './pages/admin/AdminTeamsPage';
+import AdminTeamEditorPage from './pages/admin/AdminTeamEditorPage';
+import AdminTournamentsPage from './pages/admin/AdminTournamentsPage';
+import AdminTournamentEditorPage from './pages/admin/AdminTournamentEditorPage';
 import PublicProfilePage from './pages/PublicProfilePage';
 
 /* ── SIDELINED (pre-BE demo app) ─────────────────────────────────────────
@@ -80,6 +84,10 @@ function AppRoutes() {
       >
         <Route index element={<AdminPlayersPage />} />
         <Route path="players/:playerId" element={<AdminPlayerEditorPage />} />
+        <Route path="teams" element={<AdminTeamsPage />} />
+        <Route path="teams/:teamId" element={<AdminTeamEditorPage />} />
+        <Route path="tournaments" element={<AdminTournamentsPage />} />
+        <Route path="tournaments/:tournamentId" element={<AdminTournamentEditorPage />} />
       </Route>
 
       {/* ── SIDELINED routes (see note above) ──────────────────────────

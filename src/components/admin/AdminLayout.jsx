@@ -20,6 +20,11 @@ export default function AdminLayout() {
             <span className="text-xs font-bold tracking-widest uppercase px-2 py-1 rounded" style={{ backgroundColor: 'rgba(56, 189, 248, 0.12)', color: '#38bdf8' }}>
               Admin
             </span>
+            <nav className="hidden md:flex items-center gap-4 text-sm font-bold">
+              <Link to="/admin" className="hover:underline" style={{ color: '#cfe8ff' }}>Players</Link>
+              <Link to="/admin/teams" className="hover:underline" style={{ color: '#cfe8ff' }}>Teams</Link>
+              <Link to="/admin/tournaments" className="hover:underline" style={{ color: '#cfe8ff' }}>Tournaments</Link>
+            </nav>
           </div>
           <div className="flex items-center gap-4">
             <span className="text-sm" style={{ color: '#94a3b8' }}>{user?.email}</span>
