@@ -250,3 +250,6 @@ after every merge that touches `server/`.
 | 2026-07-28 | Stripe Checkout over Payment Links | Order records must exist in our DB |
 | 2026-07-30 | Phases 1+2 shipped admin-gated; coach/director *claim flows* deferred to Phase 3 | No non-admin surface exists yet, so no permission exposure; `team_users`/`tournament_users` assignment tables created now so the schema is stable |
 | 2026-07-30 | Divisions hard-delete only when empty; entries/memberships archive | Divisions are containers; everything with history archives |
+| 2026-07-31 | Deferral reversed: coach/director access + server-side imports shipped to match the doc's Phase 1–2 sequence | Owner prioritized doc parity; staff portal is the read surface the Phase-3 dashboards will replace |
+| 2026-07-31 | Import duplicate rule: external id → name+DOB → name+grad year; bare name match always requires admin resolution | Doc §8: no silent duplicate creation on spelling alone |
+| 2026-07-31 | Event-roster and metrics imports never create players | Player identity enters only via the season-roster import (with dedupe) or admin UI |

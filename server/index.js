@@ -9,6 +9,7 @@ import {
 } from './metricCatalog.js';
 import { computeRatings } from './ratingEngine.js';
 import { resolveEventRoster, slugify } from './rosterLogic.js';
+import { IMPORT_KINDS, planImport, applyImport } from './importEngine.js';
 
 const app = express();
 // Render (and most hosts) inject PORT; DM_API_PORT is the local-dev override.
@@ -1113,6 +1114,40 @@ app.delete('/api/appearances/:id', requireAdmin, (req, res) => {
   const info = db.prepare('DELETE FROM player_game_appearances WHERE id = ?').run(req.params.id);
   if (!info.changes) return res.status(404).json({ error: 'Appearance not found' });
   res.json({ ok: true });
+});
+
+// ── Server-side imports (requirements §8) ────────────────────────────────
+// Dry-run preview → duplicate resolution → transactional apply + audit.
+
+const MAX_IMPORT_ROWS = 2000;
+
+app.get('/api/imports/kinds', requireAdmin, (_req, res) => {
+  res.json({ kinds: Object.entries(IMPORT_KINDS).map(([key, k]) => ({ key, ...k })) });
+});
+
+app.post('/api/imports/preview', requireAdmin, (req, res) => {
+  const { kind, rows, resolutions = {} } = req.body || {};
+  if (!IMPORT_KINDS[kind]) return res.status(400).json({ error: 'Unknown import kind' });
+  if (!Array.isArray(rows) || rows.length === 0) return res.status(400).json({ error: 'No rows to import' });
+  if (rows.length > MAX_IMPORT_ROWS) return res.status(413).json({ error: `Too many rows (max ${MAX_IMPORT_ROWS})` });
+  res.json({ plan: planImport(db, kind, rows, resolutions) });
+});
+
+app.post('/api/imports/apply', requireAdmin, (req, res) => {
+  const { kind, rows, resolutions = {}, filename = '' } = req.body || {};
+  if (!IMPORT_KINDS[kind]) return res.status(400).json({ error: 'Unknown import kind' });
+  if (!Array.isArray(rows) || rows.length === 0) return res.status(400).json({ error: 'No rows to import' });
+  if (rows.length > MAX_IMPORT_ROWS) return res.status(413).json({ error: `Too many rows (max ${MAX_IMPORT_ROWS})` });
+  const result = applyImport(db, kind, rows, resolutions, { filename, uploader: req.admin.email });
+  res.status(result.blocked ? 409 : 200).json(result);
+});
+
+app.get('/api/imports/audits', requireAdmin, (_req, res) => {
+  res.json({
+    audits: db.prepare(
+      'SELECT id, kind, filename, uploader_email, created_count, updated_count, skipped_count, error_count, created_at FROM import_audits ORDER BY id DESC LIMIT 50'
+    ).all(),
+  });
 });
 
 // ── Staff access: admin assignment + invite, claim, scoped reads ─────────
