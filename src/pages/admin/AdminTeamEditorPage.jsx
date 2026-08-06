@@ -122,7 +122,8 @@ export default function AdminTeamEditorPage() {
           <Field label="Season">
             <Select value={addForm.season_id} onChange={e => setAddForm({ ...addForm, season_id: e.target.value })}>
               <option value="">—</option>
-              {seasons.map(s => <option key={s.id} value={s.id}>{s.label}</option>)}
+              {/* archived seasons stay on historical rows but can't be picked for new memberships */}
+              {seasons.filter(s => s.status !== 'archived').map(s => <option key={s.id} value={s.id}>{s.label}</option>)}
             </Select>
           </Field>
           <Field label="Start date"><TextInput type="date" value={addForm.start_date} onChange={e => setAddForm({ ...addForm, start_date: e.target.value })} required /></Field>

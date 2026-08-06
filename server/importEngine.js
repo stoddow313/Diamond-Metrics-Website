@@ -169,11 +169,13 @@ const processors = {
     if (!start) return { action: 'error', message: 'missing or unrecognized start_date' };
 
     let seasonId = null;
+    let seasonWarning = '';
     const seasonLabel = norm(row.season_label);
     if (seasonLabel) {
-      const season = db.prepare('SELECT id FROM seasons WHERE LOWER(label) = LOWER(?)').get(seasonLabel);
+      const season = db.prepare('SELECT id, status FROM seasons WHERE LOWER(label) = LOWER(?)').get(seasonLabel);
       if (!season) return { action: 'error', message: `Unknown season "${seasonLabel}" — create it first` };
       seasonId = season.id;
+      if (season.status === 'archived') seasonWarning = ` — warning: season "${seasonLabel}" is archived`;
     }
 
     // Resolve or create the player, honoring the duplicate rule.
@@ -218,10 +220,10 @@ const processors = {
       }
     }
 
-    if (willCreate) return { action: 'create', message: `Creates player ${norm(row.first_name)} ${norm(row.last_name)} + membership on "${team.name}"` };
+    if (willCreate) return { action: 'create', message: `Creates player ${norm(row.first_name)} ${norm(row.last_name)} + membership on "${team.name}"${seasonWarning}` };
     return membershipExists
-      ? { action: 'update', message: `Updates existing membership for ${norm(row.first_name)} ${norm(row.last_name)} on "${team.name}"` }
-      : { action: 'create', message: `Adds ${norm(row.first_name)} ${norm(row.last_name)} (${resolved.matchedBy || 'resolved'}) to "${team.name}"` };
+      ? { action: 'update', message: `Updates existing membership for ${norm(row.first_name)} ${norm(row.last_name)} on "${team.name}"${seasonWarning}` }
+      : { action: 'create', message: `Adds ${norm(row.first_name)} ${norm(row.last_name)} (${resolved.matchedBy || 'resolved'}) to "${team.name}"${seasonWarning}` };
   },
 
   tournament_entries(db, row, ctx) {
