@@ -20,6 +20,8 @@ import AdminImportsPage from './pages/admin/AdminImportsPage';
 import PublicProfilePage from './pages/PublicProfilePage';
 import TeamDashboardPage from './pages/TeamDashboardPage';
 import TournamentDashboardPage from './pages/TournamentDashboardPage';
+import BlogPage from './pages/BlogPage';
+import BaseballFilmingGuidePage from './pages/BaseballFilmingGuidePage';
 
 /* ── SIDELINED (pre-BE demo app) ─────────────────────────────────────────
  * The original dummy coach dashboard (/app) and film-review admin (/admin)
@@ -55,6 +57,8 @@ function AppRoutes() {
       <Route path="/how-it-works" element={<HowItWorksPage />} />
       <Route path="/sample-profile" element={<SampleProfilePage />} />
       <Route path="/programs" element={<ProgramsPage />} />
+      <Route path="/blog" element={<BlogPage />} />
+      <Route path="/blog/how-to-record-baseball-game-video-analysis" element={<BaseballFilmingGuidePage />} />
       <Route path="/login" element={<LoginPage />} />
       <Route path="/signup" element={<SignupInfoPage />} />
       <Route path="/claim/:token" element={<ClaimPage />} />

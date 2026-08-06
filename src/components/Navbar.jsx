@@ -35,6 +35,7 @@ function Navbar() {
           <Link to="/how-it-works">How It Works</Link>
           <Link to="/sample-profile">Sample Profile</Link>
           <Link to="/programs">For Programs</Link>
+          <Link to="/blog">Playbook</Link>
           <Link className="nav-sign-in" to="/login">Sign In</Link>
           <Link className="nav-sign-up" to="/signup">
             Analyze Your Player
