@@ -65,6 +65,7 @@ export const api = {
   updateTeam: (id, team) => request(`/api/teams/${id}`, { method: 'PUT', body: team }),
   listSeasons: () => request('/api/seasons'),
   createSeason: (season) => request('/api/seasons', { method: 'POST', body: season }),
+  updateSeason: (id, fields) => request(`/api/seasons/${id}`, { method: 'PUT', body: fields }),
   addRosterMembership: (teamId, m) => request(`/api/teams/${teamId}/roster`, { method: 'POST', body: m }),
   updateRosterMembership: (id, m) => request(`/api/roster/${id}`, { method: 'PUT', body: m }),
   listTournaments: () => request('/api/tournaments'),

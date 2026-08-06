@@ -13,6 +13,7 @@ import AdminLayout from './components/admin/AdminLayout';
 import AdminPlayersPage from './pages/admin/AdminPlayersPage';
 import AdminPlayerEditorPage from './pages/admin/AdminPlayerEditorPage';
 import AdminTeamsPage from './pages/admin/AdminTeamsPage';
+import AdminSeasonsPage from './pages/admin/AdminSeasonsPage';
 import AdminTeamEditorPage from './pages/admin/AdminTeamEditorPage';
 import AdminTournamentsPage from './pages/admin/AdminTournamentsPage';
 import AdminTournamentEditorPage from './pages/admin/AdminTournamentEditorPage';
@@ -104,6 +105,7 @@ function AppRoutes() {
         <Route path="players/:playerId" element={<AdminPlayerEditorPage />} />
         <Route path="teams" element={<AdminTeamsPage />} />
         <Route path="teams/:teamId" element={<AdminTeamEditorPage />} />
+        <Route path="seasons" element={<AdminSeasonsPage />} />
         <Route path="tournaments" element={<AdminTournamentsPage />} />
         <Route path="tournaments/:tournamentId" element={<AdminTournamentEditorPage />} />
         <Route path="imports" element={<AdminImportsPage />} />
