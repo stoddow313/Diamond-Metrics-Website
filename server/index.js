@@ -898,11 +898,30 @@ app.get('/api/seasons', requireAdmin, (_req, res) => {
 });
 
 app.post('/api/seasons', requireAdmin, (req, res) => {
-  const { label, start_date, end_date } = req.body || {};
+  const { label, start_date, end_date, status = 'active' } = req.body || {};
   if (!label || !start_date || !end_date) return res.status(400).json({ error: 'label, start_date, end_date are required' });
+  if (!['active', 'archived'].includes(status)) return res.status(400).json({ error: "status must be 'active' or 'archived'" });
   try {
-    const info = db.prepare('INSERT INTO seasons (label, start_date, end_date) VALUES (?, ?, ?)').run(label, start_date, end_date);
+    const info = db.prepare('INSERT INTO seasons (label, start_date, end_date, status) VALUES (?, ?, ?, ?)').run(label, start_date, end_date, status);
     res.status(201).json({ season: db.prepare('SELECT * FROM seasons WHERE id = ?').get(info.lastInsertRowid) });
+  } catch {
+    res.status(409).json({ error: 'A season with that label already exists' });
+  }
+});
+
+app.put('/api/seasons/:id', requireAdmin, (req, res) => {
+  const season = db.prepare('SELECT * FROM seasons WHERE id = ?').get(req.params.id);
+  if (!season) return res.status(404).json({ error: 'Season not found' });
+  const data = pickFields(req.body, ['label', 'start_date', 'end_date', 'status']);
+  if (!Object.keys(data).length) return res.status(400).json({ error: 'No fields to update' });
+  if (data.status && !['active', 'archived'].includes(data.status)) {
+    return res.status(400).json({ error: "status must be 'active' or 'archived'" });
+  }
+  if ('label' in data && !String(data.label).trim()) return res.status(400).json({ error: 'label cannot be empty' });
+  try {
+    const sets = Object.keys(data).map(k => `${k} = ?`).join(', ');
+    db.prepare(`UPDATE seasons SET ${sets} WHERE id = ?`).run(...Object.values(data), season.id);
+    res.json({ season: db.prepare('SELECT * FROM seasons WHERE id = ?').get(season.id) });
   } catch {
     res.status(409).json({ error: 'A season with that label already exists' });
   }

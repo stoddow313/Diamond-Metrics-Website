@@ -23,6 +23,7 @@ export default function AdminLayout() {
             <nav className="hidden md:flex items-center gap-4 text-sm font-bold">
               <Link to="/admin" className="hover:underline" style={{ color: '#cfe8ff' }}>Players</Link>
               <Link to="/admin/teams" className="hover:underline" style={{ color: '#cfe8ff' }}>Teams</Link>
+              <Link to="/admin/seasons" className="hover:underline" style={{ color: '#cfe8ff' }}>Seasons</Link>
               <Link to="/admin/tournaments" className="hover:underline" style={{ color: '#cfe8ff' }}>Tournaments</Link>
               <Link to="/admin/imports" className="hover:underline" style={{ color: '#cfe8ff' }}>Imports</Link>
             </nav>
