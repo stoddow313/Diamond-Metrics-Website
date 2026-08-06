@@ -83,7 +83,47 @@ function requirePlayer(req, res, next) {
   next();
 }
 
-// One login endpoint for both roles: admins first, then claimed player accounts.
+// Coach/director (staff) sessions — separate table, same pattern as players.
+function createStaffSession(staffUserId) {
+  const token = randomBytes(32).toString('hex');
+  db.prepare(
+    `INSERT INTO staff_sessions (token, staff_user_id, expires_at)
+     VALUES (?, ?, datetime('now', '+${SESSION_TTL_DAYS} days'))`
+  ).run(token, staffUserId);
+  return token;
+}
+
+function staffFromToken(token) {
+  return db.prepare(
+    `SELECT ss.token, su.id AS staff_user_id, su.email, su.name
+     FROM staff_sessions ss JOIN staff_users su ON su.id = ss.staff_user_id
+     WHERE ss.token = ? AND ss.expires_at > datetime('now')`
+  ).get(token);
+}
+
+function requireStaff(req, res, next) {
+  const header = req.headers.authorization || '';
+  const token = header.startsWith('Bearer ') ? header.slice(7) : null;
+  if (!token) return res.status(401).json({ error: 'Not authenticated' });
+  const row = staffFromToken(token);
+  if (!row) return res.status(401).json({ error: 'Session expired or invalid' });
+  req.staff = row;
+  req.sessionToken = token;
+  next();
+}
+
+// Permission rule (requirements §2): assignment-scoped access, enforced at
+// the API layer. Assignments are email-keyed rows in team_users /
+// tournament_users; being on neither list means 404 on direct URL access.
+function staffCanViewTeam(staff, teamId) {
+  return !!db.prepare('SELECT 1 FROM team_users WHERE team_id = ? AND email = ?').get(teamId, staff.email);
+}
+
+function staffCanViewTournament(staff, tournamentId) {
+  return !!db.prepare('SELECT 1 FROM tournament_users WHERE tournament_id = ? AND email = ?').get(tournamentId, staff.email);
+}
+
+// One login endpoint for all roles: admins, then players, then staff.
 app.post('/api/auth/login', (req, res) => {
   const { email, password } = req.body || {};
   if (!email || !password) return res.status(400).json({ error: 'Email and password are required' });
@@ -107,6 +147,12 @@ app.post('/api/auth/login', (req, res) => {
     });
   }
 
+  const su = db.prepare('SELECT * FROM staff_users WHERE email = ?').get(normEmail);
+  if (su && verifyPassword(password, su.password_hash)) {
+    const token = createStaffSession(su.id);
+    return res.json({ token, admin: { email: su.email, name: su.name, role: 'staff' } });
+  }
+
   res.status(401).json({ error: 'Invalid email or password' });
 });
 
@@ -127,6 +173,11 @@ app.get('/api/auth/me', (req, res) => {
       admin: { email: playerRow.email, name: `${playerRow.first_name} ${playerRow.last_name}`, role: 'player', slug: playerRow.slug },
     });
   }
+
+  const staffRow = staffFromToken(token);
+  if (staffRow) {
+    return res.json({ admin: { email: staffRow.email, name: staffRow.name, role: 'staff' } });
+  }
   res.status(401).json({ error: 'Session expired or invalid' });
 });
 
@@ -136,6 +187,7 @@ app.post('/api/auth/logout', (req, res) => {
   if (token) {
     db.prepare('DELETE FROM sessions WHERE token = ?').run(token);
     db.prepare('DELETE FROM player_sessions WHERE token = ?').run(token);
+    db.prepare('DELETE FROM staff_sessions WHERE token = ?').run(token);
   }
   res.json({ ok: true });
 });
@@ -1061,6 +1113,158 @@ app.delete('/api/appearances/:id', requireAdmin, (req, res) => {
   const info = db.prepare('DELETE FROM player_game_appearances WHERE id = ?').run(req.params.id);
   if (!info.changes) return res.status(404).json({ error: 'Appearance not found' });
   res.json({ ok: true });
+});
+
+// ── Staff access: admin assignment + invite, claim, scoped reads ─────────
+
+function upsertStaffInvite(email) {
+  // Existing account → no invite needed, assignment alone grants access.
+  if (db.prepare('SELECT 1 FROM staff_users WHERE email = ?').get(email)) return null;
+  const existing = db.prepare(
+    `SELECT token FROM staff_invites WHERE email = ? AND claimed_at IS NULL AND expires_at > datetime('now')`
+  ).get(email);
+  if (existing) return existing.token;
+  const token = randomBytes(16).toString('hex');
+  db.prepare(`INSERT INTO staff_invites (token, email, expires_at) VALUES (?, ?, datetime('now', '+30 days'))`).run(token, email);
+  return token;
+}
+
+function accessListFor(kind, id) {
+  const table = kind === 'team' ? 'team_users' : 'tournament_users';
+  const col = kind === 'team' ? 'team_id' : 'tournament_id';
+  return db.prepare(
+    `SELECT au.*, su.name AS claimed_name,
+            CASE WHEN su.id IS NULL THEN 0 ELSE 1 END AS claimed,
+            (SELECT token FROM staff_invites si WHERE si.email = au.email AND si.claimed_at IS NULL AND si.expires_at > datetime('now')) AS invite_token
+     FROM ${table} au LEFT JOIN staff_users su ON su.email = au.email
+     WHERE au.${col} = ? ORDER BY au.email`
+  ).all(id);
+}
+
+for (const kind of ['team', 'tournament']) {
+  const table = kind === 'team' ? 'team_users' : 'tournament_users';
+  const col = kind === 'team' ? 'team_id' : 'tournament_id';
+  const parent = kind === 'team' ? 'teams' : 'tournaments';
+  const defaultRole = kind === 'team' ? 'coach' : 'director';
+
+  app.get(`/api/${parent}/:id/access`, requireAdmin, (req, res) => {
+    if (!db.prepare(`SELECT 1 FROM ${parent} WHERE id = ?`).get(req.params.id)) return res.status(404).json({ error: 'Not found' });
+    res.json({ access: accessListFor(kind, req.params.id) });
+  });
+
+  app.post(`/api/${parent}/:id/access`, requireAdmin, (req, res) => {
+    if (!db.prepare(`SELECT 1 FROM ${parent} WHERE id = ?`).get(req.params.id)) return res.status(404).json({ error: 'Not found' });
+    const email = String((req.body || {}).email || '').toLowerCase().trim();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return res.status(400).json({ error: 'A valid email is required' });
+    try {
+      db.prepare(`INSERT INTO ${table} (${col}, email, role) VALUES (?, ?, ?)`).run(req.params.id, email, defaultRole);
+    } catch {
+      return res.status(409).json({ error: 'That email already has access' });
+    }
+    const inviteToken = upsertStaffInvite(email);
+    res.status(201).json({ access: accessListFor(kind, req.params.id), invite_token: inviteToken });
+  });
+
+  app.delete(`/api/${kind}-access/:id`, requireAdmin, (req, res) => {
+    const info = db.prepare(`DELETE FROM ${table} WHERE id = ?`).run(req.params.id);
+    if (!info.changes) return res.status(404).json({ error: 'Assignment not found' });
+    res.json({ ok: true });
+  });
+}
+
+// Public: staff claim (mirrors the player claim flow).
+app.get('/api/staff-invites/:token', (req, res) => {
+  const invite = db.prepare('SELECT * FROM staff_invites WHERE token = ?').get(req.params.token);
+  if (!invite) return res.status(404).json({ error: 'Invite not found' });
+  const teams = db.prepare('SELECT t.name FROM team_users tu JOIN teams t ON t.id = tu.team_id WHERE tu.email = ?').all(invite.email).map(r => r.name);
+  const tournaments = db.prepare('SELECT tr.name FROM tournament_users tu JOIN tournaments tr ON tr.id = tu.tournament_id WHERE tu.email = ?').all(invite.email).map(r => r.name);
+  res.json({
+    email: invite.email,
+    claimed: !!invite.claimed_at,
+    expired: db.prepare(`SELECT 1 FROM staff_invites WHERE token = ? AND expires_at <= datetime('now')`).get(req.params.token) != null,
+    teams, tournaments,
+  });
+});
+
+app.post('/api/staff-invites/:token/claim', (req, res) => {
+  const invite = db.prepare(`SELECT * FROM staff_invites WHERE token = ? AND expires_at > datetime('now')`).get(req.params.token);
+  if (!invite) return res.status(404).json({ error: 'This invite link is invalid or has expired' });
+  if (invite.claimed_at) return res.status(409).json({ error: 'This invite has already been claimed' });
+
+  const name = String((req.body || {}).name || '').trim();
+  const password = String((req.body || {}).password || '');
+  if (!name) return res.status(400).json({ error: 'Name is required' });
+  if (password.length < 8) return res.status(400).json({ error: 'Password must be at least 8 characters' });
+  if (db.prepare('SELECT 1 FROM staff_users WHERE email = ?').get(invite.email)) {
+    return res.status(409).json({ error: 'An account with this email already exists — sign in instead' });
+  }
+
+  const info = db.prepare('INSERT INTO staff_users (email, name, password_hash) VALUES (?, ?, ?)')
+    .run(invite.email, name, hashPassword(password));
+  db.prepare(`UPDATE staff_invites SET claimed_at = datetime('now') WHERE token = ?`).run(invite.token);
+  const token = createStaffSession(info.lastInsertRowid);
+  res.status(201).json({ token, admin: { email: invite.email, name, role: 'staff' } });
+});
+
+// Staff reads — assignment-scoped, limited fields (requirements §2 rule:
+// roster access does not expose the full player profile).
+app.get('/api/staff/overview', requireStaff, (req, res) => {
+  const teams = db.prepare(
+    `SELECT t.id, t.name, t.slug, t.age_group, t.level, o.name AS organization_name, tu.role
+     FROM team_users tu JOIN teams t ON t.id = tu.team_id JOIN organizations o ON o.id = t.organization_id
+     WHERE tu.email = ? ORDER BY t.name`
+  ).all(req.staff.email);
+  const tournaments = db.prepare(
+    `SELECT tr.id, tr.name, tr.slug, tr.start_date, tr.end_date, tr.location, tr.published, tu.role
+     FROM tournament_users tu JOIN tournaments tr ON tr.id = tu.tournament_id
+     WHERE tu.email = ? ORDER BY tr.start_date DESC`
+  ).all(req.staff.email);
+  res.json({ staff: { email: req.staff.email, name: req.staff.name }, teams, tournaments });
+});
+
+app.get('/api/staff/teams/:id', requireStaff, (req, res) => {
+  if (!staffCanViewTeam(req.staff, req.params.id)) return res.status(404).json({ error: 'Not found' });
+  const team = db.prepare(
+    'SELECT t.*, o.name AS organization_name FROM teams t JOIN organizations o ON o.id = t.organization_id WHERE t.id = ?'
+  ).get(req.params.id);
+  if (!team) return res.status(404).json({ error: 'Not found' });
+  // Limited roster fields only — no DOB, no contact, no private profile data.
+  const roster = db.prepare(
+    `SELECT rm.jersey, rm.positions, rm.start_date, rm.end_date, rm.status, rm.season_id,
+            s.label AS season_label, p.first_name, p.last_name, p.grad_year,
+            CASE WHEN p.is_public = 1 THEN p.slug ELSE NULL END AS public_slug
+     FROM roster_memberships rm
+     JOIN players p ON p.id = rm.player_id
+     LEFT JOIN seasons s ON s.id = rm.season_id
+     WHERE rm.team_id = ? AND rm.status = 'active'
+     ORDER BY p.last_name, p.first_name`
+  ).all(team.id);
+  const entries = db.prepare(
+    `SELECT te.*, tr.name AS tournament_name, tr.start_date, d.name AS division_name
+     FROM tournament_entries te JOIN tournaments tr ON tr.id = te.tournament_id JOIN divisions d ON d.id = te.division_id
+     WHERE te.team_id = ? ORDER BY tr.start_date DESC`
+  ).all(team.id);
+  res.json({ team, roster, entries });
+});
+
+app.get('/api/staff/tournaments/:id', requireStaff, (req, res) => {
+  if (!staffCanViewTournament(req.staff, req.params.id)) return res.status(404).json({ error: 'Not found' });
+  const tournament = db.prepare('SELECT * FROM tournaments WHERE id = ?').get(req.params.id);
+  if (!tournament) return res.status(404).json({ error: 'Not found' });
+  const divisions = db.prepare('SELECT * FROM divisions WHERE tournament_id = ? ORDER BY name').all(tournament.id);
+  const entries = db.prepare(
+    `SELECT te.*, t.name AS team_name, d.name AS division_name
+     FROM tournament_entries te JOIN teams t ON t.id = te.team_id JOIN divisions d ON d.id = te.division_id
+     WHERE te.tournament_id = ? ORDER BY d.name, t.name`
+  ).all(tournament.id);
+  const games = db.prepare(
+    `SELECT tg.*, d.name AS division_name, ht.name AS home_team_name, at.name AS away_team_name
+     FROM tournament_games tg JOIN divisions d ON d.id = tg.division_id
+     JOIN tournament_entries he ON he.id = tg.home_entry_id JOIN teams ht ON ht.id = he.team_id
+     JOIN tournament_entries ae ON ae.id = tg.away_entry_id JOIN teams at ON at.id = ae.team_id
+     WHERE tg.tournament_id = ? ORDER BY tg.game_date, tg.game_time`
+  ).all(tournament.id);
+  res.json({ tournament, divisions, entries, games });
 });
 
 app.listen(PORT, () => {

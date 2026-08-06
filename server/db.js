@@ -297,6 +297,33 @@ db.exec(`
     role          TEXT NOT NULL DEFAULT 'director',
     UNIQUE (tournament_id, email)
   );
+
+  -- Coach/director accounts (staff). Assignments live in team_users /
+  -- tournament_users keyed by email; a staff account claims that email via
+  -- an invite, mirroring the player invite-claim flow. One account can be a
+  -- coach on some teams and a director on some tournaments simultaneously.
+  CREATE TABLE IF NOT EXISTS staff_users (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    email         TEXT NOT NULL UNIQUE,
+    name          TEXT NOT NULL DEFAULT '',
+    password_hash TEXT NOT NULL,
+    created_at    TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+
+  CREATE TABLE IF NOT EXISTS staff_sessions (
+    token         TEXT PRIMARY KEY,
+    staff_user_id INTEGER NOT NULL REFERENCES staff_users(id) ON DELETE CASCADE,
+    created_at    TEXT NOT NULL DEFAULT (datetime('now')),
+    expires_at    TEXT NOT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS staff_invites (
+    token      TEXT PRIMARY KEY,
+    email      TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    expires_at TEXT NOT NULL,
+    claimed_at TEXT
+  );
 `);
 
 // Additive column migrations (SQLite has no ADD COLUMN IF NOT EXISTS).

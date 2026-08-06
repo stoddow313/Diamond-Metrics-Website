@@ -3,6 +3,7 @@ import { Link, useParams } from 'react-router-dom';
 import { api } from '../../lib/api';
 import { Field, TextInput, Select, PrimaryButton, GhostButton, ErrorNote } from '../../components/admin/ui';
 import { cardStyle } from '../../components/admin/theme';
+import AccessPanel from '../../components/admin/AccessPanel';
 
 // Tournament editor: divisions → entries → event rosters (with guests) →
 // games with scores. Event rosters override season rosters and never touch
@@ -57,6 +58,14 @@ export default function AdminTournamentEditorPage() {
       </div>
 
       <ErrorNote>{error}</ErrorNote>
+
+      <AccessPanel
+        kind="tournaments"
+        id={tournamentId}
+        title="Director access"
+        subtitle="Directors see this tournament's divisions, teams, and games. Send the invite link so they can claim their account."
+        onError={setError}
+      />
 
       <DivisionsSection tournament={tournament} divisions={divisions} onChange={load} onError={setError} />
       <EntriesSection tournament={tournament} divisions={divisions} entries={entries} teams={teams} onChange={load} onError={setError} />
