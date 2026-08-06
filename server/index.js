@@ -422,6 +422,29 @@ function buildProfilePayload(player) {
     };
   }
 
+  // §6: Teams and Events/Tournaments sections on the player profile.
+  // Public-safe fields only; team/tournament pages enforce their own access.
+  const teams = db.prepare(
+    `SELECT rm.jersey, rm.positions, rm.start_date, rm.end_date, rm.status,
+            t.name AS team_name, t.slug AS team_slug, t.age_group, t.level,
+            o.name AS organization_name, s.label AS season_label
+     FROM roster_memberships rm
+     JOIN teams t ON t.id = rm.team_id
+     JOIN organizations o ON o.id = t.organization_id
+     LEFT JOIN seasons s ON s.id = rm.season_id
+     WHERE rm.player_id = ? ORDER BY rm.start_date DESC`
+  ).all(player.id);
+  const tournamentsPlayed = db.prepare(
+    `SELECT tr.name AS tournament_name, tr.slug AS tournament_slug, tr.start_date, tr.published, tr.visibility,
+            d.name AS division_name, t.name AS team_name, t.slug AS team_slug, er.is_guest
+     FROM event_rosters er
+     JOIN tournament_entries te ON te.id = er.entry_id
+     JOIN tournaments tr ON tr.id = te.tournament_id
+     JOIN divisions d ON d.id = te.division_id
+     JOIN teams t ON t.id = te.team_id
+     WHERE er.player_id = ? ORDER BY tr.start_date DESC`
+  ).all(player.id);
+
   const { id: _id, ...publicPlayer } = player;
   return {
     player: publicPlayer,
@@ -429,6 +452,8 @@ function buildProfilePayload(player) {
     metrics,
     heroKeys: heroSetForPosition(player.primary_position),
     catalog: { metrics: METRICS, categories: CATEGORIES },
+    teams,
+    tournaments: tournamentsPlayed,
     // Engine-calculated skills/overall (null when no Pro Day data exists;
     // clients fall back to the legacy stored ratings in that case).
     ratings: ratePlayer(player),
@@ -1300,6 +1325,187 @@ app.get('/api/staff/tournaments/:id', requireStaff, (req, res) => {
      WHERE tg.tournament_id = ? ORDER BY tg.game_date, tg.game_time`
   ).all(tournament.id);
   res.json({ tournament, divisions, entries, games });
+});
+
+// ── Connected views (roadmap Phase 3, requirements §4–§6, §9) ────────────
+// Permission-aware read endpoints behind the /teams/{slug} and
+// /tournaments/{slug} dashboards. Visibility defaults per §9: team
+// dashboards are private (admins, assigned staff, and players on the team);
+// tournament dashboards are private until published.
+
+function resolveViewer(req) {
+  const header = req.headers.authorization || '';
+  const token = header.startsWith('Bearer ') ? header.slice(7) : null;
+  if (!token) return { kind: 'anon' };
+  const adminRow = db.prepare(
+    `SELECT a.email FROM sessions s JOIN admins a ON a.id = s.admin_id
+     WHERE s.token = ? AND s.expires_at > datetime('now')`
+  ).get(token);
+  if (adminRow) return { kind: 'admin', email: adminRow.email };
+  const staffRow = staffFromToken(token);
+  if (staffRow) return { kind: 'staff', email: staffRow.email };
+  const playerRow = playerFromToken(token);
+  if (playerRow) return { kind: 'player', playerId: playerRow.id, email: playerRow.email };
+  return { kind: 'anon' };
+}
+
+function teamGames(teamId) {
+  return db.prepare(
+    `SELECT tg.*, tr.name AS tournament_name, tr.slug AS tournament_slug, d.name AS division_name,
+            he.team_id AS home_team_id, ae.team_id AS away_team_id,
+            ht.name AS home_team_name, at.name AS away_team_name
+     FROM tournament_games tg
+     JOIN tournaments tr ON tr.id = tg.tournament_id
+     JOIN divisions d ON d.id = tg.division_id
+     JOIN tournament_entries he ON he.id = tg.home_entry_id JOIN teams ht ON ht.id = he.team_id
+     JOIN tournament_entries ae ON ae.id = tg.away_entry_id JOIN teams at ON at.id = ae.team_id
+     WHERE he.team_id = ? OR ae.team_id = ?
+     ORDER BY tg.game_date DESC, tg.game_time DESC`
+  ).all(teamId, teamId);
+}
+
+app.get('/api/view/teams/:slug', (req, res) => {
+  const team = db.prepare(
+    'SELECT t.*, o.name AS organization_name FROM teams t JOIN organizations o ON o.id = t.organization_id WHERE t.slug = ?'
+  ).get(req.params.slug);
+  if (!team) return res.status(404).json({ error: 'Team not found' });
+
+  // §9 default: team dashboards are private.
+  const viewer = resolveViewer(req);
+  const allowed =
+    viewer.kind === 'admin' ||
+    (viewer.kind === 'staff' && staffCanViewTeam(viewer, team.id)) ||
+    (viewer.kind === 'player' && !!db.prepare(
+      'SELECT 1 FROM roster_memberships WHERE team_id = ? AND player_id = ?'
+    ).get(team.id, viewer.playerId));
+  if (!allowed) return res.status(viewer.kind === 'anon' ? 401 : 403).json({ error: 'This team dashboard is private', private: true });
+
+  const memberships = db.prepare('SELECT * FROM roster_memberships WHERE team_id = ?').all(team.id);
+  const entries = db.prepare(
+    `SELECT te.*, tr.name AS tournament_name, tr.slug AS tournament_slug, tr.start_date, tr.end_date, d.name AS division_name
+     FROM tournament_entries te JOIN tournaments tr ON tr.id = te.tournament_id JOIN divisions d ON d.id = te.division_id
+     WHERE te.team_id = ? ORDER BY tr.start_date DESC`
+  ).all(team.id);
+  const games = teamGames(team.id);
+
+  // Optional event context: ?tournament=<slug> narrows roster + games (§4 filters).
+  const tournamentSlug = String(req.query.tournament || '').trim();
+  const contextEntry = tournamentSlug ? entries.find(e => e.tournament_slug === tournamentSlug) : null;
+
+  let roster;
+  if (contextEntry) {
+    const eventRosterRows = db.prepare('SELECT * FROM event_rosters WHERE entry_id = ?').all(contextEntry.id);
+    roster = resolveEventRoster({ eventRosterRows, memberships, teamId: team.id, eventDate: contextEntry.start_date });
+  } else {
+    const today = new Date().toISOString().slice(0, 10);
+    roster = resolveEventRoster({ eventRosterRows: [], memberships, teamId: team.id, eventDate: today });
+  }
+  // Limited player fields (§2 rule), public slug only when the profile is public.
+  const names = new Map(db.prepare('SELECT id, first_name, last_name, grad_year, is_public, slug FROM players').all().map(p => [p.id, p]));
+  const rosterOut = roster.map(r => {
+    const p = names.get(r.player_id) || {};
+    return {
+      first_name: p.first_name, last_name: p.last_name, grad_year: p.grad_year,
+      jersey: r.jersey, isGuest: r.isGuest, source: r.source,
+      public_slug: p.is_public ? p.slug : null,
+    };
+  }).sort((a, b) => (a.last_name || '').localeCompare(b.last_name || ''));
+
+  const visibleGames = contextEntry ? games.filter(g => g.tournament_slug === tournamentSlug) : games;
+  const finals = games.filter(g => g.status === 'final' && g.home_score != null && g.away_score != null);
+  const wins = finals.filter(g => (g.home_team_id === team.id ? g.home_score > g.away_score : g.away_score > g.home_score)).length;
+  const losses = finals.filter(g => (g.home_team_id === team.id ? g.home_score < g.away_score : g.away_score < g.home_score)).length;
+
+  const { external_id: _x, ...publicTeam } = team;
+  res.json({
+    viewer: viewer.kind,
+    team: publicTeam,
+    summary: {
+      wins, losses,
+      tournaments_played: entries.length,
+      games_total: games.length,
+      games_final: finals.length,
+      roster_count: rosterOut.length,
+      latest_event: entries[0] ? { name: entries[0].tournament_name, slug: entries[0].tournament_slug, date: entries[0].start_date, placement: entries[0].placement } : null,
+    },
+    context: contextEntry ? { tournament: contextEntry.tournament_name, tournament_slug: tournamentSlug, division: contextEntry.division_name, roster_source: 'event' } : null,
+    roster: rosterOut,
+    events: entries.map(e => ({
+      tournament_name: e.tournament_name, tournament_slug: e.tournament_slug,
+      division_name: e.division_name, start_date: e.start_date, end_date: e.end_date,
+      seed: e.seed, placement: e.placement, wins: e.wins, losses: e.losses, status: e.status,
+    })),
+    games: visibleGames.map(g => ({
+      id: g.id, date: g.game_date, time: g.game_time, field: g.field, status: g.status,
+      tournament_name: g.tournament_name, tournament_slug: g.tournament_slug, division_name: g.division_name,
+      home_team_name: g.home_team_name, away_team_name: g.away_team_name,
+      home_score: g.home_score, away_score: g.away_score,
+      is_home: g.home_team_id === team.id,
+    })),
+  });
+});
+
+app.get('/api/view/tournaments/:slug', (req, res) => {
+  const tournament = db.prepare('SELECT * FROM tournaments WHERE slug = ?').get(req.params.slug);
+  if (!tournament) return res.status(404).json({ error: 'Tournament not found' });
+
+  // §9: private during review; public once published with public visibility.
+  const isPublic = tournament.published === 1 && tournament.visibility === 'public';
+  if (!isPublic) {
+    const viewer = resolveViewer(req);
+    const allowed = viewer.kind === 'admin' || (viewer.kind === 'staff' && staffCanViewTournament(viewer, tournament.id));
+    if (!allowed) {
+      return res.status(viewer.kind === 'anon' ? 401 : 403).json({ error: 'This tournament has not been published', unpublished: true });
+    }
+  }
+
+  const divisions = db.prepare('SELECT * FROM divisions WHERE tournament_id = ? ORDER BY name').all(tournament.id);
+  const entries = db.prepare(
+    `SELECT te.*, t.name AS team_name, t.slug AS team_slug, t.logo_url, o.name AS organization_name, d.name AS division_name,
+            (SELECT COUNT(*) FROM event_rosters er WHERE er.entry_id = te.id) AS event_roster_count
+     FROM tournament_entries te
+     JOIN teams t ON t.id = te.team_id JOIN organizations o ON o.id = t.organization_id
+     JOIN divisions d ON d.id = te.division_id
+     WHERE te.tournament_id = ? AND te.status != 'archived' ORDER BY d.name, te.seed, t.name`
+  ).all(tournament.id);
+  const games = db.prepare(
+    `SELECT tg.*, d.name AS division_name, ht.name AS home_team_name, ht.slug AS home_team_slug,
+            at.name AS away_team_name, at.slug AS away_team_slug
+     FROM tournament_games tg JOIN divisions d ON d.id = tg.division_id
+     JOIN tournament_entries he ON he.id = tg.home_entry_id JOIN teams ht ON ht.id = he.team_id
+     JOIN tournament_entries ae ON ae.id = tg.away_entry_id JOIN teams at ON at.id = ae.team_id
+     WHERE tg.tournament_id = ? ORDER BY tg.game_date, tg.game_time`
+  ).all(tournament.id);
+
+  const finals = games.filter(g => g.status === 'final').length;
+  const playerCount = db.prepare(
+    `SELECT COUNT(DISTINCT er.player_id) c FROM event_rosters er
+     JOIN tournament_entries te ON te.id = er.entry_id WHERE te.tournament_id = ?`
+  ).get(tournament.id).c;
+
+  const { external_id: _x, ...publicTournament } = tournament;
+  res.json({
+    tournament: publicTournament,
+    // §5: every tournament view states how much of the event is analyzed.
+    coverage: { games_total: games.length, games_final: finals },
+    counts: { divisions: divisions.length, teams: entries.length, players: playerCount },
+    divisions: divisions.map(d => ({
+      id: d.id, name: d.name, age_group: d.age_group, level: d.level,
+      champion: entries.find(e => e.division_id === d.id && /^(1|1st|first|champion)/i.test(e.placement || ''))?.team_name || null,
+    })),
+    entries: entries.map(e => ({
+      division_id: e.division_id, division_name: e.division_name,
+      team_name: e.team_name, team_slug: e.team_slug, organization_name: e.organization_name,
+      seed: e.seed, pool: e.pool, placement: e.placement, wins: e.wins, losses: e.losses,
+      event_roster_count: e.event_roster_count,
+    })),
+    games: games.map(g => ({
+      id: g.id, date: g.game_date, time: g.game_time, field: g.field, status: g.status,
+      division_name: g.division_name,
+      home_team_name: g.home_team_name, home_team_slug: g.home_team_slug, home_score: g.home_score,
+      away_team_name: g.away_team_name, away_team_slug: g.away_team_slug, away_score: g.away_score,
+    })),
+  });
 });
 
 app.listen(PORT, () => {

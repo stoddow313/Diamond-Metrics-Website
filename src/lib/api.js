@@ -97,6 +97,10 @@ export const api = {
   staffTeam: (id) => request(`/api/staff/teams/${id}`),
   staffTournament: (id) => request(`/api/staff/tournaments/${id}`),
 
+  // connected views (viewer-aware: token attaches when signed in)
+  viewTeam: (slug, tournament) => request(`/api/view/teams/${slug}${tournament ? `?tournament=${encodeURIComponent(tournament)}` : ''}`),
+  viewTournament: (slug) => request(`/api/view/tournaments/${slug}`),
+
   // public
   publicProfile: (slug) => request(`/api/public/players/${slug}`, { auth: false }),
   proDayCard: (slug) => request(`/api/public/players/${slug}/card`, { auth: false }),

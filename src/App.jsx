@@ -18,6 +18,8 @@ import AdminTournamentsPage from './pages/admin/AdminTournamentsPage';
 import AdminTournamentEditorPage from './pages/admin/AdminTournamentEditorPage';
 import AdminImportsPage from './pages/admin/AdminImportsPage';
 import PublicProfilePage from './pages/PublicProfilePage';
+import TeamDashboardPage from './pages/TeamDashboardPage';
+import TournamentDashboardPage from './pages/TournamentDashboardPage';
 
 /* ── SIDELINED (pre-BE demo app) ─────────────────────────────────────────
  * The original dummy coach dashboard (/app) and film-review admin (/admin)
@@ -60,6 +62,10 @@ function AppRoutes() {
 
       {/* Public, shareable player profiles */}
       <Route path="/p/:slug" element={<PublicProfilePage />} />
+
+      {/* Connected team & tournament dashboards (permission-aware) */}
+      <Route path="/teams/:slug" element={<TeamDashboardPage />} />
+      <Route path="/tournaments/:slug" element={<TournamentDashboardPage />} />
 
       {/* Player portal: claimed accounts see their own profile in isolation */}
       <Route

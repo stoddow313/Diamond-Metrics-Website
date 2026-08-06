@@ -253,3 +253,5 @@ after every merge that touches `server/`.
 | 2026-07-31 | Deferral reversed: coach/director access + server-side imports shipped to match the doc's Phase 1–2 sequence | Owner prioritized doc parity; staff portal is the read surface the Phase-3 dashboards will replace |
 | 2026-07-31 | Import duplicate rule: external id → name+DOB → name+grad year; bare name match always requires admin resolution | Doc §8: no silent duplicate creation on spelling alone |
 | 2026-07-31 | Event-roster and metrics imports never create players | Player identity enters only via the season-roster import (with dedupe) or admin UI |
+| 2026-08-03 | Phase 3 shipped: /teams/{slug} + /tournaments/{slug} dashboards, profile Teams/Events sections | Team dashboards private (admin/assigned staff/own players); tournaments public only when published+public; §5 coverage statement on every tournament view |
+| 2026-08-03 | Phase-3 team overview shows record/coverage counts only — §4 headline metrics wait for the Phase-4 aggregates module | Release-cut discipline: no ad-hoc aggregate math outside the shared module |

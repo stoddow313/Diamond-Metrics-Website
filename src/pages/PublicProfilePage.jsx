@@ -423,10 +423,62 @@ function OverviewTab({ data, heroMetrics, onViewAll }) {
         )}
       </div>
 
-      <div className="xl:sticky xl:top-4 min-w-0">
+      <div className="xl:sticky xl:top-4 min-w-0 flex flex-col gap-4">
         <RecentActivity games={games} onViewAll={onViewAll} />
+        <TeamsAndEvents data={data} />
       </div>
     </div>
+  );
+}
+
+// Requirements §6: Teams and Events/Tournaments sections on the profile —
+// links go to the same connected records, never event-specific duplicates.
+function TeamsAndEvents({ data }) {
+  const teams = data.teams || [];
+  const tournaments = data.tournaments || [];
+  if (teams.length === 0 && tournaments.length === 0) return null;
+  return (
+    <>
+      {teams.length > 0 && (
+        <Card title="Teams">
+          <div className="flex flex-col gap-2.5">
+            {teams.map((t, i) => (
+              <div key={i}>
+                <Link to={`/teams/${t.team_slug}`} className="text-xs font-bold text-slate-800 hover:text-blue-600">
+                  {t.team_name}
+                </Link>
+                <p className="text-[10px] text-slate-400">
+                  {[t.season_label, t.jersey ? `#${t.jersey}` : '', t.status === 'archived' ? 'former' : ''].filter(Boolean).join(' · ') || `${t.start_date} →`}
+                </p>
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
+      {tournaments.length > 0 && (
+        <Card title="Events">
+          <div className="flex flex-col gap-2.5">
+            {tournaments.map((t, i) => {
+              const isPublic = t.published === 1 && t.visibility === 'public';
+              const label = (
+                <>
+                  {t.tournament_name}
+                  {t.is_guest ? <span className="ml-1.5 text-[9px] font-bold uppercase px-1 py-0.5 rounded bg-amber-100 text-amber-700">Guest</span> : null}
+                </>
+              );
+              return (
+                <div key={i}>
+                  {isPublic
+                    ? <Link to={`/tournaments/${t.tournament_slug}`} className="text-xs font-bold text-slate-800 hover:text-blue-600">{label}</Link>
+                    : <span className="text-xs font-bold text-slate-800">{label}</span>}
+                  <p className="text-[10px] text-slate-400">with {t.team_name} · {t.division_name} · {t.start_date}</p>
+                </div>
+              );
+            })}
+          </div>
+        </Card>
+      )}
+    </>
   );
 }
 

@@ -108,6 +108,8 @@ export function StaffTeamPage() {
       <h1 className="text-2xl font-bold text-white mt-1 mb-1">{team.name}</h1>
       <p className="text-sm mb-6" style={{ color: '#94a3b8' }}>
         {team.organization_name}{team.age_group ? ` · ${team.age_group}` : ''}{team.level ? ` · ${team.level}` : ''}
+        {' · '}
+        <Link to={`/teams/${team.slug}`} className="hover:underline" style={{ color: '#38bdf8' }}>Open team dashboard ↗</Link>
       </p>
 
       <section className="rounded-2xl border p-6 mb-6" style={cardStyle}>
@@ -176,6 +178,8 @@ export function StaffTournamentPage() {
       <p className="text-sm mb-6" style={{ color: '#94a3b8' }}>
         {tournament.start_date} → {tournament.end_date}{tournament.location ? ` · ${tournament.location}` : ''}
         {tournament.published ? '' : ' · private (not yet published)'}
+        {' · '}
+        <Link to={`/tournaments/${tournament.slug}`} className="hover:underline" style={{ color: '#38bdf8' }}>Open dashboard ↗</Link>
       </p>
 
       <section className="rounded-2xl border p-6 mb-6" style={cardStyle}>
