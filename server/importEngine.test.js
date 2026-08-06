@@ -135,6 +135,19 @@ test('JSON-serialized date cells never shift a day (timezone-safe)', () => {
   assert.equal(again.counts.updated, 1);
 });
 
+test('importing into an archived season warns but does not block', () => {
+  db.prepare(`INSERT INTO seasons (label, start_date, end_date, status) VALUES ('2025 Fall', '2025-08-20', '2025-11-01', 'archived')`).run();
+  const rows = [{ team: 'EXT-MINERS', first_name: 'Archie', last_name: 'Seasoncheck', grad_year: 2029, season_label: '2025 Fall', start_date: '2025-08-20' }];
+
+  const plan = planImport(db, 'season_roster', rows);
+  assert.equal(plan[0].action, 'create');
+  assert.match(plan[0].message, /season "2025 Fall" is archived/);
+
+  const r = applyImport(db, 'season_roster', rows, {}, { uploader: 'admin@test' });
+  assert.equal(r.blocked, false);
+  assert.equal(r.counts.created, 1); // historical backfills stay possible
+});
+
 test('every apply writes an audit record with uploader and counts', () => {
   const audits = db.prepare('SELECT * FROM import_audits ORDER BY id').all();
   assert.ok(audits.length >= 6);
