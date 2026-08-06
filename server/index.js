@@ -8,6 +8,7 @@ import {
   VALID_METRIC_KEYS, heroSetForPosition, positionGroup,
 } from './metricCatalog.js';
 import { computeRatings } from './ratingEngine.js';
+import { resolveEventRoster, slugify } from './rosterLogic.js';
 
 const app = express();
 // Render (and most hosts) inject PORT; DM_API_PORT is the local-dev override.
@@ -708,6 +709,357 @@ app.delete('/api/portal/photo', requirePlayer, (req, res) => {
     fs.rm(path.join(UPLOADS_DIR, path.basename(old)), { force: true }, () => {});
   }
   db.prepare(`UPDATE players SET photo_url = '', updated_at = datetime('now') WHERE id = ?`).run(req.player.id);
+  res.json({ ok: true });
+});
+
+// ═══ Team & Tournament platform — admin CRUD (roadmap Phases 1–2) ═════════
+// All management is Diamond Metrics-admin only in this phase; coach/director
+// read access arrives with the connected-views phase, which is why writes
+// below never delete history — they archive it.
+
+function uniqueSlug(table, name) {
+  const base = slugify(name) || 'item';
+  let slug = base;
+  while (db.prepare(`SELECT 1 FROM ${table} WHERE slug = ?`).get(slug)) {
+    slug = `${base}-${randomBytes(2).toString('hex')}`;
+  }
+  return slug;
+}
+
+function pickFields(body, fields) {
+  const out = {};
+  for (const f of fields) if (f in (body || {})) out[f] = body[f] === '' ? null : body[f];
+  return out;
+}
+
+function crudUpdate(table, id, data) {
+  const sets = Object.keys(data).map(c => `${c} = @${c}`).join(', ');
+  db.prepare(`UPDATE ${table} SET ${sets} WHERE id = @id`).run({ ...data, id });
+  return db.prepare(`SELECT * FROM ${table} WHERE id = ?`).get(id);
+}
+
+// ── Organizations ────────────────────────────────────────────────────────
+const ORG_FIELDS = ['name', 'org_type', 'city', 'state', 'logo_url', 'archived'];
+
+app.get('/api/organizations', requireAdmin, (_req, res) => {
+  res.json({ organizations: db.prepare('SELECT * FROM organizations ORDER BY name').all() });
+});
+
+app.post('/api/organizations', requireAdmin, (req, res) => {
+  const data = pickFields(req.body, ORG_FIELDS);
+  if (!data.name) return res.status(400).json({ error: 'name is required' });
+  const cols = Object.keys(data);
+  const info = db.prepare(`INSERT INTO organizations (${cols.join(', ')}) VALUES (${cols.map(c => `@${c}`).join(', ')})`).run(data);
+  res.status(201).json({ organization: db.prepare('SELECT * FROM organizations WHERE id = ?').get(info.lastInsertRowid) });
+});
+
+app.put('/api/organizations/:id', requireAdmin, (req, res) => {
+  if (!db.prepare('SELECT 1 FROM organizations WHERE id = ?').get(req.params.id)) return res.status(404).json({ error: 'Organization not found' });
+  const data = pickFields(req.body, ORG_FIELDS);
+  if (!Object.keys(data).length) return res.status(400).json({ error: 'No fields to update' });
+  res.json({ organization: crudUpdate('organizations', req.params.id, data) });
+});
+
+// ── Teams ────────────────────────────────────────────────────────────────
+const TEAM_FIELDS = ['organization_id', 'name', 'age_group', 'level', 'logo_url', 'active'];
+
+app.get('/api/teams', requireAdmin, (_req, res) => {
+  res.json({
+    teams: db.prepare(
+      `SELECT t.*, o.name AS organization_name,
+              (SELECT COUNT(*) FROM roster_memberships rm WHERE rm.team_id = t.id AND rm.status = 'active') AS roster_count
+       FROM teams t JOIN organizations o ON o.id = t.organization_id
+       ORDER BY t.name`
+    ).all(),
+  });
+});
+
+app.post('/api/teams', requireAdmin, (req, res) => {
+  const data = pickFields(req.body, TEAM_FIELDS);
+  if (!data.name || !data.organization_id) return res.status(400).json({ error: 'name and organization_id are required' });
+  if (!db.prepare('SELECT 1 FROM organizations WHERE id = ?').get(data.organization_id)) return res.status(400).json({ error: 'Unknown organization' });
+  data.slug = uniqueSlug('teams', `${data.name} ${data.age_group || ''}`);
+  const cols = Object.keys(data);
+  const info = db.prepare(`INSERT INTO teams (${cols.join(', ')}) VALUES (${cols.map(c => `@${c}`).join(', ')})`).run(data);
+  res.status(201).json({ team: db.prepare('SELECT * FROM teams WHERE id = ?').get(info.lastInsertRowid) });
+});
+
+app.get('/api/teams/:id', requireAdmin, (req, res) => {
+  const team = db.prepare(
+    'SELECT t.*, o.name AS organization_name FROM teams t JOIN organizations o ON o.id = t.organization_id WHERE t.id = ?'
+  ).get(req.params.id);
+  if (!team) return res.status(404).json({ error: 'Team not found' });
+  const roster = db.prepare(
+    `SELECT rm.*, p.first_name, p.last_name, p.slug AS player_slug, p.grad_year, s.label AS season_label
+     FROM roster_memberships rm
+     JOIN players p ON p.id = rm.player_id
+     LEFT JOIN seasons s ON s.id = rm.season_id
+     WHERE rm.team_id = ? ORDER BY rm.status, p.last_name, p.first_name`
+  ).all(team.id);
+  const entries = db.prepare(
+    `SELECT te.*, tr.name AS tournament_name, tr.slug AS tournament_slug, tr.start_date, d.name AS division_name
+     FROM tournament_entries te
+     JOIN tournaments tr ON tr.id = te.tournament_id
+     JOIN divisions d ON d.id = te.division_id
+     WHERE te.team_id = ? ORDER BY tr.start_date DESC`
+  ).all(team.id);
+  res.json({ team, roster, entries });
+});
+
+app.put('/api/teams/:id', requireAdmin, (req, res) => {
+  if (!db.prepare('SELECT 1 FROM teams WHERE id = ?').get(req.params.id)) return res.status(404).json({ error: 'Team not found' });
+  const data = pickFields(req.body, TEAM_FIELDS);
+  if (!Object.keys(data).length) return res.status(400).json({ error: 'No fields to update' });
+  data.updated_at = new Date().toISOString();
+  res.json({ team: crudUpdate('teams', req.params.id, data) });
+});
+
+// ── Seasons ──────────────────────────────────────────────────────────────
+app.get('/api/seasons', requireAdmin, (_req, res) => {
+  res.json({ seasons: db.prepare('SELECT * FROM seasons ORDER BY start_date DESC').all() });
+});
+
+app.post('/api/seasons', requireAdmin, (req, res) => {
+  const { label, start_date, end_date } = req.body || {};
+  if (!label || !start_date || !end_date) return res.status(400).json({ error: 'label, start_date, end_date are required' });
+  try {
+    const info = db.prepare('INSERT INTO seasons (label, start_date, end_date) VALUES (?, ?, ?)').run(label, start_date, end_date);
+    res.status(201).json({ season: db.prepare('SELECT * FROM seasons WHERE id = ?').get(info.lastInsertRowid) });
+  } catch {
+    res.status(409).json({ error: 'A season with that label already exists' });
+  }
+});
+
+// ── Roster memberships (dated; archive, never delete) ───────────────────
+app.post('/api/teams/:id/roster', requireAdmin, (req, res) => {
+  const team = db.prepare('SELECT id FROM teams WHERE id = ?').get(req.params.id);
+  if (!team) return res.status(404).json({ error: 'Team not found' });
+  const { player_id, season_id = null, start_date, end_date = null, jersey = '', positions = '', roster_role = 'player' } = req.body || {};
+  if (!player_id || !start_date) return res.status(400).json({ error: 'player_id and start_date are required' });
+  if (!db.prepare('SELECT 1 FROM players WHERE id = ?').get(player_id)) return res.status(400).json({ error: 'Unknown player' });
+
+  const info = db.prepare(
+    `INSERT INTO roster_memberships (player_id, team_id, season_id, start_date, end_date, jersey, positions, roster_role)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+  ).run(player_id, team.id, season_id, start_date, end_date, jersey, positions, roster_role);
+  res.status(201).json({ membership: db.prepare('SELECT * FROM roster_memberships WHERE id = ?').get(info.lastInsertRowid) });
+});
+
+app.put('/api/roster/:id', requireAdmin, (req, res) => {
+  const row = db.prepare('SELECT * FROM roster_memberships WHERE id = ?').get(req.params.id);
+  if (!row) return res.status(404).json({ error: 'Membership not found' });
+  const data = pickFields(req.body, ['season_id', 'start_date', 'end_date', 'jersey', 'positions', 'roster_role', 'status']);
+  if (!Object.keys(data).length) return res.status(400).json({ error: 'No fields to update' });
+  // Archiving closes the membership window (if still open) but keeps history.
+  if (data.status === 'archived' && !row.end_date && !data.end_date) {
+    data.end_date = new Date().toISOString().slice(0, 10);
+  }
+  data.updated_at = new Date().toISOString();
+  res.json({ membership: crudUpdate('roster_memberships', req.params.id, data) });
+});
+
+// ── Tournaments ──────────────────────────────────────────────────────────
+const TOURNAMENT_FIELDS = ['name', 'start_date', 'end_date', 'location', 'organizer', 'logo_url', 'visibility', 'published', 'archived'];
+
+app.get('/api/tournaments', requireAdmin, (_req, res) => {
+  res.json({
+    tournaments: db.prepare(
+      `SELECT tr.*,
+              (SELECT COUNT(*) FROM divisions d WHERE d.tournament_id = tr.id) AS division_count,
+              (SELECT COUNT(*) FROM tournament_entries te WHERE te.tournament_id = tr.id AND te.status = 'active') AS entry_count,
+              (SELECT COUNT(*) FROM tournament_games tg WHERE tg.tournament_id = tr.id) AS game_count
+       FROM tournaments tr ORDER BY tr.start_date DESC`
+    ).all(),
+  });
+});
+
+app.post('/api/tournaments', requireAdmin, (req, res) => {
+  const data = pickFields(req.body, TOURNAMENT_FIELDS);
+  if (!data.name || !data.start_date || !data.end_date) return res.status(400).json({ error: 'name, start_date, end_date are required' });
+  data.slug = uniqueSlug('tournaments', data.name);
+  const cols = Object.keys(data);
+  const info = db.prepare(`INSERT INTO tournaments (${cols.join(', ')}) VALUES (${cols.map(c => `@${c}`).join(', ')})`).run(data);
+  res.status(201).json({ tournament: db.prepare('SELECT * FROM tournaments WHERE id = ?').get(info.lastInsertRowid) });
+});
+
+app.get('/api/tournaments/:id', requireAdmin, (req, res) => {
+  const tournament = db.prepare('SELECT * FROM tournaments WHERE id = ?').get(req.params.id);
+  if (!tournament) return res.status(404).json({ error: 'Tournament not found' });
+  const divisions = db.prepare('SELECT * FROM divisions WHERE tournament_id = ? ORDER BY name').all(tournament.id);
+  const entries = db.prepare(
+    `SELECT te.*, t.name AS team_name, t.slug AS team_slug, d.name AS division_name,
+            (SELECT COUNT(*) FROM event_rosters er WHERE er.entry_id = te.id) AS event_roster_count
+     FROM tournament_entries te
+     JOIN teams t ON t.id = te.team_id
+     JOIN divisions d ON d.id = te.division_id
+     WHERE te.tournament_id = ? ORDER BY d.name, t.name`
+  ).all(tournament.id);
+  const games = db.prepare(
+    `SELECT tg.*, d.name AS division_name,
+            ht.name AS home_team_name, at.name AS away_team_name
+     FROM tournament_games tg
+     JOIN divisions d ON d.id = tg.division_id
+     JOIN tournament_entries he ON he.id = tg.home_entry_id JOIN teams ht ON ht.id = he.team_id
+     JOIN tournament_entries ae ON ae.id = tg.away_entry_id JOIN teams at ON at.id = ae.team_id
+     WHERE tg.tournament_id = ? ORDER BY tg.game_date, tg.game_time`
+  ).all(tournament.id);
+  res.json({ tournament, divisions, entries, games });
+});
+
+app.put('/api/tournaments/:id', requireAdmin, (req, res) => {
+  if (!db.prepare('SELECT 1 FROM tournaments WHERE id = ?').get(req.params.id)) return res.status(404).json({ error: 'Tournament not found' });
+  const data = pickFields(req.body, TOURNAMENT_FIELDS);
+  if (!Object.keys(data).length) return res.status(400).json({ error: 'No fields to update' });
+  data.updated_at = new Date().toISOString();
+  res.json({ tournament: crudUpdate('tournaments', req.params.id, data) });
+});
+
+// ── Divisions ────────────────────────────────────────────────────────────
+app.post('/api/tournaments/:id/divisions', requireAdmin, (req, res) => {
+  if (!db.prepare('SELECT 1 FROM tournaments WHERE id = ?').get(req.params.id)) return res.status(404).json({ error: 'Tournament not found' });
+  const { name, age_group = '', level = '' } = req.body || {};
+  if (!name) return res.status(400).json({ error: 'name is required' });
+  const info = db.prepare('INSERT INTO divisions (tournament_id, name, age_group, level) VALUES (?, ?, ?, ?)')
+    .run(req.params.id, name, age_group, level);
+  res.status(201).json({ division: db.prepare('SELECT * FROM divisions WHERE id = ?').get(info.lastInsertRowid) });
+});
+
+app.delete('/api/divisions/:id', requireAdmin, (req, res) => {
+  const hasEntries = db.prepare('SELECT 1 FROM tournament_entries WHERE division_id = ? LIMIT 1').get(req.params.id);
+  if (hasEntries) return res.status(409).json({ error: 'Division has entries — withdraw or move them first' });
+  const info = db.prepare('DELETE FROM divisions WHERE id = ?').run(req.params.id);
+  if (!info.changes) return res.status(404).json({ error: 'Division not found' });
+  res.json({ ok: true });
+});
+
+// ── Tournament entries ───────────────────────────────────────────────────
+app.post('/api/tournaments/:id/entries', requireAdmin, (req, res) => {
+  const { division_id, team_id, seed = null, pool = '' } = req.body || {};
+  const division = db.prepare('SELECT * FROM divisions WHERE id = ? AND tournament_id = ?').get(division_id, req.params.id);
+  if (!division) return res.status(400).json({ error: 'Division does not belong to this tournament' });
+  if (!db.prepare('SELECT 1 FROM teams WHERE id = ?').get(team_id)) return res.status(400).json({ error: 'Unknown team' });
+  try {
+    const info = db.prepare(
+      'INSERT INTO tournament_entries (tournament_id, division_id, team_id, seed, pool) VALUES (?, ?, ?, ?, ?)'
+    ).run(req.params.id, division_id, team_id, seed, pool);
+    res.status(201).json({ entry: db.prepare('SELECT * FROM tournament_entries WHERE id = ?').get(info.lastInsertRowid) });
+  } catch {
+    res.status(409).json({ error: 'That team is already entered in this division' });
+  }
+});
+
+app.put('/api/entries/:id', requireAdmin, (req, res) => {
+  if (!db.prepare('SELECT 1 FROM tournament_entries WHERE id = ?').get(req.params.id)) return res.status(404).json({ error: 'Entry not found' });
+  const data = pickFields(req.body, ['seed', 'pool', 'placement', 'wins', 'losses', 'status']);
+  if (!Object.keys(data).length) return res.status(400).json({ error: 'No fields to update' });
+  res.json({ entry: crudUpdate('tournament_entries', req.params.id, data) });
+});
+
+// ── Event rosters (override season roster; guests welcome) ──────────────
+app.get('/api/entries/:id/roster', requireAdmin, (req, res) => {
+  const entry = db.prepare(
+    `SELECT te.*, tr.start_date AS event_date FROM tournament_entries te
+     JOIN tournaments tr ON tr.id = te.tournament_id WHERE te.id = ?`
+  ).get(req.params.id);
+  if (!entry) return res.status(404).json({ error: 'Entry not found' });
+
+  const eventRosterRows = db.prepare('SELECT * FROM event_rosters WHERE entry_id = ?').all(entry.id);
+  const memberships = db.prepare('SELECT * FROM roster_memberships WHERE team_id = ?').all(entry.team_id);
+  const resolved = resolveEventRoster({ eventRosterRows, memberships, teamId: entry.team_id, eventDate: entry.event_date });
+
+  const names = new Map(
+    db.prepare(`SELECT id, first_name, last_name, slug, grad_year FROM players`).all().map(p => [p.id, p])
+  );
+  res.json({
+    entry,
+    source: eventRosterRows.length ? 'event' : 'season',
+    roster: resolved.map(r => ({
+      ...r,
+      event_roster_id: eventRosterRows.find(e => e.player_id === r.player_id)?.id ?? null,
+      player: names.get(r.player_id) || null,
+    })),
+  });
+});
+
+app.post('/api/entries/:id/roster', requireAdmin, (req, res) => {
+  const entry = db.prepare('SELECT * FROM tournament_entries WHERE id = ?').get(req.params.id);
+  if (!entry) return res.status(404).json({ error: 'Entry not found' });
+  const { player_id, is_guest = 0, jersey = '' } = req.body || {};
+  if (!db.prepare('SELECT 1 FROM players WHERE id = ?').get(player_id)) return res.status(400).json({ error: 'Unknown player' });
+  try {
+    const info = db.prepare('INSERT INTO event_rosters (entry_id, player_id, is_guest, jersey) VALUES (?, ?, ?, ?)')
+      .run(entry.id, player_id, is_guest ? 1 : 0, jersey);
+    res.status(201).json({ row: db.prepare('SELECT * FROM event_rosters WHERE id = ?').get(info.lastInsertRowid) });
+  } catch {
+    res.status(409).json({ error: 'Player is already on this event roster' });
+  }
+});
+
+app.delete('/api/event-roster/:id', requireAdmin, (req, res) => {
+  const info = db.prepare('DELETE FROM event_rosters WHERE id = ?').run(req.params.id);
+  if (!info.changes) return res.status(404).json({ error: 'Event roster row not found' });
+  res.json({ ok: true });
+});
+
+// ── Shared tournament games + appearances ────────────────────────────────
+app.post('/api/tournaments/:id/games', requireAdmin, (req, res) => {
+  const { division_id, home_entry_id, away_entry_id, game_date, game_time = '', field = '' } = req.body || {};
+  if (!game_date) return res.status(400).json({ error: 'game_date is required' });
+  if (home_entry_id === away_entry_id) return res.status(400).json({ error: 'Home and away entries must differ' });
+  const home = db.prepare('SELECT * FROM tournament_entries WHERE id = ? AND tournament_id = ?').get(home_entry_id, req.params.id);
+  const away = db.prepare('SELECT * FROM tournament_entries WHERE id = ? AND tournament_id = ?').get(away_entry_id, req.params.id);
+  if (!home || !away) return res.status(400).json({ error: 'Both entries must belong to this tournament' });
+  if (!db.prepare('SELECT 1 FROM divisions WHERE id = ? AND tournament_id = ?').get(division_id, req.params.id)) {
+    return res.status(400).json({ error: 'Division does not belong to this tournament' });
+  }
+  const info = db.prepare(
+    `INSERT INTO tournament_games (tournament_id, division_id, home_entry_id, away_entry_id, game_date, game_time, field)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`
+  ).run(req.params.id, division_id, home_entry_id, away_entry_id, game_date, game_time, field);
+  res.status(201).json({ game: db.prepare('SELECT * FROM tournament_games WHERE id = ?').get(info.lastInsertRowid) });
+});
+
+app.put('/api/tournament-games/:id', requireAdmin, (req, res) => {
+  if (!db.prepare('SELECT 1 FROM tournament_games WHERE id = ?').get(req.params.id)) return res.status(404).json({ error: 'Game not found' });
+  const data = pickFields(req.body, ['game_date', 'game_time', 'field', 'home_score', 'away_score', 'status']);
+  if (!Object.keys(data).length) return res.status(400).json({ error: 'No fields to update' });
+  res.json({ game: crudUpdate('tournament_games', req.params.id, data) });
+});
+
+app.get('/api/tournament-games/:id/appearances', requireAdmin, (req, res) => {
+  res.json({
+    appearances: db.prepare(
+      `SELECT a.*, p.first_name, p.last_name, t.name AS team_name
+       FROM player_game_appearances a
+       JOIN players p ON p.id = a.player_id
+       JOIN tournament_entries te ON te.id = a.entry_id JOIN teams t ON t.id = te.team_id
+       WHERE a.tournament_game_id = ? ORDER BY a.entry_id, a.lineup_slot`
+    ).all(req.params.id),
+  });
+});
+
+app.post('/api/tournament-games/:id/appearances', requireAdmin, (req, res) => {
+  const game = db.prepare('SELECT * FROM tournament_games WHERE id = ?').get(req.params.id);
+  if (!game) return res.status(404).json({ error: 'Game not found' });
+  const { player_id, entry_id, starter = 0, position = '', lineup_slot = null } = req.body || {};
+  if (entry_id !== game.home_entry_id && entry_id !== game.away_entry_id) {
+    return res.status(400).json({ error: 'Entry is not part of this game' });
+  }
+  if (!db.prepare('SELECT 1 FROM players WHERE id = ?').get(player_id)) return res.status(400).json({ error: 'Unknown player' });
+  try {
+    const info = db.prepare(
+      `INSERT INTO player_game_appearances (tournament_game_id, player_id, entry_id, starter, position, lineup_slot)
+       VALUES (?, ?, ?, ?, ?, ?)`
+    ).run(game.id, player_id, entry_id, starter ? 1 : 0, position, lineup_slot);
+    res.status(201).json({ appearance: db.prepare('SELECT * FROM player_game_appearances WHERE id = ?').get(info.lastInsertRowid) });
+  } catch {
+    res.status(409).json({ error: 'Player already has an appearance in this game' });
+  }
+});
+
+app.delete('/api/appearances/:id', requireAdmin, (req, res) => {
+  const info = db.prepare('DELETE FROM player_game_appearances WHERE id = ?').run(req.params.id);
+  if (!info.changes) return res.status(404).json({ error: 'Appearance not found' });
   res.json({ ok: true });
 });
 

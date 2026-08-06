@@ -11,7 +11,7 @@
     "dev:web": "vite",
     "server": "PORT= node server/index.js",
     "build": "vite build",
-    "test": "node --test server/",
+    "test": "node --test server/*.test.js",
     "lint": "eslint .",
     "preview": "vite preview"
   },
