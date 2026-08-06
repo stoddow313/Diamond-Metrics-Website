@@ -81,6 +81,12 @@ export const api = {
   createTournamentGame: (tournamentId, g) => request(`/api/tournaments/${tournamentId}/games`, { method: 'POST', body: g }),
   updateTournamentGame: (id, g) => request(`/api/tournament-games/${id}`, { method: 'PUT', body: g }),
 
+  // server-side imports
+  importKinds: () => request('/api/imports/kinds'),
+  importPreview: (kind, rows, resolutions = {}) => request('/api/imports/preview', { method: 'POST', body: { kind, rows, resolutions } }),
+  importApply: (kind, rows, resolutions = {}, filename = '') => request('/api/imports/apply', { method: 'POST', body: { kind, rows, resolutions, filename } }),
+  importAudits: () => request('/api/imports/audits'),
+
   // staff (coach/director) access
   getAccess: (kind, id) => request(`/api/${kind}/${id}/access`),           // kind: 'teams' | 'tournaments'
   addAccess: (kind, id, email) => request(`/api/${kind}/${id}/access`, { method: 'POST', body: { email } }),

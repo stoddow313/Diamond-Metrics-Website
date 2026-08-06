@@ -324,6 +324,22 @@ db.exec(`
     expires_at TEXT NOT NULL,
     claimed_at TEXT
   );
+
+  -- Server-side import audit trail (requirements §8): every preview/apply is
+  -- recorded with uploader, source file, and result counts.
+  CREATE TABLE IF NOT EXISTS import_audits (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    kind           TEXT NOT NULL,
+    filename       TEXT DEFAULT '',
+    uploader_email TEXT NOT NULL,
+    dry_run        INTEGER NOT NULL DEFAULT 0,
+    created_count  INTEGER NOT NULL DEFAULT 0,
+    updated_count  INTEGER NOT NULL DEFAULT 0,
+    skipped_count  INTEGER NOT NULL DEFAULT 0,
+    error_count    INTEGER NOT NULL DEFAULT 0,
+    report         TEXT DEFAULT '[]',
+    created_at     TEXT NOT NULL DEFAULT (datetime('now'))
+  );
 `);
 
 // Additive column migrations (SQLite has no ADD COLUMN IF NOT EXISTS).
@@ -337,6 +353,12 @@ addColumnIfMissing('games', 'event_id', 'event_id INTEGER REFERENCES events(id)'
 addColumnIfMissing('games', 'tournament_game_id', 'tournament_game_id INTEGER REFERENCES tournament_games(id)');
 // Admin exclusion of invalid/duplicate observations without deleting them.
 addColumnIfMissing('stat_entries', 'excluded', 'excluded INTEGER NOT NULL DEFAULT 0');
+// External/source ids so re-imports are idempotent and never duplicate
+// players, teams, games, or events (requirements §3/§8).
+for (const table of ['players', 'organizations', 'teams', 'tournaments', 'tournament_games']) {
+  addColumnIfMissing(table, 'external_id', 'external_id TEXT');
+  db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_${table}_external ON ${table}(external_id) WHERE external_id IS NOT NULL`);
+}
 
 // One-time backfill: link existing pro_day games to shared events using the
 // legacy (date, name) grouping, so historical data joins the id-based model.

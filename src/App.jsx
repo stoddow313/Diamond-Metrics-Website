@@ -16,6 +16,7 @@ import AdminTeamsPage from './pages/admin/AdminTeamsPage';
 import AdminTeamEditorPage from './pages/admin/AdminTeamEditorPage';
 import AdminTournamentsPage from './pages/admin/AdminTournamentsPage';
 import AdminTournamentEditorPage from './pages/admin/AdminTournamentEditorPage';
+import AdminImportsPage from './pages/admin/AdminImportsPage';
 import PublicProfilePage from './pages/PublicProfilePage';
 
 /* ── SIDELINED (pre-BE demo app) ─────────────────────────────────────────
@@ -99,6 +100,7 @@ function AppRoutes() {
         <Route path="teams/:teamId" element={<AdminTeamEditorPage />} />
         <Route path="tournaments" element={<AdminTournamentsPage />} />
         <Route path="tournaments/:tournamentId" element={<AdminTournamentEditorPage />} />
+        <Route path="imports" element={<AdminImportsPage />} />
       </Route>
 
       {/* ── SIDELINED routes (see note above) ──────────────────────────
