@@ -49,6 +49,7 @@ export const api = {
   getPlayer: (id) => request(`/api/players/${id}`),
   updatePlayer: (id, player) => request(`/api/players/${id}`, { method: 'PUT', body: player }),
   deletePlayer: (id) => request(`/api/players/${id}`, { method: 'DELETE' }),
+  bulkDeletePlayers: (ids) => request('/api/players/bulk-delete', { method: 'POST', body: { ids } }),
 
   // games + stats
   createGame: (playerId, game) => request(`/api/players/${playerId}/games`, { method: 'POST', body: game }),

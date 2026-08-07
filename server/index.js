@@ -10,6 +10,7 @@ import {
 import { computeRatings } from './ratingEngine.js';
 import { resolveEventRoster, slugify } from './rosterLogic.js';
 import { IMPORT_KINDS, planImport, applyImport } from './importEngine.js';
+import { deletePlayers } from './playerDelete.js';
 
 const app = express();
 // Render (and most hosts) inject PORT; DM_API_PORT is the local-dev override.
@@ -270,9 +271,30 @@ app.put('/api/players/:id', requireAdmin, (req, res) => {
 });
 
 app.delete('/api/players/:id', requireAdmin, (req, res) => {
-  const info = db.prepare('DELETE FROM players WHERE id = ?').run(req.params.id);
-  if (info.changes === 0) return res.status(404).json({ error: 'Player not found' });
-  res.json({ ok: true });
+  if (!db.prepare('SELECT 1 FROM players WHERE id = ?').get(req.params.id)) {
+    return res.status(404).json({ error: 'Player not found' });
+  }
+  try {
+    deletePlayers(db, [Number(req.params.id)]);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: `Delete failed: ${err.message}` });
+  }
+});
+
+app.post('/api/players/bulk-delete', requireAdmin, (req, res) => {
+  const ids = (req.body || {}).ids;
+  if (!Array.isArray(ids) || ids.length === 0 || !ids.every(n => Number.isInteger(n) && n > 0)) {
+    return res.status(400).json({ error: 'Body must include ids: a non-empty array of player ids' });
+  }
+  const missing = ids.filter(id => !db.prepare('SELECT 1 FROM players WHERE id = ?').get(id));
+  if (missing.length) return res.status(404).json({ error: `Unknown player ids: ${missing.join(', ')}` });
+  try {
+    const deleted = deletePlayers(db, ids); // one transaction — all or nothing
+    res.json({ ok: true, deleted });
+  } catch (err) {
+    res.status(500).json({ error: `Delete failed: ${err.message}` });
+  }
 });
 
 // ── Games + stats (admin) ────────────────────────────────────────────────
