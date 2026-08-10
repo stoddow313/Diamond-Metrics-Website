@@ -6,7 +6,7 @@
     <radialGradient id="grass" cx="50%" cy="45%" r="65%"><stop stop-color="#4eaa6e"/><stop offset="1" stop-color="#1f704d"/></radialGradient>
     <linearGradient id="dirt" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#d8a26b"/><stop offset="1" stop-color="#b96e42"/></linearGradient>
     <filter id="shadow"><feDropShadow dx="0" dy="8" stdDeviation="10" flood-opacity=".28"/></filter>
-    <style>.k{font-family:Arial,Helvetica,sans-serif}.eyebrow{fill:#7dd3fc;font-size:14px;font-weight:800;letter-spacing:2px}.title{fill:#f8fafc;font-size:34px;font-weight:800}.hint{fill:#cbd5e1;font-size:17px}.fieldline{stroke:#f7eddc;stroke-width:4;fill:none;stroke-linecap:round}.label{fill:#f8fafc;font-size:15px;font-weight:700}.note{fill:#dbeafe;font-size:15px;font-weight:700}.sub{fill:#93c5fd;font-size:14px}.callout{fill:#102b54;stroke:#7dd3fc;stroke-width:1.5}.leader{stroke:#9bdcff;stroke-width:2;fill:none;stroke-linecap:round}.player{fill:#14345d;stroke:#f8fafc;stroke-width:3}.base{fill:#fffdf5;stroke:#d7efff;stroke-width:2}</style>
+    <style>.k{font-family:Arial,Helvetica,sans-serif}.eyebrow{fill:#7dd3fc;font-size:14px;font-weight:800;letter-spacing:2px}.title{fill:#f8fafc;font-size:34px;font-weight:800}.hint{fill:#cbd5e1;font-size:17px}.fieldline{stroke:#f7eddc;stroke-width:4;fill:none;stroke-linecap:round}.label{fill:#f8fafc;font-size:15px;font-weight:700}.sub{fill:#93c5fd;font-size:14px}.leader{stroke:#9bdcff;stroke-width:2;fill:none;stroke-linecap:round}.player{fill:#14345d;stroke:#f8fafc;stroke-width:3}.base{fill:#fffdf5;stroke:#d7efff;stroke-width:2}</style>
   </defs>
   <rect width="1200" height="720" rx="32" fill="url(#night)"/>
   <text x="64" y="62" class="k eyebrow">PRIMARY GAME CAMERA</text>
@@ -38,21 +38,12 @@
   <!-- player labels with leaders -->
   <path d="M612 432 H660" class="leader"/><text x="668" y="438" class="k label">Pitcher</text>
   <path d="M558 590 H506" class="leader"/><text x="440" y="596" class="k label">Hitter</text>
-  <path d="M612 632 H662" class="leader"/><text x="670" y="638" class="k label">Catcher</text>
-  <path d="M610 614 H662" class="leader"/><text x="670" y="620" class="k label">Home plate</text>
+  <path d="M612 632 H650" class="leader"/><text x="658" y="649" class="k label">Catcher</text>
+  <path d="M610 614 H662" class="leader"/><text x="670" y="610" class="k label">Home plate</text>
 
   <!-- camera position and intended frame -->
   <path d="M600 692 L451 505 Q600 445 749 505 Z" fill="#7dd3fc" fill-opacity=".16" stroke="#9bdcff" stroke-width="2" stroke-dasharray="8 8"/>
   <g transform="translate(558 670)"><rect width="84" height="29" rx="8" fill="#102b54" stroke="#7dd3fc" stroke-width="2"/><rect x="28" y="7" width="28" height="15" rx="3" fill="none" stroke="#f8fafc" stroke-width="2.5"/><circle cx="42" cy="14.5" r="4" fill="#f8fafc"/><path d="M42 29v18m-18 0h36m-10-18 8 18m-16-18-8 18" stroke="#7dd3fc" stroke-width="2.5"/></g>
 
-  <!-- two quiet coaching callouts -->
-  <path d="M451 505 H235 V458" class="leader"/>
-  <rect x="64" y="400" width="235" height="83" rx="14" class="callout"/>
-  <text x="86" y="434" class="k note">Camera stays behind home</text>
-  <text x="86" y="460" class="k sub">Tripod or fence mount • keep it level</text>
-  <path d="M749 505 H969 V458" class="leader"/>
-  <rect x="901" y="400" width="235" height="83" rx="14" class="callout"/>
-  <text x="923" y="434" class="k note">Frame plate, mound, infield</text>
-  <text x="923" y="460" class="k sub">Wide enough to preserve game context</text>
-  <text x="64" y="686" class="k sub">For full-game filming: 1080p / 60 fps is a strong baseline. Test battery, storage, and heat before first pitch.</text>
+  <text x="600" y="240" text-anchor="middle" class="k sub">Frame the plate, mound, and infield together.</text>
 </svg>
