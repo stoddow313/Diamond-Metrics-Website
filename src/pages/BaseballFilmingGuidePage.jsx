@@ -5,6 +5,7 @@ import MarketingLayout from "../components/MarketingLayout";
 import { getBlogPost } from "../data/blogPosts";
 import filmingBehindHomePlate from '../assets/blog/filming-behind-home-plate.png';
 import primarySetupDiagram from '../assets/blog/primary-behind-home-plate-setup.svg';
+import secondCameraDiagram from '../assets/blog/optional-second-camera-setup.svg';
 
 const learn = [
   "At-bats, swings, contact, and swing-and-miss tendencies",
@@ -197,6 +198,16 @@ export default function BaseballFilmingGuidePage() {
               arrival, bat-to-ball contact, a runner’s first move, base touch,
               throw release, and catch.
             </p>
+
+            <figure className="article-visual">
+            <img
+              src={secondCameraDiagram}
+              alt="Diagram showing a primary camera behind home plate and an optional side camera near the first-base line"
+            />
+            <figcaption>
+              Keep the behind-home-plate view as your primary game camera. Add a side camera for targeted clips when a better angle or higher frame rate would be helpful.
+            </figcaption>
+            </figure>
           </section>
           <section>
             <h2>3. Record complete action, not only highlights</h2>
