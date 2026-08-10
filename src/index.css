@@ -3281,20 +3281,3 @@ section h2 {
 .playbook-center .playbook-diamond{position:absolute;inset:9px;display:block;transform:rotate(45deg);border:1px solid #38bdf8;border-radius:24px;background:linear-gradient(145deg,rgba(37,99,235,.52),rgba(3,9,20,.9));box-shadow:0 0 35px rgba(56,189,248,.3),inset 0 0 18px rgba(125,211,252,.13)}
 .playbook-diamond::before,.playbook-diamond::after{position:absolute;top:50%;left:50%;width:1px;height:calc(100% - 28px);background:rgba(147,197,253,.42);content:""}.playbook-diamond::before{transform:translate(-50%,-50%)}.playbook-diamond::after{transform:translate(-50%,-50%) rotate(90deg)}
 .playbook-diamond i{position:absolute;width:9px;height:9px;border-radius:2px;background:#e0f2fe;box-shadow:0 0 12px rgba(224,242,254,.85)}.playbook-diamond i:nth-child(1){top:10px;left:50%;transform:translateX(-50%)}.playbook-diamond i:nth-child(2){top:50%;right:10px;transform:translateY(-50%)}.playbook-diamond i:nth-child(3){bottom:10px;left:50%;transform:translateX(-50%)}.playbook-diamond i:nth-child(4){top:50%;left:10px;transform:translateY(-50%)}
-.article-visual {
-  margin: 42px 0;
-}
-
-.article-visual img {
-  display: block;
-  width: 100%;
-  border: 1px solid rgba(96, 165, 250, 0.3);
-  border-radius: 18px;
-}
-
-.article-visual figcaption {
-  margin-top: 12px;
-  color: #94a3b8;
-  font-size: 14px;
-  line-height: 1.5;
-}
