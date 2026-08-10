@@ -1,24 +1,362 @@
-import { useEffect } from 'react';
-import { Check, ChevronRight, Video } from 'lucide-react';
-import { Link } from 'react-router-dom';
-import MarketingLayout from '../components/MarketingLayout';
-import { getBlogPost } from '../data/blogPosts';
+import { useEffect } from "react";
+import { Check, ChevronRight, Video } from "lucide-react";
+import { Link } from "react-router-dom";
+import MarketingLayout from "../components/MarketingLayout";
+import { getBlogPost } from "../data/blogPosts";
 
-const learn = ['At-bats, swings, contact, and swing-and-miss tendencies', 'Contact direction, including pull-side, middle, and opposite-field tendencies', 'Pitch results, first-pitch strikes, called strikes, and whiffs', 'Count-based and game-situation tendencies', 'Pitch-by-pitch sequence and time to home when the footage supports it', 'Defensive opportunities, throwing decisions, and observable accuracy', 'Baserunning reads, advancement decisions, and selected times when the full play is visible'];
-const settings = [['Record horizontally', 'A landscape frame captures more of the field and is easier to review on a larger screen.'], ['Use the rear camera', 'It typically provides better image quality than the front-facing camera.'], ['Choose 1080p at 60 fps', 'When available, it balances detail, motion clarity, storage, and recording time for most games.'], ['Use 1080p at 120 fps for targeted clips', 'Use it for a closer look at a swing, pitching motion, throw, or sprint—not necessarily an entire game.'], ['Avoid heavy digital zoom', 'Move the camera to a better position when possible; digital zoom can make distant action blurry.']];
-const faqs = [['Can I use video recorded on my phone?', 'Yes. Stable, clear phone video can support meaningful analysis. The angle, framing, continuity, and original file quality usually matter more than owning an expensive camera.'], ['Do I need to upload an entire game?', 'Complete innings or a full game provide the best context for tendencies and game situations. Targeted clips can still be useful when you have a specific question, but include the full plate appearance or play whenever possible.'], ['Can Diamond Metrics analyze one player from a team recording?', 'Yes, when the player can be identified and the relevant action is visible. Include the player’s name, number, team, position, and the areas you want to understand.'], ['What if my footage is not perfect?', 'Do not assume it has no value. Submit the clearest original file you have and describe what you want to learn. We will focus the analysis on what the footage can responsibly support.'], ['Will one game define my player?', 'No. One game is one sample. The more valuable view comes from comparing multiple games and tracking progress over time.']];
+const learn = [
+  "At-bats, swings, contact, and swing-and-miss tendencies",
+  "Contact direction, including pull-side, middle, and opposite-field tendencies",
+  "Pitch results, first-pitch strikes, called strikes, and whiffs",
+  "Count-based and game-situation tendencies",
+  "Pitch-by-pitch sequence and time to home when the footage supports it",
+  "Defensive opportunities, throwing decisions, and observable accuracy",
+  "Baserunning reads, advancement decisions, and selected times when the full play is visible",
+];
+const settings = [
+  [
+    "Record horizontally",
+    "A landscape frame captures more of the field and is easier to review on a larger screen.",
+  ],
+  [
+    "Use the rear camera",
+    "It typically provides better image quality than the front-facing camera.",
+  ],
+  [
+    "Choose 1080p at 60 fps",
+    "When available, it balances detail, motion clarity, storage, and recording time for most games.",
+  ],
+  [
+    "Use 1080p at 120 fps for targeted clips",
+    "Use it for a closer look at a swing, pitching motion, throw, or sprint—not necessarily an entire game.",
+  ],
+  [
+    "Avoid heavy digital zoom",
+    "Move the camera to a better position when possible; digital zoom can make distant action blurry.",
+  ],
+];
+const faqs = [
+  [
+    "Can I use video recorded on my phone?",
+    "Yes. Stable, clear phone video can support meaningful analysis. The angle, framing, continuity, and original file quality usually matter more than owning an expensive camera.",
+  ],
+  [
+    "Do I need to upload an entire game?",
+    "Complete innings or a full game provide the best context for tendencies and game situations. Targeted clips can still be useful when you have a specific question, but include the full plate appearance or play whenever possible.",
+  ],
+  [
+    "Can Diamond Metrics analyze one player from a team recording?",
+    "Yes, when the player can be identified and the relevant action is visible. Include the player’s name, number, team, position, and the areas you want to understand.",
+  ],
+  [
+    "What if my footage is not perfect?",
+    "Do not assume it has no value. Submit the clearest original file you have and describe what you want to learn. We will focus the analysis on what the footage can responsibly support.",
+  ],
+  [
+    "Will one game define my player?",
+    "No. One game is one sample. The more valuable view comes from comparing multiple games and tracking progress over time.",
+  ],
+];
 
 export default function BaseballFilmingGuidePage() {
-  const post = getBlogPost('how-to-record-baseball-game-video-analysis');
+  const post = getBlogPost("how-to-record-baseball-game-video-analysis");
   useEffect(() => {
     document.title = post.seoTitle;
     let meta = document.querySelector('meta[name="description"]');
     if (!meta) {
-      meta = document.createElement('meta');
-      meta.name = 'description';
+      meta = document.createElement("meta");
+      meta.name = "description";
       document.head.appendChild(meta);
     }
     meta.content = post.seoDescription;
   }, [post]);
-  return <MarketingLayout><article className="article-shell"><header className="article-hero"><Link className="article-back" to="/blog"><ChevronRight size={15} aria-hidden="true" /> Diamond Metrics Playbook</Link><p className="eyebrow">Film Better</p><h1>How to Record a Baseball Game for Video Analysis</h1><p className="article-dek">A parent-friendly guide to camera position, phone settings, frame rate, and the footage that helps turn a game recording into useful player insight.</p></header><div className="article-content"><p className="article-lead">Your phone can preserve a great play. Filmed well, it can also help reveal how a player is developing: what is improving, which tendencies keep appearing, and what to work on next.</p><p>College and professional programs have used video and data for years to review performance. Youth players do not need the same cameras, radar systems, or ball-tracking technology to benefit from the basic process: record the game, review what happened, and track patterns over time.</p><p>Diamond Metrics turns game and practice footage into video-backed player analysis. A standard phone recording can provide meaningful insight when it is stable, clear, and framed correctly. Better footage can support a more complete analysis, but expensive equipment is not the starting requirement.</p><section className="article-quick-answer"><p className="eyebrow">Quick Answer</p><h2>The best way to film a baseball game</h2><p>Place a phone or camera on a secure mount behind home plate. Use the rear camera, record horizontally, keep the pitcher, hitter, plate, and as much of the infield as possible in frame, and choose 1080p at 60 frames per second when your device supports it. Record continuously through each inning and upload the original file—not a screen recording or social-media download.</p></section><section><h2>What Diamond Metrics can learn from game video</h2><p>A stable recording can show much more than the final box score. Depending on the angle, quality, and amount of footage, video analysis can help organize and evaluate:</p><ul className="article-checklist">{learn.map((item) => <li key={item}><Check size={18} aria-hidden="true" />{item}</li>)}</ul><p>The value is not a longer stat sheet. It is a clearer record of what happened, the patterns that are developing, and the next questions a player and coach can explore.</p></section><section><h2>1. Start with a stable view behind home plate</h2><p>For most full-game analysis, an elevated position behind home plate is the best primary angle. It keeps the pitcher, hitter, catcher, and plate in the same view while preserving useful infield context.</p><p>Attach the phone or camera to a secure fence mount, tripod, or stable surface. Frame the image slightly wider than you would for a highlight clip. Before the first pitch, record a short test clip and confirm that the view is level, unobstructed, and not aimed through a fence post or heavy glare.</p></section><section><h2>2. Use phone settings that preserve fast action</h2><p>A modern phone is enough to start. These settings usually produce the most useful full-game footage:</p><ul className="article-settings">{settings.map(([title, detail]) => <li key={title}><strong>{title}.</strong> {detail}</li>)}</ul><p>Higher resolution and faster frame rates provide more visual checkpoints around quick events such as pitch release, ball arrival, bat-to-ball contact, a runner’s first move, base touch, throw release, and catch.</p></section><section><h2>3. Record complete action, not only highlights</h2><p>Whenever possible, record continuously through an inning instead of starting and stopping for every at-bat. Continuous footage preserves the count, game situation, pitch sequence, baserunners, and defensive context. Parents seeking analysis of one player should still capture complete plate appearances and the full defensive play whenever practical.</p><p>Coaches filming for a team should prioritize uninterrupted game footage and provide a roster or player-number reference with the upload.</p></section><section className="article-limits"><h2>What one phone camera cannot reliably measure</h2><p>A single uncalibrated camera can support useful observation and some timing review, but it should not be treated as a substitute for radar or a dedicated ball-tracking system. By itself, ordinary game video may not reliably produce:</p><ul><li>Pitch velocity</li><li>Exit velocity</li><li>Precise launch angle</li><li>Pitch movement or spin rate</li><li>Throw velocity across the field</li><li>Full-field sprint times when the start or finish is outside the frame</li></ul><p>That does not make the footage unsuccessful. It defines the difference between what the camera directly shows and what requires calibrated equipment, multiple angles, radar, or specialized tracking technology.</p></section><section><h2>When a second angle or radar helps</h2><p>One stable camera is enough to begin. Add another tool only when it answers a specific question:</p><ul className="article-settings"><li><strong>First- or third-base-line view.</strong> Useful for a side perspective on hitting, sprint timing, throwing, and defensive positioning.</li><li><strong>Elevated or outfield view.</strong> Adds context for batted-ball direction, defensive range, and baserunning decisions.</li><li><strong>Radar.</strong> The best addition when a trusted pitch or throw velocity number matters. The radar supplies the reading; the video supplies the play and its context.</li></ul></section><section><h2>Common baseball filming problems to avoid</h2><div className="article-problem-grid"><div><h3>A moving camera</h3><p>Constant panning, zooming, or repositioning makes footage harder to review. Once the framing is set, keep the camera still unless the view becomes blocked.</p></div><div><h3>A frame that is too tight</h3><p>Keep enough of the field visible to capture the full action. A close-up may miss runners, fielders, or the ball after contact.</p></div><div><h3>Overheating, low battery, or full storage</h3><p>Long games, direct sunlight, high-resolution settings, and charging can cause a phone or action camera to stop. Test continuous recording and use shade when available.</p></div><div><h3>Blocked or compressed video</h3><p>Clean the lens, avoid fence posts and glare, and upload the original file. Screen recordings and social-media downloads often remove useful detail.</p></div></div></section><section className="article-checklist-panel"><h2>Baseball video checklist</h2><div><div><h3>Before the game</h3><ul><li>Charge the device and confirm you have enough storage.</li><li>Select landscape orientation and 1080p/60 fps when available.</li><li>Set up securely behind home plate and clean the lens.</li><li>Record a test clip to check angle, focus, glare, and obstructions.</li></ul></div><div><h3>During the game</h3><ul><li>Keep the camera stable and the pitcher, hitter, and plate in frame.</li><li>Record continuously through each inning when possible.</li><li>Avoid unnecessary panning and digital zoom.</li><li>Capture the full plate appearance or defensive play—not only the result.</li></ul></div><div><h3>After the game</h3><ul><li>Keep the original video file.</li><li>Label the file with the game date, teams, and player name or number.</li><li>Include the player’s team, position, bats/throws, and questions you want the analysis to address.</li></ul></div></div></section><section className="article-faq"><h2>Frequently asked questions</h2>{faqs.map(([question, answer]) => <div key={question}><h3>{question}</h3><p>{answer}</p></div>)}</section><aside className="article-cta"><Video size={28} aria-hidden="true" /><p className="eyebrow">Ready to See What Your Video Can Reveal?</p><h2>Turn game footage into a record of progress.</h2><p>A phone can capture the play. Diamond Metrics helps make the footage useful over time.</p><Link className="primary-button" to="/signup">Analyze Your Player</Link><Link className="article-program-link" to="/programs">Filming for a team or program? Explore Team Analysis.</Link></aside></div></article></MarketingLayout>;
+  return (
+    <MarketingLayout>
+      <article className="article-shell">
+        <header className="article-hero">
+          <Link className="article-back" to="/blog">
+            <ChevronRight size={15} aria-hidden="true" /> Diamond Metrics
+            Playbook
+          </Link>
+          <p className="eyebrow">Film Better</p>
+          <h1>How to Record a Baseball Game for Video Analysis</h1>
+          <p className="article-dek">
+            A parent-friendly guide to camera position, phone settings, frame
+            rate, and the footage that helps turn a game recording into useful
+            player insight.
+          </p>
+        </header>
+        <div className="article-content">
+          <p className="article-lead">
+            Your phone can preserve a great play. Filmed well, it can also help
+            reveal how a player is developing: what is improving, which
+            tendencies keep appearing, and what to work on next.
+          </p>
+          <p>
+            College and professional programs have used video and data for years
+            to review performance. Youth players do not need the same cameras,
+            radar systems, or ball-tracking technology to benefit from the basic
+            process: record the game, review what happened, and track patterns
+            over time.
+          </p>
+          <p>
+            Diamond Metrics turns game and practice footage into video-backed
+            player analysis. A standard phone recording can provide meaningful
+            insight when it is stable, clear, and framed correctly. Better
+            footage can support a more complete analysis, but expensive
+            equipment is not the starting requirement.
+          </p>
+          <section className="article-quick-answer">
+            <p className="eyebrow">Quick Answer</p>
+            <h2>The best way to film a baseball game</h2>
+            <p>
+              Place a phone or camera on a secure mount behind home plate. Use
+              the rear camera, record horizontally, keep the pitcher, hitter,
+              plate, and as much of the infield as possible in frame, and choose
+              1080p at 60 frames per second when your device supports it. Record
+              continuously through each inning and upload the original file—not
+              a screen recording or social-media download.
+            </p>
+          </section>
+          <section>
+            <h2>What Diamond Metrics can learn from game video</h2>
+            <p>
+              A stable recording can show much more than the final box score.
+              Depending on the angle, quality, and amount of footage, video
+              analysis can help organize and evaluate:
+            </p>
+            <ul className="article-checklist">
+              {learn.map((item) => (
+                <li key={item}>
+                  <Check size={18} aria-hidden="true" />
+                  {item}
+                </li>
+              ))}
+            </ul>
+            <p>
+              The value is not a longer stat sheet. It is a clearer record of
+              what happened, the patterns that are developing, and the next
+              questions a player and coach can explore.
+            </p>
+          </section>
+          <section>
+            <h2>1. Start with a stable view behind home plate</h2>
+            <p>
+              For most full-game analysis, an elevated position behind home
+              plate is the best primary angle. It keeps the pitcher, hitter,
+              catcher, and plate in the same view while preserving useful
+              infield context.
+            </p>
+            <p>
+              Attach the phone or camera to a secure fence mount, tripod, or
+              stable surface. Frame the image slightly wider than you would for
+              a highlight clip. Before the first pitch, record a short test clip
+              and confirm that the view is level, unobstructed, and not aimed
+              through a fence post or heavy glare.
+            </p>
+          </section>
+          <section>
+            <h2>2. Use phone settings that preserve fast action</h2>
+            <p>
+              A modern phone is enough to start. These settings usually produce
+              the most useful full-game footage:
+            </p>
+            <ul className="article-settings">
+              {settings.map(([title, detail]) => (
+                <li key={title}>
+                  <strong>{title}.</strong> {detail}
+                </li>
+              ))}
+            </ul>
+            <p>
+              Higher resolution and faster frame rates provide more visual
+              checkpoints around quick events such as pitch release, ball
+              arrival, bat-to-ball contact, a runner’s first move, base touch,
+              throw release, and catch.
+            </p>
+          </section>
+          <section>
+            <h2>3. Record complete action, not only highlights</h2>
+            <p>
+              Whenever possible, record continuously through an inning instead
+              of starting and stopping for every at-bat. Continuous footage
+              preserves the count, game situation, pitch sequence, baserunners,
+              and defensive context. Parents seeking analysis of one player
+              should still capture complete plate appearances and the full
+              defensive play whenever practical.
+            </p>
+            <p>
+              Coaches filming for a team should prioritize uninterrupted game
+              footage and provide a roster or player-number reference with the
+              upload.
+            </p>
+          </section>
+          <section className="article-limits">
+            <h2>What one phone camera cannot reliably measure</h2>
+            <p>
+              A single uncalibrated camera can support useful observation and
+              some timing review, but it should not be treated as a substitute
+              for radar or a dedicated ball-tracking system. By itself, ordinary
+              game video may not reliably produce:
+            </p>
+            <ul>
+              <li>Pitch velocity</li>
+              <li>Exit velocity</li>
+              <li>Precise launch angle</li>
+              <li>Pitch movement or spin rate</li>
+              <li>Throw velocity across the field</li>
+              <li>
+                Full-field sprint times when the start or finish is outside the
+                frame
+              </li>
+            </ul>
+            <p>
+              That does not make the footage unsuccessful. It defines the
+              difference between what the camera directly shows and what
+              requires calibrated equipment, multiple angles, radar, or
+              specialized tracking technology.
+            </p>
+          </section>
+          <section>
+            <h2>When a second angle or radar helps</h2>
+            <p>
+              One stable camera is enough to begin. Add another tool only when
+              it answers a specific question:
+            </p>
+            <ul className="article-settings">
+              <li>
+                <strong>First- or third-base-line view.</strong> Useful for a
+                side perspective on hitting, sprint timing, throwing, and
+                defensive positioning.
+              </li>
+              <li>
+                <strong>Elevated or outfield view.</strong> Adds context for
+                batted-ball direction, defensive range, and baserunning
+                decisions.
+              </li>
+              <li>
+                <strong>Radar.</strong> The best addition when a trusted pitch
+                or throw velocity number matters. The radar supplies the
+                reading; the video supplies the play and its context.
+              </li>
+            </ul>
+          </section>
+          <section>
+            <h2>Common baseball filming problems to avoid</h2>
+            <div className="article-problem-grid">
+              <div>
+                <h3>A moving camera</h3>
+                <p>
+                  Constant panning, zooming, or repositioning makes footage
+                  harder to review. Once the framing is set, keep the camera
+                  still unless the view becomes blocked.
+                </p>
+              </div>
+              <div>
+                <h3>A frame that is too tight</h3>
+                <p>
+                  Keep enough of the field visible to capture the full action. A
+                  close-up may miss runners, fielders, or the ball after
+                  contact.
+                </p>
+              </div>
+              <div>
+                <h3>Overheating, low battery, or full storage</h3>
+                <p>
+                  Long games, direct sunlight, high-resolution settings, and
+                  charging can cause a phone or action camera to stop. Test
+                  continuous recording and use shade when available.
+                </p>
+              </div>
+              <div>
+                <h3>Blocked or compressed video</h3>
+                <p>
+                  Clean the lens, avoid fence posts and glare, and upload the
+                  original file. Screen recordings and social-media downloads
+                  often remove useful detail.
+                </p>
+              </div>
+            </div>
+          </section>
+          <section className="article-checklist-panel">
+            <h2>Baseball video checklist</h2>
+            <div>
+              <div>
+                <h3>Before the game</h3>
+                <ul>
+                  <li>
+                    Charge the device and confirm you have enough storage.
+                  </li>
+                  <li>
+                    Select landscape orientation and 1080p/60 fps when
+                    available.
+                  </li>
+                  <li>Set up securely behind home plate and clean the lens.</li>
+                  <li>
+                    Record a test clip to check angle, focus, glare, and
+                    obstructions.
+                  </li>
+                </ul>
+              </div>
+              <div>
+                <h3>During the game</h3>
+                <ul>
+                  <li>
+                    Keep the camera stable and the pitcher, hitter, and plate in
+                    frame.
+                  </li>
+                  <li>
+                    Record continuously through each inning when possible.
+                  </li>
+                  <li>Avoid unnecessary panning and digital zoom.</li>
+                  <li>
+                    Capture the full plate appearance or defensive play—not only
+                    the result.
+                  </li>
+                </ul>
+              </div>
+              <div>
+                <h3>After the game</h3>
+                <ul>
+                  <li>Keep the original video file.</li>
+                  <li>
+                    Label the file with the game date, teams, and player name or
+                    number.
+                  </li>
+                  <li>
+                    Include the player’s team, position, bats/throws, and
+                    questions you want the analysis to address.
+                  </li>
+                </ul>
+              </div>
+            </div>
+          </section>
+          <section className="article-faq">
+            <h2>Frequently asked questions</h2>
+            {faqs.map(([question, answer]) => (
+              <div key={question}>
+                <h3>{question}</h3>
+                <p>{answer}</p>
+              </div>
+            ))}
+          </section>
+          <aside className="article-cta">
+            <Video size={28} aria-hidden="true" />
+            <p className="eyebrow">Ready to See What Your Video Can Reveal?</p>
+            <h2>Turn game footage into a record of progress.</h2>
+            <p>
+              A phone can capture the play. Diamond Metrics helps make the
+              footage useful over time.
+            </p>
+            <Link className="primary-button" to="/signup">
+              Analyze Your Player
+            </Link>
+            <Link className="article-program-link" to="/programs">
+              Filming for a team or program? Explore Team Analysis.
+            </Link>
+          </aside>
+        </div>
+      </article>
+    </MarketingLayout>
+  );
 }
