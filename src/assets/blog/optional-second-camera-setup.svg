@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="720" viewBox="0 0 1200 720" role="img" aria-labelledby="title desc">
+  <title id="title">Optional second camera setup for baseball video analysis</title>
+  <desc id="desc">A diagram showing a primary camera behind home plate and an optional second camera near the first base line for targeted higher frame rate clips.</desc>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#071a38"/><stop offset="1" stop-color="#0d2b54"/></linearGradient>
+    <linearGradient id="field" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#1f6f54"/><stop offset="1" stop-color="#155640"/></linearGradient>
+    <style>.k{font-family:Arial,Helvetica,sans-serif}.label{fill:#dbeafe;font-size:19px;font-weight:700}.sub{fill:#93c5fd;font-size:15px}.tiny{fill:#93c5fd;font-size:13px;font-weight:700;letter-spacing:1.5px}.chip{fill:#0b2348;stroke:#38bdf8;stroke-opacity:.6;stroke-width:1.5}.beam{fill:#38bdf8;fill-opacity:.14;stroke:#7dd3fc;stroke-width:2;stroke-dasharray:8 8}.num{fill:#071a38;font-size:18px;font-weight:800}</style>
+  </defs>
+  <rect width="1200" height="720" rx="32" fill="url(#bg)"/>
+  <text x="70" y="76" class="k tiny">OPTIONAL SECOND ANGLE</text>
+  <text x="70" y="125" class="k" fill="#f8fafc" font-size="38" font-weight="800">Add a side camera for targeted clips.</text>
+  <text x="70" y="158" class="k" fill="#cbd5e1" font-size="19">Use it when better angle and higher frame rate materially improve the footage you capture.</text>
+  <path d="M595 598 L345 348 L595 98 L845 348 Z" fill="url(#field)" stroke="#69b99b" stroke-width="3"/>
+  <path d="M595 598 L595 98 M345 348 H845" stroke="#9fd6bd" stroke-opacity=".4" stroke-width="2"/>
+  <circle cx="595" cy="348" r="42" fill="#b87b49" stroke="#e9b281" stroke-width="2"/>
+  <rect x="584" y="338" width="22" height="20" rx="3" fill="#f8fafc" transform="rotate(45 595 348)"/>
+  <path d="M595 565 l16 16 -16 16 -16-16z" fill="#f8fafc"/>
+  <path d="M595 617 L489 508 A150 150 0 0 1 701 508 Z" class="beam"/>
+  <path d="M825 468 L695 418 A145 145 0 0 0 716 520 Z" class="beam"/>
+  <g transform="translate(535 621)"><rect width="120" height="42" rx="12" fill="#0b2348" stroke="#38bdf8" stroke-width="2"/><circle cx="22" cy="21" r="13" fill="#38bdf8"/><text x="17" y="27" class="k num">1</text><text x="45" y="27" class="k" fill="#dbeafe" font-size="15" font-weight="700">Primary</text></g>
+  <g transform="translate(814 451)"><rect width="129" height="42" rx="12" fill="#0b2348" stroke="#38bdf8" stroke-width="2"/><circle cx="22" cy="21" r="13" fill="#38bdf8"/><text x="17" y="27" class="k num">2</text><text x="45" y="27" class="k" fill="#dbeafe" font-size="15" font-weight="700">Side camera</text></g>
+  <path d="M355 278 H165 V213" stroke="#7dd3fc" stroke-width="2" fill="none"/>
+  <rect x="70" y="164" width="268" height="104" rx="16" class="chip"/>
+  <text x="94" y="204" class="k label">1. Keep the primary view</text>
+  <text x="94" y="235" class="k sub">Behind home plate for continuous</text>
+  <text x="94" y="258" class="k sub">game context and timing observations.</text>
+  <path d="M814 390 H1000 V247" stroke="#7dd3fc" stroke-width="2" fill="none"/>
+  <rect x="872" y="164" width="261" height="132" rx="16" class="chip"/>
+  <text x="896" y="204" class="k label">2. Add a side view</text>
+  <text x="896" y="235" class="k sub">Near the first-base line for</text>
+  <text x="896" y="258" class="k sub">targeted clips at 1080p / 120 fps</text>
+  <text x="896" y="281" class="k sub">when your device supports it.</text>
+  <rect x="70" y="632" width="1063" height="42" rx="12" fill="#0b2348" stroke="#294665"/>
+  <text x="94" y="659" class="k" fill="#cbd5e1" font-size="15">A stronger angle and higher frame rate improve the conditions for video-based contact and ball-flight estimates; radar remains best for verified velocity.</text>
+</svg>
