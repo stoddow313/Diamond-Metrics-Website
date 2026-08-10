@@ -1,57 +1,58 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1200" height="720" viewBox="0 0 1200 720" role="img" aria-labelledby="title desc">
-  <title id="title">Behind-home-plate camera setup for filming a baseball game</title>
-  <desc id="desc">A complete baseball field diagram with a camera positioned outside the backstop, a hitter and catcher at home plate, a pitcher on the mound, all bases, and outfield context.</desc>
+  <title id="title">Film a baseball game from behind home plate</title>
+  <desc id="desc">A coaching-style full baseball field diagram showing a camera behind home plate, hitter and catcher at the plate, pitcher on the mound, bases, and outfield.</desc>
   <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#071a38"/><stop offset="1" stop-color="#0d2b54"/></linearGradient>
-    <linearGradient id="grass" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#287a5c"/><stop offset="1" stop-color="#14533e"/></linearGradient>
-    <linearGradient id="dirt" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#cb8d59"/><stop offset="1" stop-color="#a9653e"/></linearGradient>
-    <style>.k{font-family:Arial,Helvetica,sans-serif}.eyebrow{fill:#7dd3fc;font-size:13px;font-weight:800;letter-spacing:1.6px}.h{fill:#f8fafc;font-size:36px;font-weight:800}.p{fill:#cbd5e1;font-size:17px}.label{fill:#dbeafe;font-size:16px;font-weight:700}.small{fill:#93c5fd;font-size:14px}.chip{fill:#0b2348;stroke:#38bdf8;stroke-opacity:.65;stroke-width:1.5}.line{stroke:#7dd3fc;stroke-width:2;fill:none}.base{fill:#f8fafc;stroke:#7dd3fc;stroke-width:2}.player{fill:#071a38;stroke:#f8fafc;stroke-width:3}.number{fill:#071a38;font-size:14px;font-weight:800}</style>
+    <linearGradient id="night" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#0b1f43"/><stop offset="1" stop-color="#07152e"/></linearGradient>
+    <radialGradient id="grass" cx="50%" cy="45%" r="65%"><stop stop-color="#4eaa6e"/><stop offset="1" stop-color="#1f704d"/></radialGradient>
+    <linearGradient id="dirt" x1="0" y1="0" x2="0" y2="1"><stop stop-color="#d8a26b"/><stop offset="1" stop-color="#b96e42"/></linearGradient>
+    <filter id="shadow"><feDropShadow dx="0" dy="8" stdDeviation="10" flood-opacity=".28"/></filter>
+    <style>.k{font-family:Arial,Helvetica,sans-serif}.eyebrow{fill:#7dd3fc;font-size:14px;font-weight:800;letter-spacing:2px}.title{fill:#f8fafc;font-size:34px;font-weight:800}.hint{fill:#cbd5e1;font-size:17px}.fieldline{stroke:#f7eddc;stroke-width:4;fill:none;stroke-linecap:round}.label{fill:#f8fafc;font-size:15px;font-weight:700}.note{fill:#dbeafe;font-size:15px;font-weight:700}.sub{fill:#93c5fd;font-size:14px}.callout{fill:#102b54;stroke:#7dd3fc;stroke-width:1.5}.leader{stroke:#9bdcff;stroke-width:2;fill:none;stroke-linecap:round}.player{fill:#14345d;stroke:#f8fafc;stroke-width:3}.base{fill:#fffdf5;stroke:#d7efff;stroke-width:2}</style>
   </defs>
-  <rect width="1200" height="720" rx="32" fill="url(#bg)"/>
-  <text x="60" y="70" class="k eyebrow">PRIMARY GAME CAMERA</text>
-  <text x="60" y="113" class="k h">Film the whole battery from behind home.</text>
-  <text x="60" y="144" class="k p">A wide, stable view preserves the plate, mound, infield, and game context.</text>
+  <rect width="1200" height="720" rx="32" fill="url(#night)"/>
+  <text x="64" y="62" class="k eyebrow">PRIMARY GAME CAMERA</text>
+  <text x="64" y="104" class="k title">Start behind home plate.</text>
+  <text x="64" y="135" class="k hint">A steady, wide view keeps the action connected.</text>
 
-  <!-- full field -->
-  <path d="M710 603 L434 327 A390 390 0 0 1 986 327 Z" fill="url(#grass)" stroke="#74c69d" stroke-width="3"/>
-  <path d="M710 603 L510 403 L710 203 L910 403 Z" fill="#bb7a4f" fill-opacity=".48" stroke="#e7b385" stroke-width="2"/>
-  <path d="M434 327 A390 390 0 0 1 986 327" fill="none" stroke="#f8fafc" stroke-opacity=".72" stroke-width="4"/>
-  <path d="M710 603 L434 327 M710 603 L986 327" fill="none" stroke="#f8fafc" stroke-opacity=".52" stroke-width="3"/>
-  <path d="M510 403 L910 403" fill="none" stroke="#f8fafc" stroke-opacity=".24" stroke-width="2"/>
+  <!-- full baseball field -->
+  <path d="M600 626 L234 260 A518 518 0 0 1 966 260 Z" fill="url(#grass)" filter="url(#shadow)"/>
+  <path d="M600 626 L355 381 A346 346 0 0 1 845 381 Z" fill="none" stroke="#f7eddc" stroke-opacity=".84" stroke-width="5"/>
+  <path d="M600 626 L355 381 M600 626 L845 381" class="fieldline"/>
+  <path d="M355 381 A346 346 0 0 1 845 381" class="fieldline"/>
+  <path d="M600 626 L425 451 L600 276 L775 451 Z" fill="url(#dirt)" stroke="#f0c38e" stroke-width="2"/>
+  <path d="M600 626 L425 451 M600 626 L775 451" fill="none" stroke="#f8f0e2" stroke-opacity=".7" stroke-width="3"/>
 
-  <!-- bases and mound -->
-  <rect x="500" y="393" width="20" height="20" rx="2" class="base" transform="rotate(45 510 403)"/>
-  <rect x="700" y="193" width="20" height="20" rx="2" class="base" transform="rotate(45 710 203)"/>
-  <rect x="900" y="393" width="20" height="20" rx="2" class="base" transform="rotate(45 910 403)"/>
-  <path d="M710 583 l14 14 -14 14 -14-14z" class="base"/>
-  <circle cx="710" cy="403" r="43" fill="url(#dirt)" stroke="#efc08e" stroke-width="2"/>
-  <rect x="699" y="393" width="22" height="20" rx="3" fill="#f8fafc" transform="rotate(45 710 403)"/>
+  <!-- bases: 3B, 2B, 1B, home -->
+  <rect x="414" y="440" width="22" height="22" rx="2" class="base" transform="rotate(45 425 451)"/>
+  <rect x="589" y="265" width="22" height="22" rx="2" class="base" transform="rotate(45 600 276)"/>
+  <rect x="764" y="440" width="22" height="22" rx="2" class="base" transform="rotate(45 775 451)"/>
+  <path d="M600 602 l17 17 -17 17 -17-17z" class="base"/>
 
-  <!-- players correctly positioned at plate and mound -->
-  <circle cx="710" cy="389" r="13" class="player"/><text x="732" y="394" class="k small">Pitcher</text>
-  <circle cx="681" cy="563" r="13" class="player"/><text x="625" y="555" class="k small">Hitter</text>
-  <circle cx="710" cy="606" r="13" class="player"/><text x="733" y="612" class="k small">Catcher</text>
-  <text x="722" y="586" class="k small">Home plate</text>
-  <text x="478" y="382" class="k small">3B</text><text x="692" y="180" class="k small">2B</text><text x="922" y="382" class="k small">1B</text>
-  <text x="666" y="280" class="k small" fill="#dbeafe">Outfield context</text>
+  <!-- mound and players -->
+  <circle cx="600" cy="451" r="43" fill="#c78552" stroke="#efc797" stroke-width="3"/>
+  <rect x="589" y="441" width="22" height="20" rx="3" fill="#fffdf5" transform="rotate(45 600 451)"/>
+  <circle cx="600" cy="437" r="13" class="player"/>
+  <circle cx="570" cy="595" r="13" class="player"/>
+  <circle cx="600" cy="632" r="13" class="player"/>
+  <path d="M576 586 l20 10" stroke="#f8fafc" stroke-width="4" stroke-linecap="round"/>
 
-  <!-- camera and field-of-view -->
-  <path d="M710 678 L565 491 Q710 432 855 491 Z" fill="#38bdf8" fill-opacity=".12" stroke="#7dd3fc" stroke-width="2" stroke-dasharray="8 8"/>
-  <g transform="translate(650 650)"><rect width="120" height="42" rx="12" fill="#0b2348" stroke="#38bdf8" stroke-width="2"/><rect x="43" y="10" width="34" height="21" rx="4" fill="none" stroke="#e0f2fe" stroke-width="3"/><circle cx="60" cy="20.5" r="5" fill="#e0f2fe"/><path d="M60 42v18m-25 0h50m-16-18 10 18m-20-18-10 18" stroke="#7dd3fc" stroke-width="3"/></g>
-  <text x="674" y="714" class="k small">Camera outside backstop</text>
+  <!-- player labels with leaders -->
+  <path d="M612 432 H660" class="leader"/><text x="668" y="438" class="k label">Pitcher</text>
+  <path d="M558 590 H506" class="leader"/><text x="440" y="596" class="k label">Hitter</text>
+  <path d="M612 632 H662" class="leader"/><text x="670" y="638" class="k label">Catcher</text>
+  <path d="M610 614 H662" class="leader"/><text x="670" y="620" class="k label">Home plate</text>
 
-  <!-- concise callouts -->
-  <path d="M566 492 H248 V447" class="line"/>
-  <rect x="60" y="374" width="250" height="104" rx="16" class="chip"/>
-  <circle cx="86" cy="402" r="14" fill="#7dd3fc"/><text x="81" y="407" class="k number">1</text>
-  <text x="110" y="407" class="k label">Mount behind the backstop</text>
-  <text x="84" y="436" class="k small">Use a tripod or secure fence mount.</text>
-  <text x="84" y="459" class="k small">Keep it level and stationary.</text>
-  <path d="M855 492 H1032 V435" class="line"/>
-  <rect x="913" y="362" width="227" height="104" rx="16" class="chip"/>
-  <circle cx="939" cy="390" r="14" fill="#7dd3fc"/><text x="934" y="395" class="k number">2</text>
-  <text x="963" y="395" class="k label">Frame wide enough</text>
-  <text x="937" y="424" class="k small">Plate, mound, and infield</text>
-  <text x="937" y="447" class="k small">should stay in the same view.</text>
-  <text x="60" y="690" class="k small">1080p / 60 fps is a strong full-game baseline. Test battery, storage, and heat before first pitch.</text>
+  <!-- camera position and intended frame -->
+  <path d="M600 692 L451 505 Q600 445 749 505 Z" fill="#7dd3fc" fill-opacity=".16" stroke="#9bdcff" stroke-width="2" stroke-dasharray="8 8"/>
+  <g transform="translate(558 670)"><rect width="84" height="29" rx="8" fill="#102b54" stroke="#7dd3fc" stroke-width="2"/><rect x="28" y="7" width="28" height="15" rx="3" fill="none" stroke="#f8fafc" stroke-width="2.5"/><circle cx="42" cy="14.5" r="4" fill="#f8fafc"/><path d="M42 29v18m-18 0h36m-10-18 8 18m-16-18-8 18" stroke="#7dd3fc" stroke-width="2.5"/></g>
+
+  <!-- two quiet coaching callouts -->
+  <path d="M451 505 H235 V458" class="leader"/>
+  <rect x="64" y="400" width="235" height="83" rx="14" class="callout"/>
+  <text x="86" y="434" class="k note">Camera stays behind home</text>
+  <text x="86" y="460" class="k sub">Tripod or fence mount • keep it level</text>
+  <path d="M749 505 H969 V458" class="leader"/>
+  <rect x="901" y="400" width="235" height="83" rx="14" class="callout"/>
+  <text x="923" y="434" class="k note">Frame plate, mound, infield</text>
+  <text x="923" y="460" class="k sub">Wide enough to preserve game context</text>
+  <text x="64" y="686" class="k sub">For full-game filming: 1080p / 60 fps is a strong baseline. Test battery, storage, and heat before first pitch.</text>
 </svg>
