@@ -4,6 +4,7 @@ import { Link } from "react-router-dom";
 import MarketingLayout from "../components/MarketingLayout";
 import { getBlogPost } from "../data/blogPosts";
 import filmingBehindHomePlate from '../assets/blog/filming-behind-home-plate.png';
+import primarySetupDiagram from '../assets/blog/primary-behind-home-plate-setup.svg';
 
 const learn = [
   "At-bats, swings, contact, and swing-and-miss tendencies",
@@ -166,6 +167,16 @@ export default function BaseballFilmingGuidePage() {
               and confirm that the view is level, unobstructed, and not aimed
               through a fence post or heavy glare.
             </p>
+
+            <figure className="article-visual">
+              <img
+                src={primarySetupDiagram}
+                alt="Diagram showing a stable primary camera setup behind home plate"
+              />
+              <figcaption>
+                Start with a stable behind-home-plate view. Keep the pitcher, hitter, catcher, and home plate in frame for the strongest all-purpose game footage.
+              </figcaption>
+            </figure>
           </section>
           <section>
             <h2>2. Use phone settings that preserve fast action</h2>
