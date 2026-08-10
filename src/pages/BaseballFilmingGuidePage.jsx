@@ -3,6 +3,7 @@ import { Check, ChevronRight, Video } from "lucide-react";
 import { Link } from "react-router-dom";
 import MarketingLayout from "../components/MarketingLayout";
 import { getBlogPost } from "../data/blogPosts";
+import filmingBehindHomePlate from '../assets/blog/filming-behind-home-plate.png';
 
 const learn = [
   "At-bats, swings, contact, and swing-and-miss tendencies",
@@ -92,6 +93,17 @@ export default function BaseballFilmingGuidePage() {
             reveal how a player is developing: what is improving, which
             tendencies keep appearing, and what to work on next.
           </p>
+          
+          <figure className="article-visual">
+          <img
+            src={filmingBehindHomePlate}
+            alt="A stable camera behind home plate recording a baseball game"
+          />
+          <figcaption>
+            A stable behind-home-plate view keeps the pitcher, hitter, catcher, and plate in frame—the strongest all-purpose angle for game analysis.
+          </figcaption>
+          </figure>
+          
           <p>
             College and professional programs have used video and data for years
             to review performance. Youth players do not need the same cameras,
