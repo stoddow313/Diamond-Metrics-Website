@@ -16,9 +16,9 @@ import {
 
 function Card({ title, children, action }) {
   return (
-    <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4">
+    <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-3.5">
       {(title || action) && (
-        <div className="flex items-center justify-between mb-3 gap-2 flex-wrap">
+        <div className="flex items-center justify-between mb-2 gap-2 flex-wrap">
           {title && <p className="text-[11px] font-bold uppercase tracking-widest text-slate-500">{title}</p>}
           {action}
         </div>
@@ -30,7 +30,7 @@ function Card({ title, children, action }) {
 
 function StatTile({ value, label }) {
   return (
-    <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-3 text-center">
+    <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-2.5 text-center">
       <p className="text-xl font-extrabold text-slate-900">{value}</p>
       <p className="text-[9px] font-bold uppercase tracking-wider text-slate-400 mt-0.5">{label}</p>
     </div>
@@ -153,13 +153,15 @@ export default function TeamDashboardPage() {
   }, [data, sort]);
 
   const shell = children => (
-    <div className="min-h-screen pb-10" style={{ backgroundColor: '#eef2f7' }}>
+    <div className="min-h-screen pb-8" style={{ backgroundColor: '#eef2f7' }}>
       <header className="border-b border-slate-200 bg-white">
-        <div className="max-w-[1200px] mx-auto px-4 md:px-6 py-3">
+        <div className="max-w-[1200px] mx-auto px-4 md:px-6 py-2.5">
           <Link to="/"><BrandMark dark /></Link>
         </div>
       </header>
-      <main className="max-w-[1200px] mx-auto px-4 md:px-6 mt-6">{children}</main>
+      {/* inline display:block — the marketing stylesheet's unlayered `main { display:flex; gap:72px }`
+          outranks Tailwind's layered utilities, so a class can't override it */}
+      <main className="max-w-[1200px] mx-auto px-4 md:px-6 mt-4" style={{ display: 'block' }}>{children}</main>
     </div>
   );
 
@@ -203,7 +205,7 @@ export default function TeamDashboardPage() {
   return shell(
     <>
       {/* team header + context chips */}
-      <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-5 mb-4 flex flex-wrap items-center gap-4">
+      <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 mb-3 flex flex-wrap items-center gap-4">
         <div className="w-14 h-14 rounded-xl bg-slate-100 border border-slate-200 flex items-center justify-center shrink-0 overflow-hidden">
           {team.logo_url
             ? <img src={team.logo_url} alt="" className="w-full h-full object-cover" />
@@ -232,8 +234,8 @@ export default function TeamDashboardPage() {
       </div>
 
       {/* filters — season, tournament, date range, game type, position, player, category */}
-      <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 mb-4">
-        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-3">
+      <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-3.5 mb-3">
+        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-2.5">
           <FilterSelect label="Season" value={params.season} onChange={e => setFilter('season', e.target.value)}>
             <option value="">All</option>
             {(seasons || []).map(s => <option key={s.id} value={s.id}>{s.label}</option>)}
@@ -276,7 +278,7 @@ export default function TeamDashboardPage() {
       </div>
 
       {/* record + run tiles */}
-      <div className="grid grid-cols-3 md:grid-cols-6 gap-3 mb-2">
+      <div className="grid grid-cols-3 md:grid-cols-6 gap-2.5 mb-2">
         <StatTile value={`${record.wins}–${record.losses}${record.ties ? `–${record.ties}` : ''}`} label="Record (finals)" />
         <StatTile value={agg?.runs_scored ?? '—'} label="Runs scored" />
         <StatTile value={agg?.runs_allowed ?? '—'} label="Runs allowed" />
@@ -289,7 +291,7 @@ export default function TeamDashboardPage() {
       </div>
 
       {/* coverage statement (§4) */}
-      <div className="mb-4 flex flex-wrap items-center gap-x-4 gap-y-1">
+      <div className="mb-3 flex flex-wrap items-center gap-x-4 gap-y-1">
         <CoverageNote>
           {summary.games_final} of {summary.games_total} scheduled games have final scores ·
           {' '}{agg?.players_with_data ?? 0} of {summary.roster_count} rostered players have logged data
@@ -300,14 +302,14 @@ export default function TeamDashboardPage() {
 
       {/* top performers */}
       {performerCards.length > 0 && (
-        <div className="grid sm:grid-cols-2 lg:grid-cols-5 gap-3 mb-4">
+        <div className="grid sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-2.5 mb-3">
           {performerCards.map(c => <TopPerformerCard key={c.key} title={c.title} row={c.row} />)}
         </div>
       )}
 
       {/* team aggregate blocks */}
       {visibleBlocks.length > 0 && (
-        <div className={`grid gap-4 mb-4 ${visibleBlocks.length > 1 ? 'lg:grid-cols-3' : ''}`}>
+        <div className={`grid gap-3 mb-3 ${visibleBlocks.length > 1 ? 'lg:grid-cols-3' : ''}`}>
           {visibleBlocks.map(([key, stats]) => (
             <Card key={key} title={blockTitle[key] || key}>
               <div className="grid grid-cols-2 gap-x-4">
@@ -345,14 +347,14 @@ export default function TeamDashboardPage() {
             <table className="w-full text-sm min-w-[1080px]">
               <thead>
                 <tr className="text-left text-[10px] uppercase tracking-wider text-slate-400 border-b border-slate-100">
-                  <th className="py-2 pr-3 font-bold sticky left-0 bg-white cursor-pointer" onClick={() => setSort(s => ({ col: 'name', dir: s.col === 'name' && s.dir === 'asc' ? 'desc' : 'asc' }))}>
+                  <th className="py-1.5 pr-3 font-bold sticky left-0 bg-white cursor-pointer" onClick={() => setSort(s => ({ col: 'name', dir: s.col === 'name' && s.dir === 'asc' ? 'desc' : 'asc' }))}>
                     Player{sort.col === 'name' ? (sort.dir === 'asc' ? ' ↑' : ' ↓') : ''}
                   </th>
-                  <th className="py-2 pr-3 font-bold">Pos</th>
+                  <th className="py-1.5 pr-3 font-bold">Pos</th>
                   {COMPARE_COLS.map(([key, label]) => (
                     <th
                       key={key}
-                      className="py-2 pr-3 font-bold text-right cursor-pointer whitespace-nowrap hover:text-blue-600"
+                      className="py-1.5 pr-3 font-bold text-right cursor-pointer whitespace-nowrap hover:text-blue-600"
                       onClick={() => setSort(s => ({
                         col: key,
                         dir: s.col === key
@@ -368,14 +370,14 @@ export default function TeamDashboardPage() {
               <tbody>
                 {sortedComparison.map(r => (
                   <tr key={r.player_id} className="border-b border-slate-50">
-                    <td className="py-2 pr-3 whitespace-nowrap sticky left-0 bg-white">
+                    <td className="py-1.5 pr-3 whitespace-nowrap sticky left-0 bg-white">
                       <PlayerLink slug={r.slug} name={r.name} />
                       {r.isGuest && <GuestBadge />}
                       {r.games < (calc?.mins?.samples ?? 2) && <LimitedBadge />}
                     </td>
-                    <td className="py-2 pr-3 text-slate-500">{r.position || '—'}</td>
+                    <td className="py-1.5 pr-3 text-slate-500">{r.position || '—'}</td>
                     {COMPARE_COLS.map(([key, , opts]) => (
-                      <td key={key} className="py-2 pr-3 text-right text-slate-700 whitespace-nowrap">{fmt(r[key], opts)}</td>
+                      <td key={key} className="py-1.5 pr-3 text-right text-slate-700 whitespace-nowrap">{fmt(r[key], opts)}</td>
                     ))}
                   </tr>
                 ))}
@@ -388,7 +390,7 @@ export default function TeamDashboardPage() {
       {/* season trends */}
       {trends && trends.length > 0 && (
         <Card title={`Metric trends${season ? ` — ${season.label}` : ''}`}>
-          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
             {trends.map(t => (
               <div key={t.key} className="border border-slate-100 rounded-lg p-3">
                 <p className="text-xs font-bold text-slate-600 mb-1">{TREND_LABELS[t.key] || t.key}</p>
@@ -402,7 +404,7 @@ export default function TeamDashboardPage() {
         </Card>
       )}
 
-      <div className="grid lg:grid-cols-2 gap-4 items-start mt-4">
+      <div className="grid lg:grid-cols-2 gap-3 items-start mt-3">
         <Card title={context ? `Event roster — ${context.tournament}` : 'Roster'}>
           {roster.length === 0 ? (
             <p className="text-xs text-slate-400">No roster members{context ? ' on this event roster' : ''} yet.</p>
@@ -410,20 +412,20 @@ export default function TeamDashboardPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="text-left text-[10px] uppercase tracking-wider text-slate-400 border-b border-slate-100">
-                  <th className="py-2 pr-2 font-bold">Player</th><th className="py-2 pr-2 font-bold">#</th>
-                  <th className="py-2 pr-2 font-bold">Class</th><th className="py-2 font-bold">Profile</th>
+                  <th className="py-1.5 pr-2 font-bold">Player</th><th className="py-1.5 pr-2 font-bold">#</th>
+                  <th className="py-1.5 pr-2 font-bold">Class</th><th className="py-1.5 font-bold">Profile</th>
                 </tr>
               </thead>
               <tbody>
                 {roster.map((r, i) => (
                   <tr key={i} className="border-b border-slate-50">
-                    <td className="py-2 pr-2 font-bold text-slate-800">
+                    <td className="py-1.5 pr-2 font-bold text-slate-800">
                       {r.first_name} {r.last_name}
                       {r.isGuest && <GuestBadge />}
                     </td>
-                    <td className="py-2 pr-2 text-slate-600">{r.jersey}</td>
-                    <td className="py-2 pr-2 text-slate-500">{r.grad_year || '—'}</td>
-                    <td className="py-2">
+                    <td className="py-1.5 pr-2 text-slate-600">{r.jersey}</td>
+                    <td className="py-1.5 pr-2 text-slate-500">{r.grad_year || '—'}</td>
+                    <td className="py-1.5">
                       {r.public_slug
                         ? <Link to={`/p/${r.public_slug}`} className="text-blue-600 hover:underline">View</Link>
                         : <span className="text-xs text-slate-300">Private</span>}
@@ -462,8 +464,9 @@ export default function TeamDashboardPage() {
             {games.length === 0 ? (
               <p className="text-xs text-slate-400">No games in this scope.</p>
             ) : games.slice(0, 14).map(g => {
-              const won = g.status === 'final' && g.home_score != null &&
-                (g.is_home ? g.home_score > g.away_score : g.away_score > g.home_score);
+              const scored = g.status === 'final' && g.home_score != null;
+              const tied = scored && g.home_score === g.away_score;
+              const won = scored && !tied && (g.is_home ? g.home_score > g.away_score : g.away_score > g.home_score);
               return (
                 <div key={g.id} className="flex items-center gap-2 py-1.5 text-sm border-b border-slate-50 last:border-0">
                   <CalendarDays size={12} className="text-slate-300 shrink-0" />
@@ -472,7 +475,7 @@ export default function TeamDashboardPage() {
                     {g.home_team_name} {g.home_score != null ? g.home_score : ''} – {g.away_score != null ? g.away_score : ''} {g.away_team_name}
                   </span>
                   {g.status === 'final'
-                    ? <span className={`text-[10px] font-bold ${won ? 'text-green-600' : 'text-slate-400'}`}>{won ? 'W' : 'L'}</span>
+                    ? <span className={`text-[10px] font-bold ${won ? 'text-green-600' : tied ? 'text-slate-500' : 'text-slate-400'}`}>{won ? 'W' : tied ? 'T' : 'L'}</span>
                     : <span className="text-[10px] text-slate-300 uppercase">{g.status}</span>}
                 </div>
               );

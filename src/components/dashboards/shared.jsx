@@ -37,34 +37,34 @@ export function LeaderboardTable({ board, showTeam = true }) {
       <table className="w-full text-sm min-w-[460px]">
         <thead>
           <tr className="text-left text-[10px] uppercase tracking-wider text-slate-400 border-b border-slate-100">
-            <th className="py-2 pr-2 font-bold w-8">#</th>
-            <th className="py-2 pr-3 font-bold">Player</th>
-            {showTeam && <th className="py-2 pr-3 font-bold">Team</th>}
-            <th className="py-2 pr-3 font-bold">Pos</th>
-            <th className="py-2 pr-3 font-bold text-right">{metric.label}</th>
-            <th className="py-2 pr-3 font-bold text-right">Sample</th>
+            <th className="py-1.5 pr-2 font-bold w-8">#</th>
+            <th className="py-1.5 pr-3 font-bold">Player</th>
+            {showTeam && <th className="py-1.5 pr-3 font-bold">Team</th>}
+            <th className="py-1.5 pr-3 font-bold">Pos</th>
+            <th className="py-1.5 pr-3 font-bold text-right">{metric.label}</th>
+            <th className="py-1.5 pr-3 font-bold text-right">Sample</th>
           </tr>
         </thead>
         <tbody>
           {board.rows.map(r => (
             <tr key={r.player_id} className="border-b border-slate-50">
-              <td className="py-2 pr-2 text-slate-400 font-bold">{r.rank}</td>
-              <td className="py-2 pr-3 whitespace-nowrap">
+              <td className="py-1.5 pr-2 text-slate-400 font-bold">{r.rank}</td>
+              <td className="py-1.5 pr-3 whitespace-nowrap">
                 <PlayerLink slug={r.slug} name={r.name} />
                 {r.isGuest && <GuestBadge />}
                 {r.limited && <LimitedBadge />}
               </td>
-              {showTeam && <td className="py-2 pr-3 text-slate-500">{r.team || '—'}</td>}
-              <td className="py-2 pr-3 text-slate-500">{r.position || '—'}</td>
-              <td className="py-2 pr-3 text-right font-bold text-slate-900">{fmt(r.value, metric)}</td>
-              <td className="py-2 pr-3 text-right text-slate-400 text-xs">
+              {showTeam && <td className="py-1.5 pr-3 text-slate-500">{r.team || '—'}</td>}
+              <td className="py-1.5 pr-3 text-slate-500">{r.position || '—'}</td>
+              <td className="py-1.5 pr-3 text-right font-bold text-slate-900">{fmt(r.value, metric)}</td>
+              <td className="py-1.5 pr-3 text-right text-slate-400 text-xs">
                 {r.sample}{board.category === 'hitting' ? ' PA' : board.category === 'pitching' && metric.key === 'k_bb_pitching' ? ' IP' : ' games'}
               </td>
             </tr>
           ))}
         </tbody>
       </table>
-      <p className="text-[10px] text-slate-400 mt-2">
+      <p className="text-[10px] text-slate-400 mt-1.5">
         Qualified at {board.min_sample}+ {board.category === 'hitting' ? 'PA' : board.category === 'pitching' && metric.key === 'k_bb_pitching' ? 'IP' : 'games'};
         smaller samples are shown but labeled.{board.note ? ` ${board.note}` : ''}
       </p>
@@ -77,8 +77,8 @@ export function LeaderboardTable({ board, showTeam = true }) {
 export function TopPerformerCard({ title, row }) {
   if (!row) return null;
   return (
-    <div className="rounded-2xl p-[2px] shadow-md" style={{ background: 'linear-gradient(135deg, #e2e8f0 0%, #94a3b8 25%, #f8fafc 50%, #94a3b8 75%, #e2e8f0 100%)' }}>
-      <div className="rounded-[14px] px-4 py-3 h-full" style={{ background: 'linear-gradient(160deg, #0b1f42 0%, #06122b 100%)' }}>
+    <div className="rounded-xl p-[2px] shadow-sm" style={{ background: 'linear-gradient(135deg, #e2e8f0 0%, #94a3b8 25%, #f8fafc 50%, #94a3b8 75%, #e2e8f0 100%)' }}>
+      <div className="rounded-[10px] px-3.5 py-2.5 h-full" style={{ background: 'linear-gradient(160deg, #0b1f42 0%, #06122b 100%)' }}>
         <p className="text-[9px] font-bold uppercase tracking-[0.18em]" style={{ color: '#38bdf8' }}>{title}</p>
         <div className="flex items-baseline justify-between gap-3 mt-1">
           <div className="min-w-0">
