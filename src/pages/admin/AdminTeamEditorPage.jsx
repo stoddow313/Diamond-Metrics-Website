@@ -78,7 +78,13 @@ export default function AdminTeamEditorPage() {
       <div className="mb-6">
         <Link to="/admin/teams" className="text-xs hover:underline" style={{ color: '#64748b' }}>← All teams</Link>
         <h1 className="text-2xl font-bold text-white mt-1">{team.name}</h1>
-        <p className="text-sm" style={{ color: '#94a3b8' }}>{team.organization_name} · /teams/{team.slug}</p>
+        <p className="text-sm" style={{ color: '#94a3b8' }}>
+          {team.organization_name}
+          {' · '}
+          <a href={`/teams/${team.slug}`} target="_blank" rel="noreferrer" className="hover:underline" style={{ color: '#38bdf8' }}>
+            View dashboard ↗
+          </a>
+        </p>
       </div>
 
       <ErrorNote>{error}</ErrorNote>

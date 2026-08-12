@@ -100,7 +100,10 @@ export const api = {
   staffTournament: (id) => request(`/api/staff/tournaments/${id}`),
 
   // connected views (viewer-aware: token attaches when signed in)
-  viewTeam: (slug, tournament) => request(`/api/view/teams/${slug}${tournament ? `?tournament=${encodeURIComponent(tournament)}` : ''}`),
+  viewTeam: (slug, params = {}) => {
+    const qs = new URLSearchParams(Object.entries(params).filter(([, v]) => v != null && v !== '')).toString();
+    return request(`/api/view/teams/${slug}${qs ? `?${qs}` : ''}`);
+  },
   viewTournament: (slug) => request(`/api/view/tournaments/${slug}`),
 
   // public
