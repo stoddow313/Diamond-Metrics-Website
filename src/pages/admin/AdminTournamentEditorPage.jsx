@@ -42,7 +42,11 @@ export default function AdminTournamentEditorPage() {
           <Link to="/admin/tournaments" className="text-xs hover:underline" style={{ color: '#64748b' }}>← All tournaments</Link>
           <h1 className="text-2xl font-bold text-white mt-1">{tournament.name}</h1>
           <p className="text-sm" style={{ color: '#94a3b8' }}>
-            {tournament.start_date} → {tournament.end_date}{tournament.location ? ` · ${tournament.location}` : ''} · /tournaments/{tournament.slug}
+            {tournament.start_date} → {tournament.end_date}{tournament.location ? ` · ${tournament.location}` : ''}
+            {' · '}
+            <a href={`/tournaments/${tournament.slug}`} target="_blank" rel="noreferrer" className="hover:underline" style={{ color: '#38bdf8' }}>
+              View dashboard ↗
+            </a>
           </p>
         </div>
         <GhostButton
