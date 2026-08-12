@@ -169,7 +169,16 @@ link-to-existing. Full merge workflow deferred (protected, audited — later).
 - Every page ships loading / empty / partial / unpublished / access-denied states.
 - Visual language: reuse profile card/tab/chart components; mobile-first.
 
-### 5.6 Phase 4 — Analytics (L)
+### 5.6 Phase 4 — Analytics (L) — ✅ shipped 2026-08-11
+
+> Delivered: `server/aggregates.js` + tests; tournament dashboard standings /
+> five leaderboards / top-performer cards; team & season dashboard filter bar
+> (season, tournament, date range, game type, position, player, category),
+> record + runs tiles, category blocks, sortable comparison with CSV export,
+> trend sparklines. Deltas from the sketch below: limited-sample rows are
+> ranked *below* all qualified rows and labeled (not hidden); aggregate
+> caching deferred — current volumes compute in-request. Director recap /
+> publish controls remain Phase 5.
 
 - **`server/aggregates.js`** — pure module in the rating-engine mold: every
   figure carries numerator, denominator, and sample; unit/context compatibility
@@ -255,3 +264,7 @@ after every merge that touches `server/`.
 | 2026-07-31 | Event-roster and metrics imports never create players | Player identity enters only via the season-roster import (with dedupe) or admin UI |
 | 2026-08-03 | Phase 3 shipped: /teams/{slug} + /tournaments/{slug} dashboards, profile Teams/Events sections | Team dashboards private (admin/assigned staff/own players); tournaments public only when published+public; §5 coverage statement on every tournament view |
 | 2026-08-03 | Phase-3 team overview shows record/coverage counts only — §4 headline metrics wait for the Phase-4 aggregates module | Release-cut discipline: no ad-hoc aggregate math outside the shared module |
+| 2026-08-11 | Phase 4 shipped: aggregates module + standings, leaderboards, comparison/CSV, top-performer cards, season trends | All figures derive from game/stat records with samples + `DM_AGG_V1` stamps; player overalls never averaged into team ratings |
+| 2026-08-11 | Tournament player attribution = event-roster membership + games inside the event date window | Metrics imports create per-player context games without shared-game links, so the window—not `tournament_game_id`—is the reliable join |
+| 2026-08-11 | Limited-sample rows are ranked below every qualified row and labeled, not hidden | Small events would otherwise show empty boards; a labeled rank can never displace a qualified one |
+| 2026-08-11 | Overall leaderboard reuses `eventRelativeRating` position-group percentiles over aggregated game metrics (≥3 rated metrics to qualify) | Doc §7: no team/tournament rating from averaging stored player overalls |

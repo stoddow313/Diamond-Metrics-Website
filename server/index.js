@@ -11,6 +11,10 @@ import { computeRatings } from './ratingEngine.js';
 import { resolveEventRoster, slugify } from './rosterLogic.js';
 import { IMPORT_KINDS, planImport, applyImport } from './importEngine.js';
 import { deletePlayers } from './playerDelete.js';
+import {
+  attributedGames, aggregateByPlayer, teamCategoryBlocks, standings,
+  leaderboard, overallLeaderboard, trendSeries, calcStamp, DEFAULT_MINS,
+} from './aggregates.js';
 
 const app = express();
 // Render (and most hosts) inject PORT; DM_API_PORT is the local-dev override.
@@ -1405,6 +1409,36 @@ function teamGames(teamId) {
   ).all(teamId, teamId);
 }
 
+// Qualification minimums are configurable per request (?min_pa=&min_ip=&min_samples=).
+function minsFromQuery(q) {
+  const n = v => (v != null && v !== '' && !Number.isNaN(Number(v)) ? Number(v) : null);
+  return {
+    pa: n(q.min_pa) ?? DEFAULT_MINS.pa,
+    ip: n(q.min_ip) ?? DEFAULT_MINS.ip,
+    samples: n(q.min_samples) ?? DEFAULT_MINS.samples,
+  };
+}
+
+function boardsFor(playerAggs, mins, teamNameFor) {
+  return {
+    hitting: leaderboard(playerAggs, 'hitting', mins, teamNameFor),
+    pitching: leaderboard(playerAggs, 'pitching', mins, teamNameFor),
+    defense: leaderboard(playerAggs, 'defense', mins, teamNameFor),
+    speed: leaderboard(playerAggs, 'speed', mins, teamNameFor),
+    overall: overallLeaderboard(playerAggs, mins, teamNameFor),
+  };
+}
+
+// Top qualified row of each board — feeds the Pro-Day-styled performer cards.
+function topPerformers(boards) {
+  const out = {};
+  for (const [cat, board] of Object.entries(boards)) {
+    const top = board.rows.find(r => !r.limited) || board.rows[0] || null;
+    out[cat] = top ? { ...top, metric: board.metric } : null;
+  }
+  return out;
+}
+
 app.get('/api/view/teams/:slug', (req, res) => {
   const team = db.prepare(
     'SELECT t.*, o.name AS organization_name FROM teams t JOIN organizations o ON o.id = t.organization_id WHERE t.slug = ?'
@@ -1452,13 +1486,92 @@ app.get('/api/view/teams/:slug', (req, res) => {
     };
   }).sort((a, b) => (a.last_name || '').localeCompare(b.last_name || ''));
 
-  const visibleGames = contextEntry ? games.filter(g => g.tournament_slug === tournamentSlug) : games;
-  const finals = games.filter(g => g.status === 'final' && g.home_score != null && g.away_score != null);
+  // ── Aggregate filters (Phase 4 §team/season dashboards) ────────────────
+  const q = req.query;
+  const seasonId = q.season && db.prepare('SELECT 1 FROM seasons WHERE id = ?').get(q.season) ? Number(q.season) : null;
+  const seasonRow = seasonId ? db.prepare('SELECT * FROM seasons WHERE id = ?').get(seasonId) : null;
+  const filters = {
+    entry: contextEntry
+      ? { ...contextEntry, start_date: contextEntry.start_date, end_date: contextEntry.end_date }
+      : null,
+    seasonId,
+    from: String(q.from || '').trim() || null,
+    to: String(q.to || '').trim() || null,
+    gameTypes: String(q.game_type || '').trim() ? [String(q.game_type).trim()] : null,
+    playerId: String(q.player || '').trim() || null,
+    position: String(q.position || '').trim() || null,
+    opponent: String(q.opponent || '').trim() || null,
+  };
+  const mins = minsFromQuery(q);
+  const attributed = attributedGames(db, team, filters);
+  const playerAggs = aggregateByPlayer(attributed);
+  const boards = boardsFor(playerAggs, mins, () => team.name);
+
+  // Shared-game record honors the same season/tournament/date scoping.
+  const inScope = g =>
+    (!contextEntry || g.tournament_slug === tournamentSlug) &&
+    (!seasonRow || (g.game_date >= seasonRow.start_date && g.game_date <= seasonRow.end_date)) &&
+    (!filters.from || g.game_date >= filters.from) &&
+    (!filters.to || g.game_date <= filters.to);
+  const scopedGames = games.filter(inScope);
+  const finals = scopedGames.filter(g => g.status === 'final' && g.home_score != null && g.away_score != null);
+  const forAgainst = finals.reduce((acc, g) => {
+    const home = g.home_team_id === team.id;
+    acc.rs += home ? g.home_score : g.away_score;
+    acc.ra += home ? g.away_score : g.home_score;
+    return acc;
+  }, { rs: 0, ra: 0 });
   const wins = finals.filter(g => (g.home_team_id === team.id ? g.home_score > g.away_score : g.away_score > g.home_score)).length;
   const losses = finals.filter(g => (g.home_team_id === team.id ? g.home_score < g.away_score : g.away_score < g.home_score)).length;
+  const ties = finals.length - wins - losses;
+
+  // Roster comparison table rows (client-sortable), one per player with data.
+  const comparison = playerAggs.map(a => ({
+    player_id: a.player.id, name: `${a.player.first_name} ${a.player.last_name}`,
+    slug: a.player.slug, position: a.player.position, isGuest: a.player.isGuest,
+    games: a.games_played,
+    pa: a.rates.pa, avg: a.rates.avg, obp: a.rates.obp, slg: a.rates.slg, ops: a.rates.ops,
+    k_bb: a.rates.k_bb, sb: a.rates.stolen_bases, errors: a.rates.errors,
+    avg_ev: a.measured.avg_exit_velo.value, max_ev: a.measured.max_exit_velo.value,
+    hard_hit_pct: a.measured.hard_hit_pct.value,
+    strike_pct: a.measured.strike_pct.value, max_velo: a.measured.max_velo.value,
+    ip: a.rates.ip, k_bb_pitching: a.rates.k_bb_pitching,
+    arm: a.measured.arm_strength.value, throw_acc: a.measured.throw_accuracy.value,
+    fielding: a.measured.fielding_success.value,
+    h_to_first: a.measured.home_to_first.value, sprint: a.measured.sprint_speed.value,
+  }));
+
+  // Trends (season dashboard): per-date series for headline metrics.
+  const TREND_KEYS = ['avg_exit_velo', 'max_velo', 'strike_pct', 'bs_h', 'bs_r'];
+  const trends = (seasonId || q.trends === '1')
+    ? TREND_KEYS.map(key => ({ key, series: trendSeries(attributed, key) })).filter(t => t.series.length > 1)
+    : null;
+
+  const visibleGames = scopedGames;
 
   const { external_id: _x, ...publicTeam } = team;
   res.json({
+    seasons: db.prepare('SELECT id, label, start_date, end_date, status FROM seasons ORDER BY start_date DESC').all(),
+    season: seasonRow ? { id: seasonRow.id, label: seasonRow.label, start_date: seasonRow.start_date, end_date: seasonRow.end_date } : null,
+    filters: {
+      season: seasonId, tournament: tournamentSlug || null, from: filters.from, to: filters.to,
+      game_type: filters.gameTypes?.[0] || null, player: filters.playerId, position: filters.position,
+    },
+    aggregates: {
+      record: { wins, losses, ties },
+      runs_scored: finals.length ? forAgainst.rs : null,
+      runs_allowed: finals.length ? forAgainst.ra : null,
+      run_diff: finals.length ? forAgainst.rs - forAgainst.ra : null,
+      games_tracked: attributed.length ? new Set(attributed.map(g => `${g.game_date}|${g.opponent}`)).size : 0,
+      player_games: attributed.length,
+      players_with_data: playerAggs.length,
+      blocks: teamCategoryBlocks(attributed),
+    },
+    comparison,
+    leaderboards: boards,
+    top_performers: topPerformers(boards),
+    trends,
+    calc: calcStamp(mins),
     viewer: viewer.kind,
     team: publicTeam,
     summary: {
@@ -1524,8 +1637,37 @@ app.get('/api/view/tournaments/:slug', (req, res) => {
      JOIN tournament_entries te ON te.id = er.entry_id WHERE te.tournament_id = ?`
   ).get(tournament.id).c;
 
+  // ── Aggregates (Phase 4): standings + event-wide player leaderboards ───
+  const mins = minsFromQuery(req.query);
+  const standingsRows = standings(db, tournament.id);
+
+  // Pool attributed games across every entry; the event roster names the
+  // represented team. A game attributes once even if a guest appears on
+  // two entries in the same event.
+  const teamNameByPlayer = new Map();
+  const seenGameIds = new Set();
+  const pooled = [];
+  for (const e of entries) {
+    const rows = attributedGames(db, { id: e.team_id }, {
+      entry: { id: e.id, start_date: tournament.start_date, end_date: tournament.end_date },
+    });
+    for (const r of rows) {
+      if (!teamNameByPlayer.has(r.player_id)) teamNameByPlayer.set(r.player_id, e.team_name);
+      if (seenGameIds.has(r.game_id)) continue;
+      seenGameIds.add(r.game_id);
+      pooled.push(r);
+    }
+  }
+  const playerAggs = aggregateByPlayer(pooled);
+  const boards = boardsFor(playerAggs, mins, id => teamNameByPlayer.get(id) || null);
+
   const { external_id: _x, ...publicTournament } = tournament;
   res.json({
+    standings: standingsRows,
+    leaderboards: boards,
+    top_performers: topPerformers(boards),
+    players_with_data: playerAggs.length,
+    calc: calcStamp(mins),
     tournament: publicTournament,
     // §5: every tournament view states how much of the event is analyzed.
     coverage: { games_total: games.length, games_final: finals },
