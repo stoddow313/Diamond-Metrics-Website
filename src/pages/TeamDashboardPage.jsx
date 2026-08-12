@@ -6,7 +6,7 @@ import { api } from '../lib/api';
 import BrandMark from '../components/BrandMark';
 import { fmt, downloadCsv } from '../lib/format';
 import {
-  TopPerformerCard, Sparkline, CoverageNote, CalcStamp, GuestBadge, LimitedBadge, PlayerLink,
+  TopPerformerCard, Sparkline, CoverageNote, CalcStamp, GuestBadge, LimitedBadge, PlayerLink, SectionHeading,
 } from '../components/dashboards/shared';
 
 // Team dashboard (/teams/:slug) — requirements §4 + Phase 4 aggregates.
@@ -205,7 +205,7 @@ export default function TeamDashboardPage() {
   return shell(
     <>
       {/* team header + context chips */}
-      <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 mb-3 flex flex-wrap items-center gap-4">
+      <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 mb-5 flex flex-wrap items-center gap-4">
         <div className="w-14 h-14 rounded-xl bg-slate-100 border border-slate-200 flex items-center justify-center shrink-0 overflow-hidden">
           {team.logo_url
             ? <img src={team.logo_url} alt="" className="w-full h-full object-cover" />
@@ -234,7 +234,9 @@ export default function TeamDashboardPage() {
       </div>
 
       {/* filters — season, tournament, date range, game type, position, player, category */}
-      <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-3.5 mb-3">
+      <section className="mb-5">
+      <SectionHeading>Filters</SectionHeading>
+      <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-3.5">
         <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-2.5">
           <FilterSelect label="Season" value={params.season} onChange={e => setFilter('season', e.target.value)}>
             <option value="">All</option>
@@ -276,9 +278,12 @@ export default function TeamDashboardPage() {
           </p>
         )}
       </div>
+      </section>
 
-      {/* record + run tiles */}
-      <div className="grid grid-cols-3 md:grid-cols-6 gap-2.5 mb-2">
+      {/* record + run tiles + coverage */}
+      <section className="mb-5">
+      <SectionHeading>Overview{season ? ` — ${season.label}` : context ? ` — ${context.tournament}` : ''}</SectionHeading>
+      <div className="grid grid-cols-3 md:grid-cols-6 gap-3 mb-2">
         <StatTile value={`${record.wins}–${record.losses}${record.ties ? `–${record.ties}` : ''}`} label="Record (finals)" />
         <StatTile value={agg?.runs_scored ?? '—'} label="Runs scored" />
         <StatTile value={agg?.runs_allowed ?? '—'} label="Runs allowed" />
@@ -291,7 +296,7 @@ export default function TeamDashboardPage() {
       </div>
 
       {/* coverage statement (§4) */}
-      <div className="mb-3 flex flex-wrap items-center gap-x-4 gap-y-1">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
         <CoverageNote>
           {summary.games_final} of {summary.games_total} scheduled games have final scores ·
           {' '}{agg?.players_with_data ?? 0} of {summary.roster_count} rostered players have logged data
@@ -299,17 +304,23 @@ export default function TeamDashboardPage() {
         </CoverageNote>
         <CalcStamp calc={calc} />
       </div>
+      </section>
 
       {/* top performers */}
       {performerCards.length > 0 && (
-        <div className="grid sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-2.5 mb-3">
-          {performerCards.map(c => <TopPerformerCard key={c.key} title={c.title} row={c.row} />)}
-        </div>
+        <section className="mb-5">
+          <SectionHeading>Top Performers</SectionHeading>
+          <div className="grid sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
+            {performerCards.map(c => <TopPerformerCard key={c.key} title={c.title} row={c.row} />)}
+          </div>
+        </section>
       )}
 
       {/* team aggregate blocks */}
       {visibleBlocks.length > 0 && (
-        <div className={`grid gap-3 mb-3 ${visibleBlocks.length > 1 ? 'lg:grid-cols-3' : ''}`}>
+        <section className="mb-5">
+        <SectionHeading>Team Totals</SectionHeading>
+        <div className={`grid gap-3 ${visibleBlocks.length > 1 ? 'lg:grid-cols-3' : ''}`}>
           {visibleBlocks.map(([key, stats]) => (
             <Card key={key} title={blockTitle[key] || key}>
               <div className="grid grid-cols-2 gap-x-4">
@@ -326,11 +337,13 @@ export default function TeamDashboardPage() {
             </Card>
           ))}
         </div>
+        </section>
       )}
 
       {/* sortable player comparison */}
+      <section className="mb-5">
+      <SectionHeading>Player Comparison · {sortedComparison.length} with data</SectionHeading>
       <Card
-        title={`Player comparison · ${sortedComparison.length} with data`}
         action={
           <button
             onClick={exportComparison}
@@ -386,10 +399,13 @@ export default function TeamDashboardPage() {
           </div>
         )}
       </Card>
+      </section>
 
       {/* season trends */}
       {trends && trends.length > 0 && (
-        <Card title={`Metric trends${season ? ` — ${season.label}` : ''}`}>
+        <section className="mb-5">
+        <SectionHeading>Metric Trends{season ? ` — ${season.label}` : ''}</SectionHeading>
+        <Card>
           <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
             {trends.map(t => (
               <div key={t.key} className="border border-slate-100 rounded-lg p-3">
@@ -402,9 +418,12 @@ export default function TeamDashboardPage() {
             ))}
           </div>
         </Card>
+        </section>
       )}
 
-      <div className="grid lg:grid-cols-2 gap-3 items-start mt-3">
+      <section>
+      <SectionHeading>Roster & Schedule</SectionHeading>
+      <div className="grid lg:grid-cols-2 gap-3 items-start">
         <Card title={context ? `Event roster — ${context.tournament}` : 'Roster'}>
           {roster.length === 0 ? (
             <p className="text-xs text-slate-400">No roster members{context ? ' on this event roster' : ''} yet.</p>
@@ -483,6 +502,7 @@ export default function TeamDashboardPage() {
           </Card>
         </div>
       </div>
+      </section>
     </>
   );
 }

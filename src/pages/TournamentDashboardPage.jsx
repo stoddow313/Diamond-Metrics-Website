@@ -5,7 +5,7 @@ import { api } from '../lib/api';
 import BrandMark from '../components/BrandMark';
 import { fmt } from '../lib/format';
 import {
-  LeaderboardTable, TopPerformerCard, CoverageNote, CalcStamp, ChampionChip,
+  LeaderboardTable, TopPerformerCard, CoverageNote, CalcStamp, ChampionChip, SectionHeading,
 } from '../components/dashboards/shared';
 
 // Tournament dashboard (/tournaments/:slug) — requirements §5 + Phase 4
@@ -95,7 +95,7 @@ export default function TournamentDashboardPage() {
   return shell(
     <>
       {/* header + coverage (§5) */}
-      <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 mb-3">
+      <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 mb-5">
         <div className="flex flex-wrap items-center gap-4">
           <div className="min-w-0 flex-1">
             <h1 className="text-2xl font-extrabold text-slate-900 leading-tight">{tournament.name}</h1>
@@ -128,20 +128,22 @@ export default function TournamentDashboardPage() {
 
       {/* top performers — Pro-Day-styled cards */}
       {performerCards.length > 0 && (
-        <div className="grid sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-2.5 mb-3">
-          {performerCards.map(c => <TopPerformerCard key={c.key} title={c.title} row={c.row} />)}
-        </div>
+        <section className="mb-5">
+          <SectionHeading>Top Performers</SectionHeading>
+          <div className="grid sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
+            {performerCards.map(c => <TopPerformerCard key={c.key} title={c.title} row={c.row} />)}
+          </div>
+        </section>
       )}
 
       {/* standings per division */}
       {divisions.map(d => {
         const rows = (standings || []).filter(s => s.division_id === d.id);
         return (
-          <div key={d.id} className="mb-3">
-            <div className="flex items-center gap-3 mb-1.5">
-              <h2 className="text-sm font-bold uppercase tracking-widest text-slate-500">{d.name}</h2>
-              <ChampionChip name={d.champion} />
-            </div>
+          <section key={d.id} className="mb-5">
+            <SectionHeading extra={<ChampionChip name={d.champion} />}>
+              Standings — {d.name}
+            </SectionHeading>
             <Card>
               <div className="overflow-x-auto">
                 <table className="w-full text-sm min-w-[640px]">
@@ -183,34 +185,36 @@ export default function TournamentDashboardPage() {
                 </table>
               </div>
             </Card>
-          </div>
+          </section>
         );
       })}
 
       {/* player leaderboards */}
-      <Card
-        title={`Player leaderboards · ${counts.players} rostered`}
-        action={
-          <div className="flex gap-1 flex-wrap">
-            {BOARD_TABS.map(t => (
-              <button
-                key={t.key}
-                onClick={() => setBoardTab(t.key)}
-                className={`px-2.5 py-1 rounded-lg text-xs font-bold cursor-pointer ${boardTab === t.key ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}
-              >
-                {t.label}
-              </button>
-            ))}
-          </div>
-        }
-      >
-        <LeaderboardTable board={board} />
-      </Card>
+      <section className="mb-5">
+        <SectionHeading>Player Leaderboards · {counts.players} rostered</SectionHeading>
+        <Card
+          action={
+            <div className="flex gap-1 flex-wrap">
+              {BOARD_TABS.map(t => (
+                <button
+                  key={t.key}
+                  onClick={() => setBoardTab(t.key)}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-bold cursor-pointer ${boardTab === t.key ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}
+                >
+                  {t.label}
+                </button>
+              ))}
+            </div>
+          }
+        >
+          <LeaderboardTable board={board} />
+        </Card>
+      </section>
 
       {/* team cards */}
-      <div className="mb-3">
-        <h2 className="text-sm font-bold uppercase tracking-widest text-slate-500 mb-1.5">Teams</h2>
-        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
+      <section className="mb-5">
+        <SectionHeading>Teams</SectionHeading>
+        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
           {entries.map((e, i) => (
             <Link
               key={i}
@@ -232,10 +236,12 @@ export default function TournamentDashboardPage() {
             </Link>
           ))}
         </div>
-      </div>
+      </section>
 
       {/* games */}
-      <Card title="Games">
+      <section>
+        <SectionHeading>Games</SectionHeading>
+        <Card>
         {games.length === 0 ? (
           <p className="text-xs text-slate-400">No games scheduled yet.</p>
         ) : (
@@ -270,7 +276,8 @@ export default function TournamentDashboardPage() {
             </table>
           </div>
         )}
-      </Card>
+        </Card>
+      </section>
     </>
   );
 }

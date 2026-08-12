@@ -139,6 +139,24 @@ export function CalcStamp({ calc }) {
   );
 }
 
+// Section heading — the outside-the-card label pattern every dashboard
+// section uses (uppercase, tracking-wide, optional right-side extra).
+// Inline font/margin so the marketing stylesheet's unlayered
+// `section h2 { font-size: 32px }` can't inflate dashboard headings.
+export function SectionHeading({ children, extra }) {
+  return (
+    <div className="flex items-center gap-3 mb-2">
+      <h2
+        className="font-bold uppercase tracking-widest text-slate-500"
+        style={{ fontSize: '0.875rem', lineHeight: 1.25, marginBottom: 0 }}
+      >
+        {children}
+      </h2>
+      {extra}
+    </div>
+  );
+}
+
 export function ChampionChip({ name }) {
   if (!name) return null;
   return (
