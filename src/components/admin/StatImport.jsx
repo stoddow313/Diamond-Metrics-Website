@@ -97,13 +97,16 @@ export default function StatImport({ playerId, games, catalog, onComplete, onErr
       if (!rows.length) throw new Error('No data rows found in the file.');
 
       const headerMap = buildHeaderMap(Object.keys(rows[0]), catalog.metrics);
+      // A 0 in a zero-impossible metric (0 mph, 0s, 0% strike) means "not
+      // measured" — sheets pre-fill zeros for players who didn't participate.
+      const zeroUnmeasured = new Set(catalog.metrics.filter(m => m.zeroMeansUnmeasured).map(m => m.key));
       const unknownCols = Object.entries(headerMap).filter(([, v]) => v.kind === 'unknown').map(([h]) => h);
 
       // Existing games indexed by date+opponent so imports update instead of duplicate.
       const existing = new Map(games.map(g => [`${g.game_date}|${norm(g.opponent)}`, g]));
       const validTypes = new Set(catalog.gameTypes);
 
-      let created = 0, updated = 0;
+      let created = 0, updated = 0, zerosSkipped = 0;
       const errors = [];
 
       for (let i = 0; i < rows.length; i++) {
@@ -120,6 +123,7 @@ export default function StatImport({ playerId, games, catalog, onComplete, onErr
             } else if (cell !== '' && cell !== null) {
               const num = Number(cell);
               if (!Number.isFinite(num)) throw new Error(`"${header}" is not a number (${cell})`);
+              if (num === 0 && zeroUnmeasured.has(m.key)) { zerosSkipped++; continue; }
               stats[m.key] = num;
             }
           }
@@ -171,7 +175,7 @@ export default function StatImport({ playerId, games, catalog, onComplete, onErr
         }
       }
 
-      setResult({ created, updated, errors, unknownCols, total: rows.length });
+      setResult({ created, updated, errors, unknownCols, zerosSkipped, total: rows.length });
       if (created || updated) await onComplete();
     } catch (err) {
       onError(`Import failed: ${err.message}`);
@@ -200,6 +204,11 @@ export default function StatImport({ playerId, games, catalog, onComplete, onErr
           </p>
           {result.unknownCols.length > 0 && (
             <p className="mt-1" style={{ color: '#94a3b8' }}>Ignored columns: {result.unknownCols.join(', ')}</p>
+          )}
+          {result.zerosSkipped > 0 && (
+            <p className="mt-1" style={{ color: '#fbbf24' }}>
+              {result.zerosSkipped} zero value{result.zerosSkipped === 1 ? '' : 's'} treated as not measured (0 mph / 0 s / 0 % can't be real marks — leave cells blank to omit).
+            </p>
           )}
           {result.errors.slice(0, 5).map((e, i) => <p key={i} className="mt-0.5" style={{ color: '#f87171' }}>{e}</p>)}
           {result.errors.length > 5 && <p style={{ color: '#f87171' }}>…and {result.errors.length - 5} more</p>}

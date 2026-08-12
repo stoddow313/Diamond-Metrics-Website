@@ -281,8 +281,11 @@ export default function AdminPlayerEditorPage() {
                 stats={statsByGame[g.id] || {}}
                 metricsByCategory={metricsByCategory}
                 onSaveStats={async (stats) => {
-                  const { stats: saved } = await api.saveGameStats(g.id, stats);
+                  const { stats: saved, zero_treated_as_unmeasured: zeroed } = await api.saveGameStats(g.id, stats);
                   setStatsByGame(s => ({ ...s, [g.id]: saved }));
+                  if (zeroed?.length) {
+                    setError(`Note: ${zeroed.join(', ')} = 0 treated as not measured (a 0 mph/0 s/0 % mark isn't real data — leave blank to omit).`);
+                  }
                   api.getPlayer(playerId).then(d => setRatings(d.ratings)).catch(() => {});
                 }}
                 onDelete={async () => {

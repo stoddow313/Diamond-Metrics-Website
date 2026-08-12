@@ -153,7 +153,7 @@ export function deriveRates(box) {
     k_bb_pitching: div(box.bs_kp, box.bs_bba),      // pitching K per BB
     runs_scored: box.bs_r, runs_allowed: box.bs_ra,
     stolen_bases: box.bs_sb, errors: box.bs_e,
-    pa: box.bs_pa, ab: box.bs_ab, ip: box.bs_ip,
+    pa: box.bs_pa, ab: box.bs_ab, ip: box.bs_ip, bf: box.bs_bf,
   };
 }
 
@@ -247,7 +247,7 @@ const BOARD_SPECS = {
     { key: 'max_exit_velo', label: 'Max Exit Velocity', sample: 'games', min: 'samples' },
   ],
   pitching: [
-    { key: 'strike_pct', label: 'Strike %', sample: 'games', min: 'samples' },
+    { key: 'strike_pct', label: 'Strike %', sample: 'bf', min: 'samples' },
     { key: 'k_bb_pitching', derived: true, label: 'K/BB', decimals: 2, sample: 'ip', min: 'ip' },
     { key: 'max_velo', label: 'Max Velocity', sample: 'games', min: 'samples' },
   ],
@@ -263,13 +263,24 @@ const BOARD_SPECS = {
   ],
 };
 
+const SAMPLE_UNITS = { pa: 'PA', ip: 'IP', bf: 'BF', games: 'games' };
+
 function boardValue(agg, spec) {
   if (spec.derived) {
     const v = agg.rates[spec.key];
-    return v == null ? null : { value: v, sample: spec.sample === 'pa' ? agg.rates.pa : spec.sample === 'ip' ? agg.rates.ip : agg.games_played };
+    if (v == null) return null;
+    const sample = spec.sample === 'pa' ? agg.rates.pa : spec.sample === 'ip' ? agg.rates.ip : agg.games_played;
+    return { value: v, sample, unit: SAMPLE_UNITS[spec.sample] || 'games', qual: sample };
   }
   const m = agg.measured[spec.key];
-  return !m || m.value == null ? null : { value: m.value, sample: m.sample };
+  if (!m || m.value == null) return null;
+  // Measured metrics sample by games measured; pitching rates prefer batters
+  // faced when the box scores carry it. Qualification always checks the
+  // spec.min unit (games for measured metrics).
+  if (spec.sample === 'bf' && agg.rates.bf != null) {
+    return { value: m.value, sample: agg.rates.bf, unit: 'BF', qual: m.sample };
+  }
+  return { value: m.value, sample: m.sample, unit: 'games', qual: m.sample };
 }
 
 export function leaderboard(playerAggs, category, mins = DEFAULT_MINS, teamNameFor = () => null) {
@@ -291,8 +302,8 @@ export function leaderboard(playerAggs, category, mins = DEFAULT_MINS, teamNameF
         slug: a.player.slug,
         team: teamNameFor(a.player.id),
         position: a.player.position, isGuest: a.player.isGuest,
-        value: v.value, sample: v.sample ?? 0,
-        limited: (v.sample ?? 0) < minNeeded,
+        value: v.value, sample: v.sample ?? 0, sample_unit: v.unit,
+        limited: (v.qual ?? 0) < minNeeded,
       };
     })
     .filter(Boolean)
@@ -304,6 +315,7 @@ export function leaderboard(playerAggs, category, mins = DEFAULT_MINS, teamNameF
     category,
     metric: { key: spec.key, label: spec.label ?? catalog?.label, unit: spec.derived ? '' : catalog?.unit ?? '', decimals: spec.decimals ?? catalog?.decimals ?? 1, lowerIsBetter },
     min_sample: minNeeded,
+    min_unit: SAMPLE_UNITS[spec.min === 'samples' ? 'games' : spec.min] || 'games',
     rows,
   };
 }
@@ -347,7 +359,7 @@ export function overallLeaderboard(playerAggs, mins = DEFAULT_MINS, teamNameFor 
       team: teamNameFor(a.player.id),
       position: a.player.position, position_group: a.player.position_group, isGuest: a.player.isGuest,
       value: Math.round(rated.reduce((x, y) => x + y, 0) / rated.length),
-      sample: a.games_played, metrics_rated: rated.length,
+      sample: a.games_played, sample_unit: 'games', metrics_rated: rated.length,
       limited: a.games_played < (mins.samples ?? DEFAULT_MINS.samples),
     };
   }).filter(Boolean)
@@ -356,6 +368,7 @@ export function overallLeaderboard(playerAggs, mins = DEFAULT_MINS, teamNameFor 
   return {
     category: 'overall',
     metric: { key: 'event_overall', label: 'Event Overall', unit: '', decimals: 0, lowerIsBetter: false },
+    min_unit: 'games',
     note: 'Event-relative rating from aggregated game metrics (position-group percentiles) — not an average of Pro Day overalls.',
     min_sample: mins.samples ?? DEFAULT_MINS.samples,
     rows,
@@ -368,25 +381,27 @@ export function teamCategoryBlocks(attributed) {
   const box = sumBox(attributed);
   const rates = deriveRates(box);
   const measured = aggregateMeasured(attributed);
-  const stat = (key, label, value, { unit = '', decimals = 1, sample = null } = {}) =>
-    ({ key, label, value, unit, decimals, sample });
+  const stat = (key, label, value, { unit = '', decimals = 1, sample = null, sampleUnit = '' } = {}) =>
+    ({ key, label, value, unit, decimals, sample, sampleUnit });
   const m = (key, overrides = {}) => {
     const c = metricByKey.get(key);
-    return stat(key, c.label, measured[key].value, { unit: c.unit, decimals: c.decimals, sample: measured[key].sample, ...overrides });
+    return stat(key, c.label, measured[key].value, { unit: c.unit, decimals: c.decimals, sample: measured[key].sample, sampleUnit: 'games', ...overrides });
   };
+  const bfSample = key => (rates.bf != null && measured[key].value != null
+    ? { sample: rates.bf, sampleUnit: 'BF' } : {});
   return {
     hitting: [
-      stat('avg', 'Batting Average', rates.avg, { decimals: 3, sample: rates.pa }),
-      stat('obp', 'OBP', rates.obp, { decimals: 3, sample: rates.pa }),
-      stat('slg', 'SLG', rates.slg, { decimals: 3, sample: rates.ab }),
-      stat('ops', 'OPS', rates.ops, { decimals: 3, sample: rates.pa }),
-      stat('k_bb', 'K/BB', rates.k_bb, { decimals: 2, sample: rates.pa }),
+      stat('avg', 'Batting Average', rates.avg, { decimals: 3, sample: rates.pa, sampleUnit: 'PA' }),
+      stat('obp', 'OBP', rates.obp, { decimals: 3, sample: rates.pa, sampleUnit: 'PA' }),
+      stat('slg', 'SLG', rates.slg, { decimals: 3, sample: rates.ab, sampleUnit: 'AB' }),
+      stat('ops', 'OPS', rates.ops, { decimals: 3, sample: rates.pa, sampleUnit: 'PA' }),
+      stat('k_bb', 'K/BB', rates.k_bb, { decimals: 2, sample: rates.pa, sampleUnit: 'PA' }),
       m('hard_hit_pct'), m('avg_exit_velo'), m('max_exit_velo'),
       m('pull_pct'), m('middle_pct'), m('oppo_pct'),
     ],
     pitching: [
-      m('strike_pct'), m('whiff_pct'),
-      stat('k_bb_pitching', 'K/BB', rates.k_bb_pitching, { decimals: 2, sample: rates.ip }),
+      m('strike_pct', bfSample('strike_pct')), m('whiff_pct', bfSample('whiff_pct')),
+      stat('k_bb_pitching', 'K/BB', rates.k_bb_pitching, { decimals: 2, sample: rates.ip, sampleUnit: 'IP' }),
       m('max_velo'), m('avg_velo'), m('command_score'),
     ],
     defense_running: [

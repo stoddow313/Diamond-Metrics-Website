@@ -12,15 +12,19 @@
 //   decimals   - display precision
 //   lowerIsBetter - for times (60-yard dash etc.), best mark = min
 //   short      - compact column header for box-score tables (game summary only)
+//   zeroMeansUnmeasured - a literal 0 can't be a real measurement (0 mph, 0s,
+//                0% strike). Imports/entry treat 0 as "not measured" so
+//                non-participants never drag averages down. Signed metrics
+//                (launch angle, spray) and box counting stats keep real zeros.
 
 export const METRICS = [
   // ── Hitting ──────────────────────────────────────────────────────────
-  { key: 'max_exit_velo',  label: 'Max Exit Velocity',     unit: 'mph',  category: 'hitting',  aggregate: 'max',    decimals: 1 },
-  { key: 'avg_exit_velo',  label: 'Average Exit Velocity', unit: 'mph',  category: 'hitting',  aggregate: 'avg',    decimals: 1 },
-  { key: 'hard_hit_pct',   label: 'Hard Hit %',            unit: '%',    category: 'hitting',  aggregate: 'avg',    decimals: 0 },
-  { key: 'contact_pct',    label: 'Contact %',             unit: '%',    category: 'hitting',  aggregate: 'avg',    decimals: 0 },
+  { key: 'max_exit_velo',  label: 'Max Exit Velocity',     unit: 'mph',  category: 'hitting',  aggregate: 'max',    decimals: 1, zeroMeansUnmeasured: true },
+  { key: 'avg_exit_velo',  label: 'Average Exit Velocity', unit: 'mph',  category: 'hitting',  aggregate: 'avg',    decimals: 1, zeroMeansUnmeasured: true },
+  { key: 'hard_hit_pct',   label: 'Hard Hit %',            unit: '%',    category: 'hitting',  aggregate: 'avg',    decimals: 0, zeroMeansUnmeasured: true },
+  { key: 'contact_pct',    label: 'Contact %',             unit: '%',    category: 'hitting',  aggregate: 'avg',    decimals: 0, zeroMeansUnmeasured: true },
   { key: 'launch_angle',   label: 'Launch Angle (Avg)',    unit: '°',    category: 'hitting',  aggregate: 'avg',    decimals: 1 },
-  { key: 'quality_la_pct', label: 'Quality Launch Angle %', unit: '%',   category: 'hitting',  aggregate: 'avg',    decimals: 0 },
+  { key: 'quality_la_pct', label: 'Quality Launch Angle %', unit: '%',   category: 'hitting',  aggregate: 'avg',    decimals: 0, zeroMeansUnmeasured: true },
   { key: 'pull_pct',       label: 'Pull %',                unit: '%',    category: 'hitting',  aggregate: 'avg',    decimals: 0 },
   { key: 'middle_pct',     label: 'Middle %',              unit: '%',    category: 'hitting',  aggregate: 'avg',    decimals: 0 },
   { key: 'oppo_pct',       label: 'Opposite Field %',      unit: '%',    category: 'hitting',  aggregate: 'avg',    decimals: 0 },
@@ -30,27 +34,27 @@ export const METRICS = [
   { key: 'ops',            label: 'OPS',                   unit: '',     category: 'hitting',  aggregate: 'avg',    decimals: 3 },
 
   // ── Pitching ─────────────────────────────────────────────────────────
-  { key: 'max_velo',       label: 'Max Velocity',          unit: 'mph',  category: 'pitching', aggregate: 'max',    decimals: 1 },
-  { key: 'avg_velo',       label: 'Average Velocity',      unit: 'mph',  category: 'pitching', aggregate: 'avg',    decimals: 1 },
-  { key: 'strike_pct',     label: 'Strike %',              unit: '%',    category: 'pitching', aggregate: 'avg',    decimals: 0 },
-  { key: 'whiff_pct',      label: 'Whiff %',               unit: '%',    category: 'pitching', aggregate: 'avg',    decimals: 0 },
-  { key: 'command_score',  label: 'Command Score',         unit: '',     category: 'pitching', aggregate: 'avg',    decimals: 0 },
-  { key: 'target_accuracy', label: 'Target Accuracy',      unit: '%',    category: 'pitching', aggregate: 'avg',    decimals: 0 },
+  { key: 'max_velo',       label: 'Max Velocity',          unit: 'mph',  category: 'pitching', aggregate: 'max',    decimals: 1, zeroMeansUnmeasured: true },
+  { key: 'avg_velo',       label: 'Average Velocity',      unit: 'mph',  category: 'pitching', aggregate: 'avg',    decimals: 1, zeroMeansUnmeasured: true },
+  { key: 'strike_pct',     label: 'Strike %',              unit: '%',    category: 'pitching', aggregate: 'avg',    decimals: 0, zeroMeansUnmeasured: true },
+  { key: 'whiff_pct',      label: 'Whiff %',               unit: '%',    category: 'pitching', aggregate: 'avg',    decimals: 0, zeroMeansUnmeasured: true },
+  { key: 'command_score',  label: 'Command Score',         unit: '',     category: 'pitching', aggregate: 'avg',    decimals: 0, zeroMeansUnmeasured: true },
+  { key: 'target_accuracy', label: 'Target Accuracy',      unit: '%',    category: 'pitching', aggregate: 'avg',    decimals: 0, zeroMeansUnmeasured: true },
 
   // ── Defense ──────────────────────────────────────────────────────────
-  { key: 'arm_strength',   label: 'Arm Strength',          unit: 'mph',  category: 'defense',  aggregate: 'max',    decimals: 0 },
-  { key: 'throw_accuracy', label: 'Throw Accuracy',        unit: '',     category: 'defense',  aggregate: 'avg',    decimals: 0 },
-  { key: 'reaction_time',  label: 'Reaction Time',         unit: 's',    category: 'defense',  aggregate: 'avg',    decimals: 2, lowerIsBetter: true },
-  { key: 'range_score',    label: 'Range Score',           unit: '',     category: 'defense',  aggregate: 'avg',    decimals: 0 },
-  { key: 'pop_time',       label: 'Pop Time',              unit: 's',    category: 'defense',  aggregate: 'max',    decimals: 2, lowerIsBetter: true },
-  { key: 'blocking_score', label: 'Blocking Score',        unit: '',     category: 'defense',  aggregate: 'avg',    decimals: 0 },
-  { key: 'fielding_success', label: 'Fielding Success %',  unit: '%',    category: 'defense',  aggregate: 'avg',    decimals: 0 },
+  { key: 'arm_strength',   label: 'Arm Strength',          unit: 'mph',  category: 'defense',  aggregate: 'max',    decimals: 0, zeroMeansUnmeasured: true },
+  { key: 'throw_accuracy', label: 'Throw Accuracy',        unit: '',     category: 'defense',  aggregate: 'avg',    decimals: 0, zeroMeansUnmeasured: true },
+  { key: 'reaction_time',  label: 'Reaction Time',         unit: 's',    category: 'defense',  aggregate: 'avg',    decimals: 2, lowerIsBetter: true, zeroMeansUnmeasured: true },
+  { key: 'range_score',    label: 'Range Score',           unit: '',     category: 'defense',  aggregate: 'avg',    decimals: 0, zeroMeansUnmeasured: true },
+  { key: 'pop_time',       label: 'Pop Time',              unit: 's',    category: 'defense',  aggregate: 'max',    decimals: 2, lowerIsBetter: true, zeroMeansUnmeasured: true },
+  { key: 'blocking_score', label: 'Blocking Score',        unit: '',     category: 'defense',  aggregate: 'avg',    decimals: 0, zeroMeansUnmeasured: true },
+  { key: 'fielding_success', label: 'Fielding Success %',  unit: '%',    category: 'defense',  aggregate: 'avg',    decimals: 0, zeroMeansUnmeasured: true },
 
   // ── Running ──────────────────────────────────────────────────────────
-  { key: 'sprint_speed',   label: 'Sprint Speed',          unit: 'ft/s', category: 'running',  aggregate: 'max',    decimals: 1 },
-  { key: 'home_to_first',  label: 'Home-to-First Time',    unit: 's',    category: 'running',  aggregate: 'max',    decimals: 2, lowerIsBetter: true },
-  { key: 'sprint_30',      label: '30-Yard Sprint',        unit: 's',    category: 'running',  aggregate: 'max',    decimals: 2, lowerIsBetter: true },
-  { key: 'dash_60',        label: '60-Yard Dash',          unit: 's',    category: 'running',  aggregate: 'max',    decimals: 2, lowerIsBetter: true },
+  { key: 'sprint_speed',   label: 'Sprint Speed',          unit: 'ft/s', category: 'running',  aggregate: 'max',    decimals: 1, zeroMeansUnmeasured: true },
+  { key: 'home_to_first',  label: 'Home-to-First Time',    unit: 's',    category: 'running',  aggregate: 'max',    decimals: 2, lowerIsBetter: true, zeroMeansUnmeasured: true },
+  { key: 'sprint_30',      label: '30-Yard Sprint',        unit: 's',    category: 'running',  aggregate: 'max',    decimals: 2, lowerIsBetter: true, zeroMeansUnmeasured: true },
+  { key: 'dash_60',        label: '60-Yard Dash',          unit: 's',    category: 'running',  aggregate: 'max',    decimals: 2, lowerIsBetter: true, zeroMeansUnmeasured: true },
 
   // ── Game Summary (box-score counting stats; season totals = sum) ─────
   { key: 'bs_pa',          label: 'Plate Appearances',     short: 'PA',  unit: '', category: 'box', aggregate: 'sum', decimals: 0 },
@@ -103,6 +107,7 @@ export function heroSetForPosition(primaryPosition) {
 }
 
 export const VALID_METRIC_KEYS = new Set(METRICS.map(m => m.key));
+export const ZERO_UNMEASURED_KEYS = new Set(METRICS.filter(m => m.zeroMeansUnmeasured).map(m => m.key));
 
 // Game/event types the admin can log stats against.
 // 'pro_day' events power the shareable Pro Day player card.

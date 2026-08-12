@@ -148,6 +148,33 @@ test('importing into an archived season warns but does not block', () => {
   assert.equal(r.counts.created, 1); // historical backfills stay possible
 });
 
+test('metrics import: zeros in zero-impossible metrics are skipped with a warning, real zeros kept', () => {
+  const rows = [{
+    first_name: 'Jake', last_name: 'Rivera', grad_year: 2027, game_date: '2026-09-10', opponent: 'Zero Test',
+    max_velo: 0, strike_pct: 0,          // impossible → skipped + warned
+    launch_angle: 0,                     // signed metric → a real value
+    bs_h: 0, bs_ab: 3,                   // box zeros are real data
+  }];
+  const plan = planImport(db, 'metrics', rows);
+  assert.equal(plan[0].action, 'create');
+  assert.match(plan[0].message, /max_velo, strike_pct = 0 treated as not measured/);
+
+  const r = applyImport(db, 'metrics', rows, {}, { uploader: 'admin@test' });
+  assert.equal(r.counts.created, 1);
+  const entries = db.prepare(
+    `SELECT metric_key, value FROM stat_entries s JOIN games g ON g.id = s.game_id
+     WHERE g.opponent = 'Zero Test'`
+  ).all();
+  const keys = new Set(entries.map(e => e.metric_key));
+  assert.ok(!keys.has('max_velo') && !keys.has('strike_pct'), 'impossible zeros never stored');
+  assert.ok(keys.has('launch_angle') && keys.has('bs_h'), 'legitimate zeros stored');
+
+  // A row that is ONLY impossible zeros errors instead of creating an empty record.
+  const emptyPlan = planImport(db, 'metrics', [{ first_name: 'Jake', last_name: 'Rivera', grad_year: 2027, game_date: '2026-09-11', max_velo: 0 }]);
+  assert.equal(emptyPlan[0].action, 'error');
+  assert.match(emptyPlan[0].message, /no metric values/);
+});
+
 test('every apply writes an audit record with uploader and counts', () => {
   const audits = db.prepare('SELECT * FROM import_audits ORDER BY id').all();
   assert.ok(audits.length >= 6);
