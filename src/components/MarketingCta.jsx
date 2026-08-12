@@ -12,7 +12,7 @@ export default function MarketingCta({
       <h2>{title}</h2>
       <p>{text}</p>
       <div className="hero-buttons">
-        <Link className="primary-button" to="/signup">Analyze Your Player</Link>
+        <Link className="primary-button" to="/pricing">View Season Packages</Link>
         {secondary && <Link className="secondary-button" to="/sample-profile">Explore a Sample Profile</Link>}
       </div>
     </section>
