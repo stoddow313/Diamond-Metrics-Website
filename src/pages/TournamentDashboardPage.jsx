@@ -4,6 +4,7 @@ import { Lock, Users, MapPin } from 'lucide-react';
 import { api } from '../lib/api';
 import BrandMark from '../components/BrandMark';
 import { fmt } from '../lib/format';
+import { pageBg, headerBar, cardStyle, text, rowBorder, headBorder } from '../components/dashboards/theme';
 import {
   LeaderboardTable, TopPerformerCard, CoverageNote, CalcStamp, ChampionChip, SectionHeading,
 } from '../components/dashboards/shared';
@@ -14,10 +15,10 @@ import {
 
 function Card({ title, children, action }) {
   return (
-    <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-3.5">
+    <div className="rounded-xl border p-3.5" style={cardStyle}>
       {(title || action) && (
         <div className="flex items-center justify-between mb-2">
-          {title && <p className="text-[11px] font-bold uppercase tracking-widest text-slate-500">{title}</p>}
+          {title && <p className="text-[11px] font-bold uppercase tracking-widest" style={{ color: text.secondary }}>{title}</p>}
           {action}
         </div>
       )}
@@ -56,10 +57,10 @@ export default function TournamentDashboardPage() {
   const error = result.key === slug ? result.error : null;
 
   const shell = children => (
-    <div className="min-h-screen pb-8" style={{ backgroundColor: '#eef2f7' }}>
-      <header className="border-b border-slate-200 bg-white">
+    <div className="min-h-screen pb-8" style={pageBg}>
+      <header className="border-b" style={headerBar}>
         <div className="max-w-[1100px] mx-auto px-4 md:px-6 py-2.5">
-          <Link to="/"><BrandMark dark /></Link>
+          <Link to="/"><BrandMark /></Link>
         </div>
       </header>
       {/* inline display:block — the marketing stylesheet's unlayered `main { display:flex; gap:72px }`
@@ -70,12 +71,12 @@ export default function TournamentDashboardPage() {
 
   if (error) {
     return shell(
-      <div className="max-w-md mx-auto mt-16 bg-white rounded-xl border border-slate-200 shadow-sm p-8 text-center">
-        <Lock size={28} className="mx-auto text-slate-300" />
-        <p className="text-sm font-bold text-slate-700 mt-3">
+      <div className="max-w-md mx-auto mt-16 rounded-xl border p-8 text-center" style={cardStyle}>
+        <Lock size={28} className="mx-auto" style={{ color: '#334155' }} />
+        <p className="text-sm font-bold mt-3" style={{ color: text.body }}>
           {error.status === 404 ? 'Tournament not found' : 'This tournament has not been published yet'}
         </p>
-        <p className="text-xs text-slate-400 mt-1">
+        <p className="text-xs mt-1" style={{ color: text.secondary }}>
           {error.status === 401
             ? 'Results will appear here once the event is published. Organizers can sign in to preview.'
             : error.status === 403
@@ -83,12 +84,12 @@ export default function TournamentDashboardPage() {
               : 'Check the link and try again.'}
         </p>
         {error.status === 401 && (
-          <Link to="/login" className="inline-block mt-4 px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-bold">Organizer sign in</Link>
+          <Link to="/login" className="inline-block mt-4 px-4 py-2 rounded-lg text-sm font-bold" style={{ backgroundColor: text.accent, color: '#06122b' }}>Organizer sign in</Link>
         )}
       </div>
     );
   }
-  if (!data) return shell(<p className="text-slate-400 mt-16 text-center">Loading tournament…</p>);
+  if (!data) return shell(<p className="mt-16 text-center" style={{ color: text.secondary }}>Loading tournament…</p>);
 
   const { tournament, coverage, counts, divisions, entries, games, standings, leaderboards, top_performers, players_with_data, calc } = data;
   const board = leaderboards?.[boardTab];
@@ -107,7 +108,7 @@ export default function TournamentDashboardPage() {
   };
   const standingsHeader = (col, label, { right = true, defaultDir = 'desc' } = {}) => (
     <th
-      className={`py-1.5 pr-3 font-bold cursor-pointer hover:text-blue-600 whitespace-nowrap ${right ? 'text-right' : ''}`}
+      className={`py-1.5 pr-3 font-bold cursor-pointer hover:text-[#38bdf8] whitespace-nowrap ${right ? 'text-right' : ''}`}
       onClick={() => setStandingsSort(s =>
         s?.col === col ? { col, dir: s.dir === 'asc' ? 'desc' : 'asc' } : { col, dir: defaultDir })}
     >
@@ -119,23 +120,23 @@ export default function TournamentDashboardPage() {
   return shell(
     <>
       {/* header + coverage (§5) */}
-      <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 mb-5">
+      <div className="rounded-xl border p-4 mb-5" style={cardStyle}>
         <div className="flex flex-wrap items-center gap-4">
           <div className="min-w-0 flex-1">
-            <h1 className="text-2xl font-extrabold text-slate-900 leading-tight">{tournament.name}</h1>
-            <p className="text-sm text-slate-500 flex items-center gap-1 flex-wrap">
+            <h1 className="text-2xl font-extrabold text-white leading-tight">{tournament.name}</h1>
+            <p className="text-sm flex items-center gap-1 flex-wrap" style={{ color: text.secondary }}>
               {tournament.start_date} → {tournament.end_date}
               {tournament.location && <><MapPin size={12} className="ml-1" />{tournament.location}</>}
               {tournament.organizer && <span>· {tournament.organizer}</span>}
             </p>
           </div>
           {!tournament.published && (
-            <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-1 rounded bg-amber-100 text-amber-700">
+            <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-1 rounded" style={{ backgroundColor: 'rgba(251, 191, 36, 0.14)', color: '#fbbf24' }}>
               Preview — not published
             </span>
           )}
         </div>
-        <div className="flex flex-wrap gap-x-6 gap-y-1 mt-2 text-sm text-slate-600">
+        <div className="flex flex-wrap gap-x-6 gap-y-1 mt-2 text-sm" style={{ color: text.body }}>
           <span><b>{counts.divisions}</b> division{counts.divisions === 1 ? '' : 's'}</span>
           <span><b>{counts.teams}</b> teams</span>
           <span><b>{counts.players}</b> rostered players</span>
@@ -172,7 +173,7 @@ export default function TournamentDashboardPage() {
               <div className="overflow-x-auto">
                 <table className="w-full text-sm min-w-[640px]">
                   <thead>
-                    <tr className="text-left text-[10px] uppercase tracking-wider text-slate-400 border-b border-slate-100">
+                    <tr className="text-left text-[10px] uppercase tracking-wider border-b" style={{ color: text.faint, ...headBorder }}>
                       {standingsHeader('seed', 'Seed', { right: false, defaultDir: 'asc' })}
                       {standingsHeader('team_name', 'Team', { right: false, defaultDir: 'asc' })}
                       {standingsHeader('win_pct', 'W-L-T')}
@@ -186,28 +187,28 @@ export default function TournamentDashboardPage() {
                   </thead>
                   <tbody>
                     {sortStandings(rows).map(s => (
-                      <tr key={s.entry_id} className="border-b border-slate-50">
-                        <td className="py-1.5 pr-3 text-slate-400">{s.seed ?? '—'}</td>
+                      <tr key={s.entry_id} className="border-b" style={rowBorder}>
+                        <td className="py-1.5 pr-3" style={{ color: text.faint }}>{s.seed ?? '—'}</td>
                         <td className="py-1.5 pr-3">
-                          <Link to={`/teams/${s.team_slug}?tournament=${slug}`} className="font-bold text-slate-800 hover:text-blue-600">
+                          <Link to={`/teams/${s.team_slug}?tournament=${slug}`} className="font-bold text-white hover:text-[#38bdf8]">
                             {s.team_name}
                           </Link>
-                          {s.pool && <span className="ml-2 text-xs text-slate-400">Pool {s.pool}</span>}
+                          {s.pool && <span className="ml-2 text-xs" style={{ color: text.faint }}>Pool {s.pool}</span>}
                         </td>
-                        <td className="py-1.5 pr-3 text-right font-bold text-slate-900">{s.wins}-{s.losses}-{s.ties}</td>
-                        <td className="py-1.5 pr-3 text-right text-slate-600">{s.win_pct == null ? '—' : fmt(s.win_pct, { decimals: 3 })}</td>
-                        <td className="py-1.5 pr-3 text-right text-slate-600">{s.runs_scored ?? '—'}</td>
-                        <td className="py-1.5 pr-3 text-right text-slate-600">{s.runs_allowed ?? '—'}</td>
-                        <td className={`py-1.5 pr-3 text-right font-bold ${s.run_diff > 0 ? 'text-green-600' : s.run_diff < 0 ? 'text-red-500' : 'text-slate-500'}`}>
+                        <td className="py-1.5 pr-3 text-right font-bold text-white">{s.wins}-{s.losses}-{s.ties}</td>
+                        <td className="py-1.5 pr-3 text-right" style={{ color: text.body }}>{s.win_pct == null ? '—' : fmt(s.win_pct, { decimals: 3 })}</td>
+                        <td className="py-1.5 pr-3 text-right" style={{ color: text.body }}>{s.runs_scored ?? '—'}</td>
+                        <td className="py-1.5 pr-3 text-right" style={{ color: text.body }}>{s.runs_allowed ?? '—'}</td>
+                        <td className="py-1.5 pr-3 text-right font-bold" style={{ color: s.run_diff > 0 ? text.good : s.run_diff < 0 ? text.bad : text.secondary }}>
                           {s.run_diff == null ? '—' : s.run_diff > 0 ? `+${s.run_diff}` : s.run_diff}
                         </td>
-                        <td className="py-1.5 pr-3 text-slate-600">{s.placement || '—'}</td>
-                        <td className="py-1.5 text-right text-xs text-slate-400">{s.games_final}/{s.games_total}</td>
+                        <td className="py-1.5 pr-3" style={{ color: text.body }}>{s.placement || '—'}</td>
+                        <td className="py-1.5 text-right text-xs" style={{ color: text.faint }}>{s.games_final}/{s.games_total}</td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
-                <p className="text-[10px] text-slate-400 mt-1.5">
+                <p className="text-[10px] mt-1.5" style={{ color: text.faint }}>
                   Ranked by win %, then run differential, then seed — click a column to re-sort.
                 </p>
               </div>
@@ -226,7 +227,8 @@ export default function TournamentDashboardPage() {
                 <button
                   key={t.key}
                   onClick={() => setBoardTab(t.key)}
-                  className={`px-2.5 py-1 rounded-lg text-xs font-bold cursor-pointer ${boardTab === t.key ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-500 hover:bg-slate-200'}`}
+                  className="px-2.5 py-1 rounded-lg text-xs font-bold cursor-pointer"
+                  style={boardTab === t.key ? { backgroundColor: text.accent, color: '#06122b' } : { backgroundColor: 'rgba(30, 41, 59, 0.9)', color: text.secondary }}
                 >
                   {t.label}
                 </button>
@@ -246,15 +248,16 @@ export default function TournamentDashboardPage() {
             <Link
               key={i}
               to={`/teams/${e.team_slug}?tournament=${slug}`}
-              className="bg-white rounded-xl border border-slate-200 shadow-sm p-3 hover:border-blue-300 transition-colors"
+              className="rounded-xl border p-3 transition-colors hover:border-[#38bdf8]"
+              style={cardStyle}
             >
               <div className="flex items-center gap-3">
-                <div className="w-9 h-9 rounded-lg bg-slate-100 flex items-center justify-center shrink-0">
-                  <Users size={15} className="text-slate-400" />
+                <div className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0" style={{ backgroundColor: 'rgba(30, 41, 59, 0.9)' }}>
+                  <Users size={15} style={{ color: '#64748b' }} />
                 </div>
                 <div className="min-w-0">
-                  <p className="text-sm font-bold text-slate-800 truncate">{e.team_name}</p>
-                  <p className="text-xs text-slate-400 truncate">
+                  <p className="text-sm font-bold text-white truncate">{e.team_name}</p>
+                  <p className="text-xs truncate" style={{ color: text.secondary }}>
                     {e.organization_name} · {e.division_name}
                     {e.event_roster_count ? ` · ${e.event_roster_count} on event roster` : ''}
                   </p>
@@ -270,12 +273,12 @@ export default function TournamentDashboardPage() {
         <SectionHeading>Games</SectionHeading>
         <Card>
         {games.length === 0 ? (
-          <p className="text-xs text-slate-400">No games scheduled yet.</p>
+          <p className="text-xs" style={{ color: text.faint }}>No games scheduled yet.</p>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm min-w-[520px]">
               <thead>
-                <tr className="text-left text-[10px] uppercase tracking-wider text-slate-400 border-b border-slate-100">
+                <tr className="text-left text-[10px] uppercase tracking-wider border-b" style={{ color: text.faint, ...headBorder }}>
                   <th className="py-1.5 pr-3 font-bold">Date</th>
                   <th className="py-1.5 pr-3 font-bold">Division</th>
                   <th className="py-1.5 pr-3 font-bold">Matchup</th>
@@ -284,18 +287,18 @@ export default function TournamentDashboardPage() {
               </thead>
               <tbody>
                 {games.map(g => (
-                  <tr key={g.id} className="border-b border-slate-50">
-                    <td className="py-1.5 pr-3 text-slate-500 whitespace-nowrap">{g.date}{g.time ? ` ${g.time}` : ''}</td>
-                    <td className="py-1.5 pr-3 text-slate-500">{g.division_name}</td>
-                    <td className="py-1.5 pr-3 font-bold text-slate-800">
-                      <Link to={`/teams/${g.home_team_slug}?tournament=${slug}`} className="hover:text-blue-600">{g.home_team_name}</Link>
+                  <tr key={g.id} className="border-b" style={rowBorder}>
+                    <td className="py-1.5 pr-3 whitespace-nowrap" style={{ color: text.secondary }}>{g.date}{g.time ? ` ${g.time}` : ''}</td>
+                    <td className="py-1.5 pr-3" style={{ color: text.secondary }}>{g.division_name}</td>
+                    <td className="py-1.5 pr-3 font-bold text-white">
+                      <Link to={`/teams/${g.home_team_slug}?tournament=${slug}`} className="hover:text-[#38bdf8]">{g.home_team_name}</Link>
                       {' vs '}
-                      <Link to={`/teams/${g.away_team_slug}?tournament=${slug}`} className="hover:text-blue-600">{g.away_team_name}</Link>
+                      <Link to={`/teams/${g.away_team_slug}?tournament=${slug}`} className="hover:text-[#38bdf8]">{g.away_team_name}</Link>
                     </td>
                     <td className="py-1.5 pr-3 text-right whitespace-nowrap">
                       {g.status === 'final' && g.home_score != null
-                        ? <b className="text-slate-900">{g.home_score} – {g.away_score}</b>
-                        : <span className="text-xs uppercase text-slate-300">{g.status}</span>}
+                        ? <b className="text-white">{g.home_score} – {g.away_score}</b>
+                        : <span className="text-xs uppercase" style={{ color: '#475569' }}>{g.status}</span>}
                     </td>
                   </tr>
                 ))}

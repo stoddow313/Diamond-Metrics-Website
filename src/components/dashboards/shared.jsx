@@ -1,17 +1,21 @@
 import { Link } from 'react-router-dom';
 import { Trophy } from 'lucide-react';
 import { fmt } from '../../lib/format';
+import { text, rowBorder, headBorder } from './theme';
 
-// Shared pieces for the Team / Season / Tournament dashboards. All values
-// arrive pre-aggregated from the API; null means unknown and renders as an
-// em dash — never as a zero.
+// Shared pieces for the Team / Season / Tournament dashboards, styled on the
+// core Diamond Metrics dark system. All values arrive pre-aggregated from
+// the API; null means unknown and renders as an em dash — never as a zero.
 
 export function LimitedBadge({ sample, unit }) {
   const label = sample != null
     ? `Limited · ${sample} ${unit === 'games' && sample === 1 ? 'game' : unit || 'games'}`
     : 'Limited sample';
   return (
-    <span className="ml-2 text-[9px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 whitespace-nowrap">
+    <span
+      className="ml-2 text-[9px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded whitespace-nowrap"
+      style={{ backgroundColor: 'rgba(251, 191, 36, 0.14)', color: '#fbbf24' }}
+    >
       {label}
     </span>
   );
@@ -19,27 +23,32 @@ export function LimitedBadge({ sample, unit }) {
 
 export function GuestBadge() {
   return (
-    <span className="ml-2 text-[9px] font-bold uppercase px-1.5 py-0.5 rounded bg-sky-100 text-sky-700">Guest</span>
+    <span
+      className="ml-2 text-[9px] font-bold uppercase px-1.5 py-0.5 rounded"
+      style={{ backgroundColor: 'rgba(56, 189, 248, 0.14)', color: '#7dd3fc' }}
+    >
+      Guest
+    </span>
   );
 }
 
 export function PlayerLink({ slug, name }) {
   return slug
-    ? <Link to={`/p/${slug}`} className="font-bold text-slate-800 hover:text-blue-600">{name}</Link>
-    : <span className="font-bold text-slate-800">{name}</span>;
+    ? <Link to={`/p/${slug}`} className="font-bold hover:underline" style={{ color: text.primary }}>{name}</Link>
+    : <span className="font-bold" style={{ color: text.primary }}>{name}</span>;
 }
 
 // Rank + player + team + position + value + sample — requirements §leaderboards.
 export function LeaderboardTable({ board, showTeam = true }) {
   if (!board || !board.metric || board.rows.length === 0) {
-    return <p className="text-xs text-slate-400">No data logged for this category yet.</p>;
+    return <p className="text-xs" style={{ color: text.faint }}>No data logged for this category yet.</p>;
   }
   const { metric } = board;
   return (
     <div className="overflow-x-auto">
       <table className="w-full text-sm min-w-[460px]">
         <thead>
-          <tr className="text-left text-[10px] uppercase tracking-wider text-slate-400 border-b border-slate-100">
+          <tr className="text-left text-[10px] uppercase tracking-wider border-b" style={{ color: text.faint, ...headBorder }}>
             <th className="py-1.5 pr-2 font-bold w-8">#</th>
             <th className="py-1.5 pr-3 font-bold">Player</th>
             {showTeam && <th className="py-1.5 pr-3 font-bold">Team</th>}
@@ -50,24 +59,24 @@ export function LeaderboardTable({ board, showTeam = true }) {
         </thead>
         <tbody>
           {board.rows.map(r => (
-            <tr key={r.player_id} className="border-b border-slate-50">
-              <td className="py-1.5 pr-2 text-slate-400 font-bold">{r.rank}</td>
+            <tr key={r.player_id} className="border-b" style={rowBorder}>
+              <td className="py-1.5 pr-2 font-bold" style={{ color: text.faint }}>{r.rank}</td>
               <td className="py-1.5 pr-3 whitespace-nowrap">
                 <PlayerLink slug={r.slug} name={r.name} />
                 {r.isGuest && <GuestBadge />}
                 {r.limited && <LimitedBadge sample={r.sample} unit={r.sample_unit} />}
               </td>
-              {showTeam && <td className="py-1.5 pr-3 text-slate-500">{r.team || '—'}</td>}
-              <td className="py-1.5 pr-3 text-slate-500">{r.position || '—'}</td>
-              <td className="py-1.5 pr-3 text-right font-bold text-slate-900">{fmt(r.value, metric)}</td>
-              <td className="py-1.5 pr-3 text-right text-slate-400 text-xs">
+              {showTeam && <td className="py-1.5 pr-3" style={{ color: text.secondary }}>{r.team || '—'}</td>}
+              <td className="py-1.5 pr-3" style={{ color: text.secondary }}>{r.position || '—'}</td>
+              <td className="py-1.5 pr-3 text-right font-bold" style={{ color: text.primary }}>{fmt(r.value, metric)}</td>
+              <td className="py-1.5 pr-3 text-right text-xs" style={{ color: text.faint }}>
                 {r.sample} {r.sample_unit === 'games' && r.sample === 1 ? 'game' : r.sample_unit || 'games'}
               </td>
             </tr>
           ))}
         </tbody>
       </table>
-      <p className="text-[10px] text-slate-400 mt-1.5">
+      <p className="text-[10px] mt-1.5" style={{ color: text.faint }}>
         Qualified at {board.min_sample}+ {board.min_unit || 'games'};
         smaller samples are shown but labeled.{board.note ? ` ${board.note}` : ''}
       </p>
@@ -82,7 +91,7 @@ export function TopPerformerCard({ title, row }) {
   return (
     <div className="rounded-xl p-[2px] shadow-sm" style={{ background: 'linear-gradient(135deg, #e2e8f0 0%, #94a3b8 25%, #f8fafc 50%, #94a3b8 75%, #e2e8f0 100%)' }}>
       <div className="rounded-[10px] px-3.5 py-2.5 h-full" style={{ background: 'linear-gradient(160deg, #0b1f42 0%, #06122b 100%)' }}>
-        <p className="text-[9px] font-bold uppercase tracking-[0.18em]" style={{ color: '#38bdf8' }}>{title}</p>
+        <p className="text-[9px] font-bold uppercase tracking-[0.18em]" style={{ color: text.accent }}>{title}</p>
         <div className="flex items-baseline justify-between gap-3 mt-1">
           <div className="min-w-0">
             {row.slug
@@ -93,11 +102,11 @@ export function TopPerformerCard({ title, row }) {
             </p>
           </div>
           <div className="text-right shrink-0">
-            <p className="text-xl font-black leading-none" style={{ color: '#f8fafc' }}>{fmt(row.value, row.metric)}</p>
-            <p className="text-[9px] uppercase tracking-wide mt-0.5" style={{ color: '#64748b' }}>{row.metric.label}</p>
+            <p className="text-xl font-black leading-none" style={{ color: text.primary }}>{fmt(row.value, row.metric)}</p>
+            <p className="text-[9px] uppercase tracking-wide mt-0.5" style={{ color: text.faint }}>{row.metric.label}</p>
           </div>
         </div>
-        <p className="text-[9px] mt-1" style={{ color: '#64748b' }}>
+        <p className="text-[9px] mt-1" style={{ color: text.faint }}>
           {row.sample} {row.sample_unit === 'games' && row.sample === 1 ? 'game' : row.sample_unit || 'games'}
           {row.limited ? ' · limited sample' : ''}
         </p>
@@ -106,8 +115,8 @@ export function TopPerformerCard({ title, row }) {
   );
 }
 
-// Inline SVG sparkline for season trends. Lightweight on purpose — no
-// charting dependency for a 5-point line.
+// Inline SVG sparkline for season trends. Green/red is reserved for
+// performance direction — exactly the visual-system rule.
 export function Sparkline({ series, width = 220, height = 44, lowerIsBetter = false }) {
   if (!series || series.length < 2) return null;
   const values = series.map(p => p.value);
@@ -119,40 +128,40 @@ export function Sparkline({ series, width = 220, height = 44, lowerIsBetter = fa
     return `${x},${y}`;
   });
   const improving = lowerIsBetter ? values[values.length - 1] <= values[0] : values[values.length - 1] >= values[0];
+  const stroke = improving ? text.good : text.bad;
   return (
     <svg width={width} height={height} className="block" role="img" aria-label="trend">
-      <polyline points={pts.join(' ')} fill="none" stroke={improving ? '#16a34a' : '#dc2626'} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
+      <polyline points={pts.join(' ')} fill="none" stroke={stroke} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
       {pts.map((pt, i) => {
         const [x, y] = pt.split(',');
-        return <circle key={i} cx={x} cy={y} r="2.4" fill={improving ? '#16a34a' : '#dc2626'} />;
+        return <circle key={i} cx={x} cy={y} r="2.4" fill={stroke} />;
       })}
     </svg>
   );
 }
 
 export function CoverageNote({ children }) {
-  return <p className="text-[11px] font-bold text-blue-700">{children}</p>;
+  return <p className="text-[11px] font-bold" style={{ color: text.accent }}>{children}</p>;
 }
 
 export function CalcStamp({ calc }) {
   if (!calc) return null;
   return (
-    <p className="text-[10px] text-slate-400">
+    <p className="text-[10px]" style={{ color: text.faint }}>
       Calculated {new Date(calc.calculated_at).toLocaleString()} · {calc.version} · minimums: {calc.mins.pa} PA / {calc.mins.ip} IP / {calc.mins.samples} games
     </p>
   );
 }
 
 // Section heading — the outside-the-card label pattern every dashboard
-// section uses (uppercase, tracking-wide, optional right-side extra).
-// Inline font/margin so the marketing stylesheet's unlayered
+// section uses. Inline font/margin so the marketing stylesheet's unlayered
 // `section h2 { font-size: 32px }` can't inflate dashboard headings.
 export function SectionHeading({ children, extra }) {
   return (
     <div className="flex items-center gap-3 mb-2">
       <h2
-        className="font-bold uppercase tracking-widest text-slate-500"
-        style={{ fontSize: '0.875rem', lineHeight: 1.25, marginBottom: 0 }}
+        className="font-bold uppercase tracking-widest"
+        style={{ fontSize: '0.875rem', lineHeight: 1.25, marginBottom: 0, color: text.secondary }}
       >
         {children}
       </h2>
@@ -164,6 +173,6 @@ export function SectionHeading({ children, extra }) {
 export function ChampionChip({ name }) {
   if (!name) return null;
   return (
-    <span className="text-xs font-bold text-amber-600"><Trophy size={12} className="inline mr-1" />{name}</span>
+    <span className="text-xs font-bold" style={{ color: '#fbbf24' }}><Trophy size={12} className="inline mr-1" />{name}</span>
   );
 }
