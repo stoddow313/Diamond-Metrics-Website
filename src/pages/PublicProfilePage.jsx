@@ -12,6 +12,7 @@ import { TrendChart, Histogram, DonutChart, RingGauge, SprayChart } from '../com
 import ProDayCardModal from '../components/profile/ProDayCard';
 import PortalEditModal from '../components/profile/PortalEditModal';
 import { getPlayerIntroUrl } from '../data/playerMedia';
+import { pageBg, headerBar, cardStyle, text, rowBorder, headBorder } from '../components/dashboards/theme';
 
 /* ── Metric presentation config ──────────────────────────────────────────── */
 
@@ -64,10 +65,10 @@ function niceDate(iso) {
 
 function Card({ title, action, children, className = '' }) {
   return (
-    <div className={`bg-white rounded-xl border border-slate-200 shadow-sm p-4 ${className}`}>
+    <div className={`rounded-xl border p-4 ${className}`} style={cardStyle}>
       {(title || action) && (
         <div className="flex items-center justify-between mb-3">
-          {title && <p className="text-[11px] font-bold uppercase tracking-widest text-slate-500">{title}</p>}
+          {title && <p className="text-[11px] font-bold uppercase tracking-widest" style={{ color: text.secondary }}>{title}</p>}
           {action}
         </div>
       )}
@@ -79,8 +80,8 @@ function Card({ title, action, children, className = '' }) {
 // Uniform-height chart panel so cards in the same grid row line up cleanly.
 function ChartCard({ title, children }) {
   return (
-    <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-4 flex flex-col">
-      <p className="text-[11px] font-bold uppercase tracking-widest text-slate-500 mb-2 leading-snug">{title}</p>
+    <div className="rounded-xl border p-4 flex flex-col" style={cardStyle}>
+      <p className="text-[11px] font-bold uppercase tracking-widest mb-2 leading-snug" style={{ color: text.secondary }}>{title}</p>
       <div className="flex-1 min-h-[170px] flex flex-col items-center justify-center">
         {children}
       </div>
@@ -112,16 +113,16 @@ function MetricCardGrid({ metrics }) {
 function KeyMetricCard({ metric }) {
   const Icon = METRIC_ICONS[metric.key] || Activity;
   return (
-    <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-2.5 flex items-center gap-2">
-      <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 bg-blue-50">
-        <Icon size={16} className="text-blue-600" />
+    <div className="rounded-xl border p-2.5 flex items-center gap-2" style={cardStyle}>
+      <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0" style={{ backgroundColor: 'rgba(56, 189, 248, 0.12)' }}>
+        <Icon size={16} style={{ color: text.accent }} />
       </div>
       <div className="min-w-0">
-        <p className="text-lg font-extrabold text-slate-900 leading-none whitespace-nowrap">
+        <p className="text-lg font-extrabold text-white leading-none whitespace-nowrap">
           {fmt(metric.headline, metric)}
-          {metric.unit && <span className="text-[9px] font-bold text-slate-400 ml-1">{metric.unit}</span>}
+          {metric.unit && <span className="text-[9px] font-bold ml-1" style={{ color: text.faint }}>{metric.unit}</span>}
         </p>
-        <p className="text-[9px] font-bold uppercase tracking-wider text-slate-400 mt-1 leading-tight">{metric.label}</p>
+        <p className="text-[9px] font-bold uppercase tracking-wider mt-1 leading-tight" style={{ color: text.faint }}>{metric.label}</p>
       </div>
     </div>
   );
@@ -130,10 +131,10 @@ function KeyMetricCard({ metric }) {
 function EmptyPanel({ icon, title, note }) {
   const Icon = icon;
   return (
-    <div className="bg-white rounded-xl border border-slate-200 shadow-sm p-8 text-center">
-      <Icon size={28} className="mx-auto text-slate-300" />
-      <p className="text-sm font-bold text-slate-700 mt-3">{title}</p>
-      <p className="text-xs text-slate-400 mt-1 max-w-sm mx-auto">{note}</p>
+    <div className="rounded-xl border p-8 text-center" style={cardStyle}>
+      <Icon size={28} className="mx-auto" style={{ color: '#334155' }} />
+      <p className="text-sm font-bold mt-3" style={{ color: text.body }}>{title}</p>
+      <p className="text-xs mt-1 max-w-sm mx-auto" style={{ color: text.secondary }}>{note}</p>
     </div>
   );
 }
@@ -143,17 +144,17 @@ function RecentActivity({ games, onViewAll }) {
   return (
     <Card title="Recent Activity">
       {recent.length === 0 ? (
-        <p className="text-xs text-slate-400">No events logged yet.</p>
+        <p className="text-xs" style={{ color: text.faint }}>No events logged yet.</p>
       ) : (
         <div className="flex flex-col gap-3">
           {recent.map(g => (
             <div key={g.id} className="flex items-start gap-2.5">
-              <div className="w-6 h-6 rounded-full bg-slate-100 flex items-center justify-center shrink-0 mt-0.5">
-                <User size={12} className="text-slate-400" />
+              <div className="w-6 h-6 rounded-full flex items-center justify-center shrink-0 mt-0.5" style={{ backgroundColor: 'rgba(30, 41, 59, 0.9)' }}>
+                <User size={12} style={{ color: '#64748b' }} />
               </div>
               <div className="min-w-0">
-                <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400">{niceDate(g.game_date)}</p>
-                <p className="text-xs font-bold text-slate-800 truncate">{g.opponent || typeLabel(g.game_type)}</p>
+                <p className="text-[10px] font-bold uppercase tracking-wider" style={{ color: text.faint }}>{niceDate(g.game_date)}</p>
+                <p className="text-xs font-bold text-white truncate">{g.opponent || typeLabel(g.game_type)}</p>
               </div>
             </div>
           ))}
@@ -161,7 +162,8 @@ function RecentActivity({ games, onViewAll }) {
       )}
       <button
         onClick={onViewAll}
-        className="w-full mt-4 py-2 rounded-lg border border-slate-200 text-[11px] font-bold uppercase tracking-wider text-slate-600 hover:bg-slate-50 cursor-pointer"
+        className="w-full mt-4 py-2 rounded-lg border text-[11px] font-bold uppercase tracking-wider cursor-pointer hover:bg-slate-800"
+        style={{ borderColor: '#334155', color: text.body }}
       >
         View All Activity
       </button>
@@ -210,7 +212,7 @@ function TrendCard({ metric }) {
       {metric.series.length > 1 ? (
         <TrendChart series={metric.series} decimals={metric.decimals} />
       ) : (
-        <p className="text-xs text-slate-400 text-center px-4">
+        <p className="text-xs text-center px-4" style={{ color: text.secondary }}>
           One entry so far ({fmt(metric.headline, metric)}{metric.unit && ` ${metric.unit}`}) — trend appears after the next logged game.
         </p>
       )}
@@ -235,7 +237,7 @@ function GameLogTable({ games, metrics, categoryMetrics }) {
     <Card title="Game Log" className="overflow-x-auto">
       <table className="w-full text-xs min-w-[520px]">
         <thead>
-          <tr className="text-left text-[10px] uppercase tracking-wider text-slate-400 border-b border-slate-100">
+          <tr className="text-left text-[10px] uppercase tracking-wider border-b" style={{ color: text.faint, ...headBorder }}>
             <th className="py-2 pr-3 font-bold">Date</th>
             <th className="py-2 pr-3 font-bold">Event</th>
             {cols.map(m => <th key={m.key} className="py-2 pr-3 font-bold text-right">{m.label}</th>)}
@@ -243,12 +245,12 @@ function GameLogTable({ games, metrics, categoryMetrics }) {
         </thead>
         <tbody>
           {rows.map(g => (
-            <tr key={g.id} className="border-b border-slate-50">
-              <td className="py-2 pr-3 text-slate-500 whitespace-nowrap">{niceDate(g.game_date)}</td>
-              <td className="py-2 pr-3 font-bold text-slate-700">{g.opponent || typeLabel(g.game_type)}</td>
+            <tr key={g.id} className="border-b" style={rowBorder}>
+              <td className="py-2 pr-3 whitespace-nowrap" style={{ color: text.secondary }}>{niceDate(g.game_date)}</td>
+              <td className="py-2 pr-3 font-bold" style={{ color: text.body }}>{g.opponent || typeLabel(g.game_type)}</td>
               {cols.map(m => {
                 const v = valueByGameAndKey[`${g.id}:${m.key}`];
-                return <td key={m.key} className="py-2 pr-3 text-right font-bold text-slate-900">{v === undefined ? '—' : fmt(v, m)}</td>;
+                return <td key={m.key} className="py-2 pr-3 text-right font-bold text-white">{v === undefined ? '—' : fmt(v, m)}</td>;
               })}
             </tr>
           ))}
@@ -289,7 +291,7 @@ function CategoryTab({ categoryKey, data, extras = null }) {
       )}
       <GameLogTable games={games} metrics={metrics} categoryMetrics={categoryMetrics} />
       {missing.length > 0 && (
-        <p className="text-[11px] text-slate-400">
+        <p className="text-[11px]" style={{ color: text.faint }}>
           Not yet captured: {missing.map(m => m.label).join(' · ')}
         </p>
       )}
@@ -333,10 +335,10 @@ function PitchingExtras() {
   return (
     <div className="grid sm:grid-cols-2 gap-4">
       <ChartCard title="Pitch Mix">
-        <p className="text-xs text-slate-400 text-center px-4">Pitch-type tracking is coming soon — mix breakdown will appear here.</p>
+        <p className="text-xs text-center px-4" style={{ color: text.secondary }}>Pitch-type tracking is coming soon — mix breakdown will appear here.</p>
       </ChartCard>
       <ChartCard title="Strike Zone Heat Map">
-        <p className="text-xs text-slate-400 text-center px-4">Zone-level location data is coming soon — the heat map will appear here.</p>
+        <p className="text-xs text-center px-4" style={{ color: text.secondary }}>Zone-level location data is coming soon — the heat map will appear here.</p>
       </ChartCard>
     </div>
   );
@@ -392,7 +394,7 @@ function OverviewTab({ data, heroMetrics, onViewAll }) {
       <div className="flex flex-col gap-4 min-w-0">
         {heroMetrics.length > 0 ? (
           <div>
-            <p className="text-[11px] font-bold uppercase tracking-widest text-slate-500 mb-2">Key Metrics</p>
+            <p className="text-[11px] font-bold uppercase tracking-widest mb-2" style={{ color: text.secondary }}>Key Metrics</p>
             <MetricCardGrid metrics={heroMetrics} />
           </div>
         ) : (
@@ -444,10 +446,10 @@ function TeamsAndEvents({ data }) {
           <div className="flex flex-col gap-2.5">
             {teams.map((t, i) => (
               <div key={i}>
-                <Link to={`/teams/${t.team_slug}`} className="text-xs font-bold text-slate-800 hover:text-blue-600">
+                <Link to={`/teams/${t.team_slug}`} className="text-xs font-bold text-white hover:text-[#38bdf8]">
                   {t.team_name}
                 </Link>
-                <p className="text-[10px] text-slate-400">
+                <p className="text-[10px]" style={{ color: text.faint }}>
                   {[t.season_label, t.jersey ? `#${t.jersey}` : '', t.status === 'archived' ? 'former' : ''].filter(Boolean).join(' · ') || `${t.start_date} →`}
                 </p>
               </div>
@@ -463,15 +465,15 @@ function TeamsAndEvents({ data }) {
               const label = (
                 <>
                   {t.tournament_name}
-                  {t.is_guest ? <span className="ml-1.5 text-[9px] font-bold uppercase px-1 py-0.5 rounded bg-amber-100 text-amber-700">Guest</span> : null}
+                  {t.is_guest ? <span className="ml-1.5 text-[9px] font-bold uppercase px-1 py-0.5 rounded" style={{ backgroundColor: 'rgba(251, 191, 36, 0.14)', color: '#fbbf24' }}>Guest</span> : null}
                 </>
               );
               return (
                 <div key={i}>
                   {isPublic
-                    ? <Link to={`/tournaments/${t.tournament_slug}`} className="text-xs font-bold text-slate-800 hover:text-blue-600">{label}</Link>
-                    : <span className="text-xs font-bold text-slate-800">{label}</span>}
-                  <p className="text-[10px] text-slate-400">with {t.team_name} · {t.division_name} · {t.start_date}</p>
+                    ? <Link to={`/tournaments/${t.tournament_slug}`} className="text-xs font-bold text-white hover:text-[#38bdf8]">{label}</Link>
+                    : <span className="text-xs font-bold text-white">{label}</span>}
+                  <p className="text-[10px]" style={{ color: text.faint }}>with {t.team_name} · {t.division_name} · {t.start_date}</p>
                 </div>
               );
             })}
@@ -506,14 +508,14 @@ function GameSummaryTab({ data }) {
     <div className="flex flex-col gap-4">
       {/* Season totals */}
       <div>
-        <p className="text-[11px] font-bold uppercase tracking-widest text-slate-500 mb-2">
+        <p className="text-[11px] font-bold uppercase tracking-widest mb-2" style={{ color: text.secondary }}>
           Season Totals · {rows.length} game{rows.length === 1 ? '' : 's'}
         </p>
         <div className="grid gap-3 grid-cols-3 sm:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8">
           {boxMetrics.map(m => (
-            <div key={m.key} className="bg-white rounded-xl border border-slate-200 shadow-sm p-2.5 text-center">
-              <p className="text-lg font-extrabold text-slate-900 leading-none">{fmt(m.headline, m)}</p>
-              <p className="text-[9px] font-bold uppercase tracking-wider text-slate-400 mt-1 leading-tight" title={m.label}>{m.short}</p>
+            <div key={m.key} className="rounded-xl border p-2.5 text-center" style={cardStyle}>
+              <p className="text-lg font-extrabold text-white leading-none">{fmt(m.headline, m)}</p>
+              <p className="text-[9px] font-bold uppercase tracking-wider mt-1 leading-tight" style={{ color: text.faint }} title={m.label}>{m.short}</p>
             </div>
           ))}
         </div>
@@ -523,7 +525,7 @@ function GameSummaryTab({ data }) {
       <Card title="Box Scores" className="overflow-x-auto">
         <table className="w-full text-xs" style={{ minWidth: 120 + boxMetrics.length * 44 }}>
           <thead>
-            <tr className="text-left text-[10px] uppercase tracking-wider text-slate-400 border-b border-slate-100">
+            <tr className="text-left text-[10px] uppercase tracking-wider border-b" style={{ color: text.faint, ...headBorder }}>
               <th className="py-2 pr-3 font-bold">Date</th>
               <th className="py-2 pr-3 font-bold">Event</th>
               {boxMetrics.map(m => (
@@ -533,14 +535,14 @@ function GameSummaryTab({ data }) {
           </thead>
           <tbody>
             {rows.map(g => (
-              <tr key={g.id} className="border-b border-slate-50">
-                <td className="py-2 pr-3 text-slate-500 whitespace-nowrap">{niceDate(g.game_date)}</td>
-                <td className="py-2 pr-3 font-bold text-slate-700 whitespace-nowrap">{g.opponent || typeLabel(g.game_type)}</td>
+              <tr key={g.id} className="border-b" style={rowBorder}>
+                <td className="py-2 pr-3 whitespace-nowrap" style={{ color: text.secondary }}>{niceDate(g.game_date)}</td>
+                <td className="py-2 pr-3 font-bold whitespace-nowrap" style={{ color: text.body }}>{g.opponent || typeLabel(g.game_type)}</td>
                 {boxMetrics.map(m => {
                   const v = valueByGameAndKey[`${g.id}:${m.key}`];
                   return (
-                    <td key={m.key} className="py-2 px-1.5 text-right font-bold text-slate-900">
-                      {v === undefined ? <span className="text-slate-300 font-normal">—</span> : fmt(v, m)}
+                    <td key={m.key} className="py-2 px-1.5 text-right font-bold text-white">
+                      {v === undefined ? <span className="font-normal" style={{ color: '#475569' }}>—</span> : fmt(v, m)}
                     </td>
                   );
                 })}
@@ -548,10 +550,10 @@ function GameSummaryTab({ data }) {
             ))}
           </tbody>
           <tfoot>
-            <tr className="border-t-2 border-slate-200">
-              <td className="py-2 pr-3 text-[10px] font-bold uppercase tracking-wider text-slate-400" colSpan={2}>Totals</td>
+            <tr className="border-t-2" style={{ borderColor: '#1e3a5f' }}>
+              <td className="py-2 pr-3 text-[10px] font-bold uppercase tracking-wider" style={{ color: text.faint }} colSpan={2}>Totals</td>
               {boxMetrics.map(m => (
-                <td key={m.key} className="py-2 px-1.5 text-right font-extrabold text-blue-700">{fmt(m.headline, m)}</td>
+                <td key={m.key} className="py-2 px-1.5 text-right font-extrabold" style={{ color: text.accent }}>{fmt(m.headline, m)}</td>
               ))}
             </tr>
           </tfoot>
@@ -570,16 +572,16 @@ function DevelopmentTab({ games }) {
     <Card title="Development Timeline">
       <div className="flex flex-col">
         {rows.map((g, i) => (
-          <div key={g.id} className={`flex items-start gap-3 py-3 ${i > 0 ? 'border-t border-slate-100' : ''}`}>
-            <div className="w-7 h-7 rounded-full bg-blue-50 flex items-center justify-center shrink-0 mt-0.5">
-              <Activity size={13} className="text-blue-600" />
+          <div key={g.id} className={`flex items-start gap-3 py-3 ${i > 0 ? 'border-t' : ''}`} style={i > 0 ? { borderColor: 'rgba(30, 58, 95, 0.45)' } : undefined}>
+            <div className="w-7 h-7 rounded-full flex items-center justify-center shrink-0 mt-0.5" style={{ backgroundColor: 'rgba(56, 189, 248, 0.12)' }}>
+              <Activity size={13} style={{ color: text.accent }} />
             </div>
             <div className="min-w-0">
-              <p className="text-sm font-bold text-slate-800">{g.opponent || typeLabel(g.game_type)}</p>
-              <p className="text-[11px] text-slate-400">
+              <p className="text-sm font-bold text-white">{g.opponent || typeLabel(g.game_type)}</p>
+              <p className="text-[11px]" style={{ color: text.faint }}>
                 {niceDate(g.game_date)} · {typeLabel(g.game_type)}{g.location ? ` · ${g.location}` : ''}
               </p>
-              {g.notes && <p className="text-xs text-slate-600 mt-1">{g.notes}</p>}
+              {g.notes && <p className="text-xs mt-1" style={{ color: text.body }}>{g.notes}</p>}
             </div>
           </div>
         ))}
@@ -593,9 +595,9 @@ function VideoTab() {
     <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
       {VIDEO_CATEGORIES.map(cat => (
         <Card key={cat} title={cat}>
-          <div className="rounded-lg bg-slate-100 aspect-video flex flex-col items-center justify-center">
-            <Play size={24} className="text-slate-300" />
-            <p className="text-[11px] text-slate-400 mt-2">No videos uploaded yet</p>
+          <div className="rounded-lg aspect-video flex flex-col items-center justify-center" style={{ backgroundColor: 'rgba(30, 41, 59, 0.7)' }}>
+            <Play size={24} style={{ color: '#475569' }} />
+            <p className="text-[11px] mt-2" style={{ color: text.faint }}>No videos uploaded yet</p>
           </div>
         </Card>
       ))}
@@ -609,12 +611,12 @@ function ReportsTab({ playerName }) {
       {REPORT_TYPES.map(r => (
         <Card key={r}>
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-lg bg-blue-50 flex items-center justify-center shrink-0">
-              <FileText size={18} className="text-blue-600" />
+            <div className="w-10 h-10 rounded-lg flex items-center justify-center shrink-0" style={{ backgroundColor: 'rgba(56, 189, 248, 0.12)' }}>
+              <FileText size={18} style={{ color: text.accent }} />
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-bold text-slate-800">{r}</p>
-              <p className="text-[11px] text-slate-400">Compiled from {playerName}'s logged data — coming soon.</p>
+              <p className="text-sm font-bold text-white">{r}</p>
+              <p className="text-[11px]" style={{ color: text.faint }}>Compiled from {playerName}'s logged data — coming soon.</p>
             </div>
           </div>
         </Card>
@@ -810,15 +812,15 @@ export default function PublicProfilePage({ portal = false }) {
 
   if (error) {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center gap-4 bg-slate-100">
+      <div className="min-h-screen flex flex-col items-center justify-center gap-4" style={pageBg}>
         <BrandMark />
-        <p className="text-slate-700">{error}</p>
-        <Link to="/" className="text-sm text-blue-600 hover:underline">Diamond Metrics home</Link>
+        <p style={{ color: text.body }}>{error}</p>
+        <Link to="/" className="text-sm hover:underline" style={{ color: text.accent }}>Diamond Metrics home</Link>
       </div>
     );
   }
   if (!data) {
-    return <div className="min-h-screen flex items-center justify-center bg-slate-100"><p className="text-slate-400">Loading profile…</p></div>;
+    return <div className="min-h-screen flex items-center justify-center" style={pageBg}><p style={{ color: text.secondary }}>Loading profile…</p></div>;
   }
 
   const { player } = data;
@@ -827,19 +829,20 @@ export default function PublicProfilePage({ portal = false }) {
   const shareBody = encodeURIComponent(`Check out ${playerName}'s Diamond Metrics profile: ${window.location.origin}/p/${player.slug}`);
 
   return (
-    <div className="min-h-screen pb-10" style={{ backgroundColor: '#eef2f7' }}>
+    <div className="min-h-screen pb-10" style={pageBg}>
       {/* Site header */}
-      <header className="border-b border-slate-200 bg-white">
+      <header className="border-b" style={headerBar}>
         <div className="max-w-[1400px] mx-auto px-4 md:px-6 py-3 flex items-center justify-between gap-3">
-          <Link to="/" className="min-w-0"><BrandMark dark /></Link>
+          <Link to="/" className="min-w-0"><BrandMark /></Link>
           <div className="flex items-center gap-2 shrink-0">
             {portal && (
-              <span className="hidden sm:inline text-xs font-bold text-slate-400 uppercase tracking-wider mr-1">My Profile</span>
+              <span className="hidden sm:inline text-xs font-bold uppercase tracking-wider mr-1" style={{ color: text.faint }}>My Profile</span>
             )}
             {portal && (
               <button
                 onClick={() => setEditOpen(true)}
-                className="text-xs font-bold px-3.5 py-2 rounded-lg border border-blue-600 text-blue-600 hover:bg-blue-50 cursor-pointer whitespace-nowrap"
+                className="text-xs font-bold px-3.5 py-2 rounded-lg border cursor-pointer whitespace-nowrap hover:bg-slate-800"
+                style={{ borderColor: text.accent, color: text.accent }}
               >
                 Edit profile
               </button>
@@ -847,7 +850,8 @@ export default function PublicProfilePage({ portal = false }) {
             {(!portal || data.is_public) && (
               <button
                 onClick={copyLink}
-                className="flex items-center gap-2 text-xs font-bold px-3.5 py-2 rounded-lg bg-blue-600 text-white hover:bg-blue-700 cursor-pointer whitespace-nowrap"
+                className="flex items-center gap-2 text-xs font-bold px-3.5 py-2 rounded-lg cursor-pointer whitespace-nowrap"
+                style={{ backgroundColor: text.accent, color: '#06122b' }}
               >
                 <Share2 size={13} /> {copied ? 'Link copied ✓' : 'Share profile'}
               </button>
@@ -855,7 +859,8 @@ export default function PublicProfilePage({ portal = false }) {
             {portal && (
               <button
                 onClick={handleSignOut}
-                className="text-xs font-bold px-3.5 py-2 rounded-lg border border-slate-300 text-slate-600 hover:bg-slate-50 cursor-pointer whitespace-nowrap"
+                className="text-xs font-bold px-3.5 py-2 rounded-lg border cursor-pointer whitespace-nowrap hover:bg-slate-800"
+                style={{ borderColor: '#334155', color: text.body }}
               >
                 Sign out
               </button>
@@ -872,13 +877,15 @@ export default function PublicProfilePage({ portal = false }) {
               <div className="mt-3 flex flex-col gap-2">
                 <button
                   onClick={() => openCard(false)}
-                  className="w-full py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold cursor-pointer"
+                  className="w-full py-2.5 rounded-xl text-sm font-bold cursor-pointer"
+                  style={{ backgroundColor: text.accent, color: '#06122b' }}
                 >
                   View Pro Day Card
                 </button>
                 <button
                   onClick={() => openCard(true)}
-                  className="w-full py-2.5 rounded-xl border border-slate-300 text-slate-700 text-sm font-bold cursor-pointer hover:bg-white"
+                  className="w-full py-2.5 rounded-xl border text-sm font-bold cursor-pointer hover:bg-slate-800"
+                  style={{ borderColor: '#334155', color: text.body }}
                 >
                   Share Card
                 </button>
@@ -888,31 +895,31 @@ export default function PublicProfilePage({ portal = false }) {
 
           <div className="min-w-0">
             {/* Tab bar */}
-            <div className="bg-white rounded-xl border border-slate-200 shadow-sm mb-4 flex items-center">
+            <div className="rounded-xl border mb-4 flex items-center" style={cardStyle}>
               <nav className="flex-1 min-w-0 flex overflow-x-auto no-scrollbar px-2">
                 {TABS.map(t => (
                   <button
                     key={t.key}
                     onClick={() => selectTab(t.key)}
                     className={`px-3.5 py-3 text-[11px] font-bold uppercase tracking-wider whitespace-nowrap cursor-pointer border-b-2 transition-colors ${
-                      tab === t.key ? 'border-blue-600 text-blue-600' : 'border-transparent text-slate-500 hover:text-slate-800'
+                      tab === t.key ? 'border-[#38bdf8] text-[#38bdf8]' : 'border-transparent text-[#94a3b8] hover:text-white'
                     }`}
                   >
                     {t.label}
                   </button>
                 ))}
               </nav>
-              <div className="hidden xl:flex items-center gap-1 px-2 border-l border-slate-100 text-slate-400 shrink-0 self-stretch">
+              <div className="hidden xl:flex items-center gap-1 px-2 border-l shrink-0 self-stretch" style={{ borderColor: 'rgba(30, 58, 95, 0.8)', color: '#64748b' }}>
                 <a
                   href={`mailto:?subject=${shareSubject}&body=${shareBody}`}
-                  className="p-1.5 rounded hover:bg-slate-100 hover:text-slate-600 self-center" title="Email this profile"
+                  className="p-1.5 rounded hover:bg-slate-800 hover:text-white self-center" title="Email this profile"
                 >
                   <Mail size={15} />
                 </a>
-                <button onClick={copyLink} className="p-1.5 rounded hover:bg-slate-100 hover:text-slate-600 cursor-pointer self-center" title="Copy link">
+                <button onClick={copyLink} className="p-1.5 rounded hover:bg-slate-800 hover:text-white cursor-pointer self-center" title="Copy link">
                   <Bell size={15} />
                 </button>
-                <button className="p-1.5 rounded hover:bg-slate-100 hover:text-slate-600 cursor-pointer self-center" title="More">
+                <button className="p-1.5 rounded hover:bg-slate-800 hover:text-white cursor-pointer self-center" title="More">
                   <MoreHorizontal size={15} />
                 </button>
               </div>

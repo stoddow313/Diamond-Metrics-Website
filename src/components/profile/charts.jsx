@@ -1,9 +1,9 @@
 // Lightweight pure-SVG chart primitives for the public player profile.
 // All charts are deterministic (no Math.random at render) so profiles are stable.
 
-const BLUE = '#2563eb';
+const BLUE = '#38bdf8';
 const LIGHT_BLUE = '#60a5fa';
-const GRID = '#e2e8f0';
+const GRID = 'rgba(148, 163, 184, 0.18)';
 const MUTED = '#94a3b8';
 
 function monthLabel(iso) {
@@ -95,7 +95,7 @@ export function Histogram({ buckets, height = 130 }) {
             <rect x={bx} y={by} width={bw * 0.64} height={Math.max(bh, b.count ? 2 : 0)} rx="3"
               fill={i === modal ? '#ef4444' : BLUE} opacity={b.count ? 1 : 0.15} />
             {b.count > 0 && (
-              <text x={bx + bw * 0.32} y={by - 5} textAnchor="middle" fontSize="9" fontWeight="700" fill="#0f172a">{pct}%</text>
+              <text x={bx + bw * 0.32} y={by - 5} textAnchor="middle" fontSize="9" fontWeight="700" fill="#f8fafc">{pct}%</text>
             )}
             <text x={padL + i * bw + bw / 2} y={h - 12} textAnchor="middle" fontSize="8" fill={MUTED}>{b.label}</text>
           </g>
@@ -130,14 +130,14 @@ export function DonutChart({ segments, centerTop, centerBottom, size = 130 }) {
             transform="rotate(-90 60 60)" />
         ))}
         <text x={cx} y={cy - 3} textAnchor="middle" fontSize="10" fill={MUTED} fontWeight="600">{centerTop}</text>
-        <text x={cx} y={cy + 13} textAnchor="middle" fontSize="15" fontWeight="800" fill="#0f172a">{centerBottom}</text>
+        <text x={cx} y={cy + 13} textAnchor="middle" fontSize="15" fontWeight="800" fill="#f8fafc">{centerBottom}</text>
       </svg>
       <div className="flex flex-col gap-1.5 text-xs">
         {segments.map(s => (
           <div key={s.label} className="flex items-center gap-2">
             <span className="w-2.5 h-2.5 rounded-sm shrink-0" style={{ backgroundColor: s.color }} />
-            <span className="text-slate-500 w-16">{s.label}</span>
-            <span className="font-bold text-slate-800">{Math.round(s.pct)}%</span>
+            <span className="w-16" style={{ color: '#94a3b8' }}>{s.label}</span>
+            <span className="font-bold" style={{ color: '#f8fafc' }}>{Math.round(s.pct)}%</span>
           </div>
         ))}
       </div>
@@ -155,7 +155,7 @@ export function RingGauge({ label, value }) {
         <circle cx="30" cy="30" r={r} fill="none" stroke={GRID} strokeWidth="5" />
         <circle cx="30" cy="30" r={r} fill="none" stroke={BLUE} strokeWidth="5"
           strokeDasharray={`${(pct / 100) * c} ${c}`} strokeLinecap="round" transform="rotate(-90 30 30)" />
-        <text x="30" y="35" textAnchor="middle" fontSize="15" fontWeight="800" fill="#0f172a">{value ?? '—'}</text>
+        <text x="30" y="35" textAnchor="middle" fontSize="15" fontWeight="800" fill="#f8fafc">{value ?? '—'}</text>
       </svg>
       <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400">{label}</span>
     </div>
@@ -236,7 +236,7 @@ export function SprayChart({ pullPct, middlePct, oppoPct, bats, seed = 7 }) {
       </svg>
       <div className="flex justify-center gap-4 mt-1">
         {legend.map(l => (
-          <span key={l.label} className="flex items-center gap-1.5 text-[10px] font-bold text-slate-500">
+          <span key={l.label} className="flex items-center gap-1.5 text-[10px] font-bold" style={{ color: '#94a3b8' }}>
             <span className="w-2 h-2 rounded-full" style={{ backgroundColor: l.color }} />
             {l.label} {Math.round(l.pct)}%
           </span>
