@@ -6,10 +6,13 @@ import { fmt } from '../../lib/format';
 // arrive pre-aggregated from the API; null means unknown and renders as an
 // em dash — never as a zero.
 
-export function LimitedBadge() {
+export function LimitedBadge({ sample, unit }) {
+  const label = sample != null
+    ? `Limited · ${sample} ${unit === 'games' && sample === 1 ? 'game' : unit || 'games'}`
+    : 'Limited sample';
   return (
     <span className="ml-2 text-[9px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 whitespace-nowrap">
-      Limited sample
+      {label}
     </span>
   );
 }
@@ -52,20 +55,20 @@ export function LeaderboardTable({ board, showTeam = true }) {
               <td className="py-1.5 pr-3 whitespace-nowrap">
                 <PlayerLink slug={r.slug} name={r.name} />
                 {r.isGuest && <GuestBadge />}
-                {r.limited && <LimitedBadge />}
+                {r.limited && <LimitedBadge sample={r.sample} unit={r.sample_unit} />}
               </td>
               {showTeam && <td className="py-1.5 pr-3 text-slate-500">{r.team || '—'}</td>}
               <td className="py-1.5 pr-3 text-slate-500">{r.position || '—'}</td>
               <td className="py-1.5 pr-3 text-right font-bold text-slate-900">{fmt(r.value, metric)}</td>
               <td className="py-1.5 pr-3 text-right text-slate-400 text-xs">
-                {r.sample}{board.category === 'hitting' ? ' PA' : board.category === 'pitching' && metric.key === 'k_bb_pitching' ? ' IP' : ' games'}
+                {r.sample} {r.sample_unit === 'games' && r.sample === 1 ? 'game' : r.sample_unit || 'games'}
               </td>
             </tr>
           ))}
         </tbody>
       </table>
       <p className="text-[10px] text-slate-400 mt-1.5">
-        Qualified at {board.min_sample}+ {board.category === 'hitting' ? 'PA' : board.category === 'pitching' && metric.key === 'k_bb_pitching' ? 'IP' : 'games'};
+        Qualified at {board.min_sample}+ {board.min_unit || 'games'};
         smaller samples are shown but labeled.{board.note ? ` ${board.note}` : ''}
       </p>
     </div>
@@ -95,7 +98,8 @@ export function TopPerformerCard({ title, row }) {
           </div>
         </div>
         <p className="text-[9px] mt-1" style={{ color: '#64748b' }}>
-          {row.sample} {row.metric.key === 'ops' || row.metric.key === 'avg' ? 'PA' : 'games'}{row.limited ? ' · limited sample' : ''}
+          {row.sample} {row.sample_unit === 'games' && row.sample === 1 ? 'game' : row.sample_unit || 'games'}
+          {row.limited ? ' · limited sample' : ''}
         </p>
       </div>
     </div>

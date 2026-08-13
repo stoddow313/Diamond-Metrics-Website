@@ -14,7 +14,7 @@
 // - Every apply writes an import_audits row (uploader, file, counts, report).
 
 import { slugify } from './rosterLogic.js';
-import { VALID_METRIC_KEYS, GAME_TYPES } from './metricCatalog.js';
+import { VALID_METRIC_KEYS, ZERO_UNMEASURED_KEYS, GAME_TYPES } from './metricCatalog.js';
 
 export const IMPORT_KINDS = {
   teams: {
@@ -353,16 +353,26 @@ const processors = {
     if (!playerId) return { action: 'error', message: `Unknown player ${norm(row.first_name)} ${norm(row.last_name)} — metrics never create players` };
 
     // Metric columns: anything matching a catalog key after normalization.
+    // A literal 0 in a zero-impossible metric (0 mph, 0% strike, 0s time)
+    // means "not measured" — spreadsheets often pre-fill zeros for players
+    // who didn't participate. Skip with a visible warning, never store.
     const stats = {};
+    const zeroSkipped = [];
     for (const [key, value] of Object.entries(row)) {
       const k = normKey(key);
       if (VALID_METRIC_KEYS.has(k) && norm(value) !== '') {
         const num = Number(value);
         if (!Number.isFinite(num)) return { action: 'error', message: `"${key}" is not a number (${value})` };
+        if (num === 0 && ZERO_UNMEASURED_KEYS.has(k)) { zeroSkipped.push(k); continue; }
         stats[k] = num;
       }
     }
-    if (Object.keys(stats).length === 0) return { action: 'error', message: 'no metric values in row' };
+    const zeroWarning = zeroSkipped.length
+      ? ` — warning: ${zeroSkipped.join(', ')} = 0 treated as not measured (leave blank to omit)`
+      : '';
+    if (Object.keys(stats).length === 0) {
+      return { action: 'error', message: `no metric values in row${zeroWarning}` };
+    }
 
     const rawType = normKey(row.game_type);
     const type = rawType ? (GAME_TYPES.includes(rawType) ? rawType : null) : 'game';
@@ -386,8 +396,8 @@ const processors = {
       for (const [k, v] of Object.entries(stats)) upsert.run(gameId, k, v);
     }
     return existing
-      ? { action: 'update', message: `Updates ${Object.keys(stats).length} metric(s) on existing ${date} record` }
-      : { action: 'create', message: `Creates ${date} ${type} record with ${Object.keys(stats).length} metric(s)` };
+      ? { action: 'update', message: `Updates ${Object.keys(stats).length} metric(s) on existing ${date} record${zeroWarning}` }
+      : { action: 'create', message: `Creates ${date} ${type} record with ${Object.keys(stats).length} metric(s)${zeroWarning}` };
   },
 };
 

@@ -5,12 +5,13 @@ import path from 'node:path';
 import { db, hashPassword, verifyPassword, newSlug, UPLOADS_DIR } from './db.js';
 import {
   METRICS, CATEGORIES, ATTRIBUTES, GAME_TYPES,
-  VALID_METRIC_KEYS, heroSetForPosition, positionGroup,
+  VALID_METRIC_KEYS, ZERO_UNMEASURED_KEYS, heroSetForPosition, positionGroup,
 } from './metricCatalog.js';
 import { computeRatings } from './ratingEngine.js';
 import { resolveEventRoster, slugify } from './rosterLogic.js';
 import { IMPORT_KINDS, planImport, applyImport } from './importEngine.js';
 import { deletePlayers } from './playerDelete.js';
+import { findInvalidZeroEntries, excludeInvalidZeroEntries, summarizeZeroReport } from './zeroCleanup.js';
 import {
   attributedGames, aggregateByPlayer, teamCategoryBlocks, standings,
   leaderboard, overallLeaderboard, trendSeries, calcStamp, DEFAULT_MINS,
@@ -382,11 +383,19 @@ app.put('/api/games/:id/stats', requireAdmin, (req, res) => {
   );
   const clear = db.prepare('DELETE FROM stat_entries WHERE game_id = ? AND metric_key = ?');
 
+  const zeroTreatedAsUnmeasured = [];
   const apply = db.transaction(() => {
     for (const [key, raw] of Object.entries(stats)) {
       if (raw === null || raw === '') { clear.run(game.id, key); continue; }
       const value = Number(raw);
       if (!Number.isFinite(value)) throw Object.assign(new Error(`Invalid value for ${key}`), { status: 400 });
+      // 0 mph / 0 s / 0 % can't be real marks — treat as "not measured" and
+      // clear any stored entry rather than dragging averages to zero.
+      if (value === 0 && ZERO_UNMEASURED_KEYS.has(key)) {
+        clear.run(game.id, key);
+        zeroTreatedAsUnmeasured.push(key);
+        continue;
+      }
       upsert.run(game.id, key, value);
     }
   });
@@ -398,7 +407,10 @@ app.put('/api/games/:id/stats', requireAdmin, (req, res) => {
   }
 
   const saved = db.prepare('SELECT metric_key, value FROM stat_entries WHERE game_id = ?').all(game.id);
-  res.json({ stats: Object.fromEntries(saved.map(r => [r.metric_key, r.value])) });
+  res.json({
+    stats: Object.fromEntries(saved.map(r => [r.metric_key, r.value])),
+    zero_treated_as_unmeasured: zeroTreatedAsUnmeasured,
+  });
 });
 
 // ── Public profile ───────────────────────────────────────────────────────
@@ -1220,6 +1232,25 @@ app.get('/api/imports/audits', requireAdmin, (_req, res) => {
   });
 });
 
+// One-time hygiene for impossible zeros imported before the
+// zero-means-unmeasured guard. Dry-run by default; { apply: true } marks the
+// entries excluded (reversible — the engine ignores excluded rows).
+app.post('/api/admin/metrics/zero-cleanup', requireAdmin, (req, res) => {
+  if ((req.body || {}).apply === true) {
+    const { excluded, rows } = excludeInvalidZeroEntries(db);
+    return res.json({ applied: true, excluded, summary: summarizeZeroReport(rows) });
+  }
+  const rows = findInvalidZeroEntries(db);
+  res.json({
+    applied: false,
+    would_exclude: rows.length,
+    summary: summarizeZeroReport(rows),
+    entries: rows.slice(0, 200).map(r => ({
+      player: `${r.first_name} ${r.last_name}`, metric: r.metric_key, game_date: r.game_date, game_type: r.game_type,
+    })),
+  });
+});
+
 // ── Staff access: admin assignment + invite, claim, scoped reads ─────────
 
 function upsertStaffInvite(email) {
@@ -1562,7 +1593,9 @@ app.get('/api/view/teams/:slug', (req, res) => {
       runs_scored: finals.length ? forAgainst.rs : null,
       runs_allowed: finals.length ? forAgainst.ra : null,
       run_diff: finals.length ? forAgainst.rs - forAgainst.ra : null,
-      games_tracked: attributed.length ? new Set(attributed.map(g => `${g.game_date}|${g.opponent}`)).size : 0,
+      // scheduled/linked team games in scope — player performance records
+      // are a separate count (feedback: don't conflate the two)
+      games_tracked: scopedGames.length,
       player_games: attributed.length,
       players_with_data: playerAggs.length,
       blocks: teamCategoryBlocks(attributed),

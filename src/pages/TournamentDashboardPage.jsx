@@ -43,6 +43,8 @@ export default function TournamentDashboardPage() {
   const { slug } = useParams();
   const [result, setResult] = useState({ key: '', data: null, error: null });
   const [boardTab, setBoardTab] = useState('hitting');
+  // Standings sort: null = server order (win % → run diff → seed).
+  const [standingsSort, setStandingsSort] = useState(null);
 
   useEffect(() => {
     api.viewTournament(slug)
@@ -90,6 +92,28 @@ export default function TournamentDashboardPage() {
 
   const { tournament, coverage, counts, divisions, entries, games, standings, leaderboards, top_performers, players_with_data, calc } = data;
   const board = leaderboards?.[boardTab];
+
+  const sortStandings = rows => {
+    if (!standingsSort) return rows;
+    const { col, dir } = standingsSort;
+    return [...rows].sort((a, b) => {
+      const av = a[col], bv = b[col];
+      if (av == null && bv == null) return 0;
+      if (av == null) return 1;
+      if (bv == null) return -1;
+      const cmp = typeof av === 'string' ? av.localeCompare(bv) : av - bv;
+      return dir === 'asc' ? cmp : -cmp;
+    });
+  };
+  const standingsHeader = (col, label, { right = true, defaultDir = 'desc' } = {}) => (
+    <th
+      className={`py-1.5 pr-3 font-bold cursor-pointer hover:text-blue-600 whitespace-nowrap ${right ? 'text-right' : ''}`}
+      onClick={() => setStandingsSort(s =>
+        s?.col === col ? { col, dir: s.dir === 'asc' ? 'desc' : 'asc' } : { col, dir: defaultDir })}
+    >
+      {label}{standingsSort?.col === col ? (standingsSort.dir === 'asc' ? ' ↑' : ' ↓') : ''}
+    </th>
+  );
   const performerCards = BOARD_TABS.map(t => ({ key: t.key, title: CARD_TITLES[t.key], row: top_performers?.[t.key] })).filter(c => c.row);
 
   return shell(
@@ -149,19 +173,19 @@ export default function TournamentDashboardPage() {
                 <table className="w-full text-sm min-w-[640px]">
                   <thead>
                     <tr className="text-left text-[10px] uppercase tracking-wider text-slate-400 border-b border-slate-100">
-                      <th className="py-1.5 pr-3 font-bold">Seed</th>
-                      <th className="py-1.5 pr-3 font-bold">Team</th>
-                      <th className="py-1.5 pr-3 font-bold text-right">W-L-T</th>
-                      <th className="py-1.5 pr-3 font-bold text-right">Win %</th>
-                      <th className="py-1.5 pr-3 font-bold text-right">RS</th>
-                      <th className="py-1.5 pr-3 font-bold text-right">RA</th>
-                      <th className="py-1.5 pr-3 font-bold text-right">Diff</th>
+                      {standingsHeader('seed', 'Seed', { right: false, defaultDir: 'asc' })}
+                      {standingsHeader('team_name', 'Team', { right: false, defaultDir: 'asc' })}
+                      {standingsHeader('win_pct', 'W-L-T')}
+                      {standingsHeader('win_pct', 'Win %')}
+                      {standingsHeader('runs_scored', 'RS')}
+                      {standingsHeader('runs_allowed', 'RA')}
+                      {standingsHeader('run_diff', 'Diff')}
                       <th className="py-1.5 pr-3 font-bold">Result</th>
-                      <th className="py-1.5 font-bold text-right">Finals</th>
+                      {standingsHeader('games_final', 'Finals')}
                     </tr>
                   </thead>
                   <tbody>
-                    {rows.map(s => (
+                    {sortStandings(rows).map(s => (
                       <tr key={s.entry_id} className="border-b border-slate-50">
                         <td className="py-1.5 pr-3 text-slate-400">{s.seed ?? '—'}</td>
                         <td className="py-1.5 pr-3">
@@ -183,6 +207,9 @@ export default function TournamentDashboardPage() {
                     ))}
                   </tbody>
                 </table>
+                <p className="text-[10px] text-slate-400 mt-1.5">
+                  Ranked by win %, then run differential, then seed — click a column to re-sort.
+                </p>
               </div>
             </Card>
           </section>

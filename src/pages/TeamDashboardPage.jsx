@@ -329,7 +329,11 @@ export default function TeamDashboardPage() {
                     <span className="text-xs text-slate-500 truncate">{s.label}</span>
                     <span className="text-sm font-bold text-slate-900 whitespace-nowrap">
                       {fmt(s.value, s)}
-                      {s.sample != null && s.value != null && <span className="text-[9px] font-normal text-slate-400 ml-1">n={s.sample}</span>}
+                      {s.sample != null && s.value != null && (
+                        <span className="text-[9px] font-normal text-slate-400 ml-1">
+                          {fmt(s.sample, { decimals: s.sampleUnit === 'IP' ? 1 : 0 })} {s.sampleUnit === 'games' && s.sample === 1 ? 'game' : s.sampleUnit || 'games'}
+                        </span>
+                      )}
                     </span>
                   </div>
                 ))}
@@ -386,7 +390,7 @@ export default function TeamDashboardPage() {
                     <td className="py-1.5 pr-3 whitespace-nowrap sticky left-0 bg-white">
                       <PlayerLink slug={r.slug} name={r.name} />
                       {r.isGuest && <GuestBadge />}
-                      {r.games < (calc?.mins?.samples ?? 2) && <LimitedBadge />}
+                      {r.games < (calc?.mins?.samples ?? 2) && <LimitedBadge sample={r.games} unit="games" />}
                     </td>
                     <td className="py-1.5 pr-3 text-slate-500">{r.position || '—'}</td>
                     {COMPARE_COLS.map(([key, , opts]) => (
