@@ -3,7 +3,7 @@ import { Check, ChevronRight, Video } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import MarketingLayout from '../components/MarketingLayout';
 import { getBlogPost } from '../data/blogPosts';
-import filmingBehindHomePlate from '../assets/blog/filming-behind-home-plate.png';
+import playerCoachVideoReview from '../assets/blog/player-coach-video-review.png';
 
 const learn = [
   'At-bats, swings, contact, and swing-and-miss tendencies',
@@ -51,8 +51,13 @@ export default function YouthBaseballVideoAnalysisPage() {
           <p className="article-lead">Parents and players can see the result of every pitch, swing, and play. What is harder to see is the pattern developing across a game or season.</p>
 
           <figure className="article-visual">
-            <img src={filmingBehindHomePlate} alt="A stable camera behind home plate recording a youth baseball game" />
-            <figcaption>A clear, stable game view gives families and coaches more context than a highlight clip alone.</figcaption>
+            <img
+              src={playerCoachVideoReview}
+              alt="A youth baseball player and coach reviewing video together after practice"
+            />
+            <figcaption>
+              Video creates a shared starting point for a better coaching conversation and a clear next step.
+            </figcaption>
           </figure>
 
           <p>At every Major League ballpark, advanced tracking systems collect information about pitches, batted balls, player movement, and fielding. MLB&apos;s Statcast system uses multiple Hawk-Eye cameras around the field to track details such as pitch velocity, exit velocity, launch angle, sprint speed, and defensive movement.</p>
