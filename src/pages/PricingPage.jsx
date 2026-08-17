@@ -1,4 +1,5 @@
 import { ArrowRight, Check, ShieldCheck } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import MarketingLayout from '../components/MarketingLayout';
 import './PricingPage.css';
 
@@ -68,6 +69,30 @@ export default function PricingPage() {
             </a>
           </article>
         ))}
+      </section>
+
+      <section className="pricing-partner-section">
+        <div className="pricing-partner-heading">
+          <p className="eyebrow">For Organizations</p>
+          <h2>Build a plan around your players, games, and goals.</h2>
+          <p>Team and tournament engagements are customized around coverage, footage access, and the metrics that matter most to your group.</p>
+        </div>
+        <div className="pricing-partner-grid">
+          <article>
+            <p className="pricing-label">Teams & Programs</p>
+            <h3>Season tracking for your roster.</h3>
+            <p>Give coaches and families organized player profiles, position-specific metrics, and a clearer picture of development across the season.</p>
+            <ul><li><Check size={17} aria-hidden="true" />Roster-wide player insight</li><li><Check size={17} aria-hidden="true" />Custom coverage and metric plans</li><li><Check size={17} aria-hidden="true" />Team and player reporting</li></ul>
+            <Link className="pricing-partner-link" to="/programs?inquiry=program#contact">Talk to our sales team <ArrowRight size={17} aria-hidden="true" /></Link>
+          </article>
+          <article>
+            <p className="pricing-label">Tournament Directors</p>
+            <h3>Make your event more measurable.</h3>
+            <p>Turn tournament footage into player, team, and event-level insights—built around your schedule, fields, and available capture.</p>
+            <ul><li><Check size={17} aria-hidden="true" />Tournament-wide player reporting</li><li><Check size={17} aria-hidden="true" />Featured coverage for key games</li><li><Check size={17} aria-hidden="true" />Shareable event recaps and insights</li></ul>
+            <Link className="pricing-partner-link" to="/programs?inquiry=tournament#contact">Talk to our sales team <ArrowRight size={17} aria-hidden="true" /></Link>
+          </article>
+        </div>
       </section>
 
       <section className="pricing-eligibility">
