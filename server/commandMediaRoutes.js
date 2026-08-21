@@ -1,10 +1,11 @@
 // Command media routes (M2): feed registration, resumable multipart upload
 // (R2 presigned parts in prod, API-relayed parts in local dev), completion →
 // probe/proxy pipeline, playback URLs, and role-gated local media streaming.
+import { ENV } from './observability.js';
 import express from 'express';
 import fs from 'node:fs';
 import { createHmac, randomBytes } from 'node:crypto';
-import { createUpload, presignPart, appendLocalPart, completeUpload, abortUpload, playbackUrl, localPathFor, storageMode } from './storage.js';
+import { createUpload, presignPart, appendLocalPart, completeUpload, abortUpload, playbackUrl, localPathFor, storageMode, storageReady, missingStorageConfig } from './storage.js';
 
 // Local-mode playback: <video> cannot send auth headers, so local URLs carry
 // a short-TTL HMAC token — the same trust model as R2 presigned GETs.
@@ -35,6 +36,18 @@ export function mountCommandMediaRoutes(app, { db, requireInternal }) {
     if (!job) return res.status(404).json({ error: 'Job not found' });
     const b = req.body || {};
     if (!b.original_name) return res.status(400).json({ error: 'original_name is required' });
+
+    // Guard: in production the local backend writes to the same small disk as
+    // the database. One real game file would fill it and take the public API
+    // down with it, so refuse the upload instead of failing catastrophically.
+    if (!storageReady) {
+      return res.status(503).json({ error: `Media storage is misconfigured — missing ${missingStorageConfig.join(', ')}. Set these in the Render dashboard and restart.` });
+    }
+    if (storageMode !== 'r2' && ENV === 'production') {
+      return res.status(503).json({
+        error: 'Media storage is not configured. Set DM_STORAGE=r2 and the R2_* variables before uploading footage — the local backend shares the database disk and would fill it.',
+      });
+    }
 
     if (b.content_hash && b.size_bytes) {
       const existing = db.prepare(

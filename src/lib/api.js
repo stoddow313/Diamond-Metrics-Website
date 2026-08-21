@@ -145,6 +145,7 @@ export const api = {
   commandTelemetry: (days = 30) => request(`/api/command/telemetry?days=${days}`),
   commandOps: () => request('/api/command/ops'),
   commandRunBackup: () => request('/api/command/backups/run', { method: 'POST' }),
+  commandStorageCheck: () => request('/api/command/storage/check', { method: 'POST' }),
   commandBulkJobs: (body) => request('/api/command/jobs/bulk', { method: 'POST', body }),
 
   // public

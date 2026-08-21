@@ -3,7 +3,7 @@
 // internal; anything that mutates infrastructure (manual backup) is admin.
 import { pipelineTelemetry } from './telemetry.js';
 import { lastBackup, runBackup, RETENTION_DAYS } from './backup.js';
-import { storageMode } from './storage.js';
+import { storageMode, selfTest, storageReady, missingStorageConfig } from './storage.js';
 import { ENV, errorTrackingEnabled } from './observability.js';
 import { emailConfigured } from './notifications.js';
 
@@ -33,6 +33,8 @@ export function mountCommandOpsRoutes(app, { db, requireInternal, createJob }) {
     res.json({
       environment: ENV,
       storage_mode: storageMode,
+      storage_ready: storageReady,
+      storage_missing_config: missingStorageConfig,
       worker_mode: process.env.DM_INLINE_WORKER === '0' ? 'dedicated' : 'inline',
       error_tracking: errorTrackingEnabled,
       email_configured: emailConfigured(),
@@ -44,6 +46,12 @@ export function mountCommandOpsRoutes(app, { db, requireInternal, createJob }) {
       media_queue: { ...mediaQueue, stuck_feeds: stuckFeeds },
       notifications: { pending_email: pendingEmail },
     });
+  });
+
+  // Proves the configured media backend works end to end — run this right
+  // after wiring R2, before anyone uploads a real game file.
+  app.post('/api/command/storage/check', requireAdminRole, async (_req, res) => {
+    res.json({ check: await selfTest() });
   });
 
   app.post('/api/command/backups/run', requireAdminRole, async (_req, res) => {

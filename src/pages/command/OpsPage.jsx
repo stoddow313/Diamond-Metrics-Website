@@ -38,6 +38,8 @@ export default function OpsPage() {
   const [ops, setOps] = useState(null);
   const [error, setError] = useState('');
   const [backingUp, setBackingUp] = useState(false);
+  const [storageCheck, setStorageCheck] = useState(null);
+  const [checking, setChecking] = useState(false);
 
   const load = useCallback(() => {
     Promise.all([api.commandTelemetry(days), api.commandOps()])
@@ -56,6 +58,19 @@ export default function OpsPage() {
       setError(err.message);
     } finally {
       setBackingUp(false);
+    }
+  }
+
+  async function checkStorage() {
+    setError('');
+    setChecking(true);
+    try {
+      const { check } = await api.commandStorageCheck();
+      setStorageCheck(check);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setChecking(false);
     }
   }
 
@@ -143,7 +158,30 @@ export default function OpsPage() {
         <section className="rounded-2xl border p-5" style={cardStyle}>
           <p className="text-[11px] font-bold uppercase tracking-widest mb-1" style={{ color: '#94a3b8' }}>Service health</p>
           <HealthRow label="Environment" value={ops.environment} />
-          <HealthRow label="Media storage" value={ops.storage_mode === 'r2' ? 'Cloudflare R2' : 'local disk (dev)'} ok={ops.storage_mode === 'r2'} />
+          <HealthRow
+            label="Media storage"
+            value={!ops.storage_ready ? `misconfigured — missing ${ops.storage_missing_config.join(', ')}` : ops.storage_mode === 'r2' ? 'Cloudflare R2' : 'local disk (dev)'}
+            ok={ops.storage_ready && ops.storage_mode === 'r2'}
+          />
+          {user?.role === 'admin' && (
+            <div className="flex items-center justify-between py-2 border-t" style={{ borderColor: '#1e3a5f' }}>
+              <span className="text-sm" style={{ color: '#94a3b8' }}>Storage round-trip</span>
+              {storageCheck ? (
+                <span className="text-sm font-bold" style={{ color: storageCheck.ok ? '#4ade80' : '#f87171' }}>
+                  {storageCheck.ok ? `✓ write→read→delete in ${storageCheck.ms}ms` : `failed at ${storageCheck.steps.length ? `“${storageCheck.steps.at(-1)}”` : 'start'}`}
+                </span>
+              ) : (
+                <button onClick={checkStorage} disabled={checking}
+                  className="text-xs font-bold px-3 py-1 rounded-lg border cursor-pointer hover:bg-slate-800"
+                  style={{ borderColor: '#334155', color: '#cfe8ff' }}>
+                  {checking ? 'Testing…' : 'Test now'}
+                </button>
+              )}
+            </div>
+          )}
+          {storageCheck && !storageCheck.ok && (
+            <p className="text-xs py-1" style={{ color: '#f87171' }}>{storageCheck.error}</p>
+          )}
           <HealthRow label="Media worker" value={ops.worker_mode} />
           <HealthRow label="Error tracking" value={ops.error_tracking ? 'Sentry connected' : 'logs only'} ok={ops.error_tracking} />
           <HealthRow label="Customer email" value={ops.email_configured ? 'sending' : 'recorded in-app only'} ok={ops.email_configured} />

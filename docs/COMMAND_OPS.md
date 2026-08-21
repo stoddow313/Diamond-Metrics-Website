@@ -80,7 +80,113 @@ experience, so a bare checkout runs with no configuration at all.
 
 ---
 
-## 3. Backups and restore
+## 3. Setting up Cloudflare R2
+
+Until this is done the API **refuses footage uploads** in production, by
+design: the local fallback writes to the same 1 GB disk as the database, and
+one real game file would fill it and take the public API down.
+
+### 3.1 Create the bucket
+Cloudflare dashboard → **R2** → *Create bucket* (R2 requires a payment method
+on file even inside the free tier). Name it `diamond-metrics-media`.
+Location: **Automatic**, or a North America hint.
+
+Copy the **Account ID** from the R2 overview sidebar → this is `R2_ACCOUNT_ID`.
+
+### 3.2 Create the API token
+R2 → **Manage R2 API Tokens** → *Create API Token*.
+
+- Permission: **Object Read & Write**
+- Scope: **this bucket only** (not all buckets)
+- TTL: no expiry, or a date you will actually remember to rotate
+
+Cloudflare shows an **Access Key ID** and a **Secret Access Key**. The secret
+is displayed **once** — paste both straight into Render (§3.5); do not put
+them in a file, a ticket, or a chat message.
+
+### 3.3 CORS — the step that silently breaks uploads
+
+The browser uploads parts **directly to R2** with presigned PUTs, and the
+client reads each part's `ETag` response header to complete the multipart
+upload. Cross-origin responses hide every header unless the bucket exposes
+it, so **without `ExposeHeaders: ETag` uploads appear to work and then fail
+at the final assembly step** with an invalid-part error.
+
+Bucket → **Settings** → *CORS Policy* → paste:
+
+```json
+[
+  {
+    "AllowedOrigins": [
+      "https://diamondmetrics.ai",
+      "https://www.diamondmetrics.ai",
+      "http://localhost:5173"
+    ],
+    "AllowedMethods": ["GET", "PUT", "HEAD"],
+    "AllowedHeaders": ["content-type", "content-length"],
+    "ExposeHeaders": ["ETag"],
+    "MaxAgeSeconds": 3600
+  }
+]
+```
+
+Add any Vercel preview domain you upload from. `localhost` is only needed if
+you point local dev at the real bucket.
+
+### 3.4 Lifecycle rules (the approved retention policy)
+
+Bucket → **Settings** → *Object lifecycle rules*:
+
+| Prefix | Rule | Why |
+|---|---|---|
+| `originals/` | Transition to **Infrequent Access** after 30 days | Originals are rarely re-read after analysis |
+| `originals/` | Delete after **730 days** (24 months) | Approved retention window |
+
+Leave `proxies/`, `thumbnails/`, and `command/backups/` on standard storage —
+proxies are read during every review, and backups are the recovery path.
+
+### 3.5 Set the variables in Render
+
+Render dashboard → the API service → **Environment**. Add all five together,
+then deploy:
+
+```
+DM_STORAGE=r2
+R2_ACCOUNT_ID=<account id>
+R2_ACCESS_KEY_ID=<access key id>
+R2_SECRET_ACCESS_KEY=<secret access key>
+R2_BUCKET=diamond-metrics-media
+```
+
+Also set `DM_MEDIA_SECRET` to any long random string, so playback links keep
+working across restarts.
+
+A partial configuration will not crash the service — the API boots, logs
+`storage_misconfigured`, names the missing variables on `/command/ops`, and
+refuses uploads until they are set.
+
+### 3.6 Verify before uploading anything real
+
+`/command/ops` → Service health → **Storage round-trip → Test now** (admin).
+This writes a small object, reads it back, compares it, and deletes it —
+proving credentials, bucket name, and permissions in about a second instead
+of discovering a problem partway through a 12 GB upload.
+
+Then upload one short real clip end to end before trusting a full game.
+
+### 3.7 ffmpeg is a separate prerequisite
+
+R2 solves storage, not processing. Video probing and proxy generation shell
+out to `ffmpeg`/`ffprobe`, which are **not present on Render's stock Node
+runtime** — feeds will register and upload, then fail during processing.
+Either switch the service to a Docker runtime with ffmpeg installed, or add a
+build step that provides the binaries, and set `FFMPEG_PATH`/`FFPROBE_PATH`
+accordingly. Everything that does not touch video (jobs, radar entry and
+import, review, release, notifications, telemetry) works without it.
+
+---
+
+## 4. Backups and restore
 
 **What runs:** on boot and hourly thereafter, the API checks whether a
 successful snapshot exists for today (UTC). If not, it takes one with
@@ -121,7 +227,7 @@ in R2 with their own durability and the retention policy in TDR §2).
 
 ---
 
-## 4. Monitoring
+## 5. Monitoring
 
 **`/command/ops`** is the operator's dashboard: pipeline timing (p50/p90 per
 stage, turnaround), quality rates (radar match, unavailable, review
@@ -153,7 +259,7 @@ lost — errors still appear in the structured log.
 
 ---
 
-## 5. Staging
+## 6. Staging
 
 Staging is a second Render service off the same repo with its own disk and
 its own R2 prefix — it must never share the production database or bucket.
@@ -174,7 +280,7 @@ storage isn't wanted.
 
 ---
 
-## 6. Routine operations
+## 7. Routine operations
 
 **Bulk tournament jobs** — `/command/bulk`: pick the tournament, package,
 and optionally the specific teams; **Preview** shows exactly what would be

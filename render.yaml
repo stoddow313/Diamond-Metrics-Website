@@ -13,6 +13,30 @@ services:
         value: /var/data/diamond-metrics.db
       - key: DM_ADMIN_PASSWORD
         sync: false # set in the Render dashboard; seeds the admin login on first boot
+      # Media storage (Cloudflare R2). Until these are set the API refuses
+      # footage uploads — the local fallback shares this service's 1 GB disk
+      # with the database. Values are set in the dashboard, never committed.
+      - key: DM_STORAGE
+        sync: false # set to "r2" in the dashboard together with the four R2_* values
+      - key: R2_ACCOUNT_ID
+        sync: false
+      - key: R2_ACCESS_KEY_ID
+        sync: false
+      - key: R2_SECRET_ACCESS_KEY
+        sync: false
+      - key: R2_BUCKET
+        sync: false
+      # Signs short-TTL playback URLs; without it links break on every restart.
+      - key: DM_MEDIA_SECRET
+        generateValue: true
+      # ffmpeg/ffprobe are required for video processing and are NOT present on
+      # the stock Node runtime — see docs/COMMAND_OPS.md before enabling video.
+      - key: FFMPEG_PATH
+        value: ffmpeg
+      - key: FFPROBE_PATH
+        value: ffprobe
+      - key: DM_ENV
+        value: production
     disk:
       name: diamond-metrics-data
       mountPath: /var/data
