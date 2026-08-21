@@ -29,7 +29,7 @@ export function emitJobEvent(db, { jobId, eventKey, audience = 'customer', paylo
   return id;
 }
 
-function emailConfigured() {
+export function emailConfigured() {
   return Boolean(process.env.RESEND_API_KEY && process.env.DM_EMAIL_FROM);
 }
 

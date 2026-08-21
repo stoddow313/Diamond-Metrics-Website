@@ -5,8 +5,9 @@
 //           runs without credentials; parts POST through the API.
 // Selection: DM_STORAGE=r2 requires R2_* env; anything else falls back local.
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
-import { S3Client, CreateMultipartUploadCommand, UploadPartCommand, CompleteMultipartUploadCommand, AbortMultipartUploadCommand, GetObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
+import { S3Client, CreateMultipartUploadCommand, UploadPartCommand, CompleteMultipartUploadCommand, AbortMultipartUploadCommand, GetObjectCommand, PutObjectCommand, ListObjectsV2Command, DeleteObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
 const MODE = process.env.DM_STORAGE === 'r2' ? 'r2' : 'local';
@@ -27,6 +28,19 @@ function client() {
 const BUCKET = () => process.env.R2_BUCKET;
 
 export const storageMode = MODE;
+
+// A half-configured bucket must never crash the service: taking the public
+// site down is worse than refusing uploads. Report it instead — the upload
+// guard and the ops page both read storageReady.
+const R2_VARS = ['R2_ACCOUNT_ID', 'R2_ACCESS_KEY_ID', 'R2_SECRET_ACCESS_KEY', 'R2_BUCKET'];
+export const missingStorageConfig = MODE === 'r2' ? R2_VARS.filter(v => !process.env[v]) : [];
+export const storageReady = missingStorageConfig.length === 0;
+if (!storageReady) {
+  console.error(JSON.stringify({
+    level: 'error', event: 'storage_misconfigured',
+    message: `DM_STORAGE=r2 but missing: ${missingStorageConfig.join(', ')} — uploads are refused until these are set`,
+  }));
+}
 
 export function localPathFor(key) {
   const safe = key.replace(/\.\./g, '_');
@@ -69,6 +83,60 @@ export async function abortUpload(key, uploadId) {
     return;
   }
   fs.rmSync(localPathFor(key) + '.parts', { force: true });
+}
+
+// Key listing/deletion — used by backup retention, not the media path.
+export async function listObjects(prefix) {
+  if (MODE === 'r2') {
+    const keys = [];
+    let token;
+    do {
+      const page = await client().send(new ListObjectsV2Command({ Bucket: BUCKET(), Prefix: prefix, ContinuationToken: token }));
+      for (const obj of page.Contents || []) keys.push(obj.Key);
+      token = page.IsTruncated ? page.NextContinuationToken : undefined;
+    } while (token);
+    return keys;
+  }
+  const dir = localPathFor(prefix);
+  if (!fs.existsSync(dir)) return [];
+  return fs.readdirSync(dir).map(name => `${prefix}${name}`);
+}
+
+export async function deleteObject(key) {
+  if (MODE === 'r2') {
+    await client().send(new DeleteObjectCommand({ Bucket: BUCKET(), Key: key }));
+    return;
+  }
+  fs.rmSync(localPathFor(key), { force: true });
+}
+
+// Round-trip proof that the configured backend actually works: write a tiny
+// object, read it back, compare, delete. Verifies credentials, bucket name,
+// and permissions without uploading a multi-gigabyte video first.
+export async function selfTest() {
+  const key = `command/_healthcheck/${Date.now()}-${Math.random().toString(36).slice(2)}.txt`;
+  const payload = `diamond-metrics storage check ${new Date().toISOString()}`;
+  const scratch = path.join(os.tmpdir(), `dm-storage-check-${process.pid}`);
+  const readBack = `${scratch}.read`;
+  const started = Date.now();
+  const steps = [];
+  try {
+    fs.writeFileSync(scratch, payload);
+    await putObject(key, scratch);
+    steps.push('write');
+    const fetched = await fetchToScratch(key, readBack);
+    steps.push('read');
+    if (fs.readFileSync(fetched, 'utf8') !== payload) throw new Error('content read back did not match what was written');
+    steps.push('verify');
+    await deleteObject(key);
+    steps.push('delete');
+    return { ok: true, mode: MODE, bucket: MODE === 'r2' ? BUCKET() : LOCAL_DIR, ms: Date.now() - started, steps };
+  } catch (err) {
+    return { ok: false, mode: MODE, bucket: MODE === 'r2' ? BUCKET() : LOCAL_DIR, ms: Date.now() - started, steps, error: String(err?.message || err) };
+  } finally {
+    fs.rmSync(scratch, { force: true });
+    fs.rmSync(readBack, { force: true });
+  }
 }
 
 export async function putObject(key, filePath) {
