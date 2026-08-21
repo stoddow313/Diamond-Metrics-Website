@@ -13,6 +13,8 @@ import { IMPORT_KINDS, planImport, applyImport } from './importEngine.js';
 import { deletePlayers } from './playerDelete.js';
 import { findInvalidZeroEntries, excludeInvalidZeroEntries, summarizeZeroReport } from './zeroCleanup.js';
 import { mountCommandRoutes } from './commandRoutes.js';
+import { mountCommandMediaRoutes } from './commandMediaRoutes.js';
+import { startInlineWorker } from './mediaWorker.js';
 import {
   attributedGames, aggregateByPlayer, teamCategoryBlocks, standings,
   leaderboard, overallLeaderboard, trendSeries, calcStamp, DEFAULT_MINS,
@@ -1746,6 +1748,10 @@ app.get('/api/view/tournaments/:slug', (req, res) => {
 
 // ── Diamond Metrics Command (internal analyst platform) ─────────────────
 mountCommandRoutes(app, { db, requireInternal });
+mountCommandMediaRoutes(app, { db, requireInternal });
+// Media processing: inline worker in dev / single-service deployments;
+// DM_INLINE_WORKER=0 turns it off when the dedicated Render worker runs.
+if (process.env.DM_INLINE_WORKER !== '0') startInlineWorker(db);
 
 app.listen(PORT, () => {
   console.log(`[api] Diamond Metrics API listening on http://localhost:${PORT}`);

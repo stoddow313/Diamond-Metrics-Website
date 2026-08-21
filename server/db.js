@@ -535,6 +535,59 @@ db.exec(`
   -- Game-record sources (GameChanger scorecard import, live internal entry,
   -- postgame manual score). Non-blocking for Rookie; raw import preserved
   -- for later validation and box-score completion.
+  -- Video feeds: one row per independent camera source on a job. Multiple
+  -- unaligned feeds allowed; original metadata retained; VFR flagged.
+  CREATE TABLE IF NOT EXISTS cmd_video_feeds (
+    id             INTEGER PRIMARY KEY AUTOINCREMENT,
+    job_id         INTEGER NOT NULL REFERENCES cmd_jobs(id) ON DELETE CASCADE,
+    label          TEXT NOT NULL DEFAULT 'Behind Home',
+    capture_profile_key TEXT DEFAULT '',
+    storage_key    TEXT NOT NULL,            -- original object key
+    original_name  TEXT DEFAULT '',
+    size_bytes     INTEGER,
+    content_hash   TEXT DEFAULT '',          -- idempotency: same hash+size = same feed
+    status         TEXT NOT NULL DEFAULT 'uploading',  -- uploading | uploaded | queued | processing | ready | failed | retrying
+    error          TEXT DEFAULT '',
+    duration_s     REAL,
+    codec          TEXT DEFAULT '',
+    width          INTEGER, height INTEGER, rotation INTEGER DEFAULT 0,
+    nominal_fps    REAL, effective_fps REAL,
+    vfr            INTEGER NOT NULL DEFAULT 0,
+    manual_offset_s REAL DEFAULT 0,
+    recording_notes TEXT DEFAULT '',
+    quality_notes  TEXT DEFAULT '',
+    created_by     INTEGER REFERENCES admins(id),
+    created_at     TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at     TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+  CREATE INDEX IF NOT EXISTS idx_cmd_feeds_job ON cmd_video_feeds(job_id);
+
+  CREATE TABLE IF NOT EXISTS cmd_media_renditions (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    feed_id     INTEGER NOT NULL REFERENCES cmd_video_feeds(id) ON DELETE CASCADE,
+    kind        TEXT NOT NULL,               -- proxy | thumbnails | clip
+    storage_key TEXT NOT NULL,
+    fps         REAL, width INTEGER, height INTEGER, duration_s REAL,
+    params      TEXT NOT NULL DEFAULT '{}',  -- clip bounds / encode settings
+    status      TEXT NOT NULL DEFAULT 'ready',
+    created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+
+  -- Background work queue for the media worker (probe | proxy | clip).
+  CREATE TABLE IF NOT EXISTS cmd_media_jobs (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    feed_id     INTEGER NOT NULL REFERENCES cmd_video_feeds(id) ON DELETE CASCADE,
+    kind        TEXT NOT NULL,
+    params_hash TEXT NOT NULL DEFAULT '',
+    status      TEXT NOT NULL DEFAULT 'queued',  -- queued | running | done | failed
+    attempts    INTEGER NOT NULL DEFAULT 0,
+    error       TEXT DEFAULT '',
+    created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at  TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE (feed_id, kind, params_hash)
+  );
+  CREATE INDEX IF NOT EXISTS idx_cmd_media_jobs_status ON cmd_media_jobs(status, id);
+
   CREATE TABLE IF NOT EXISTS cmd_game_record_sources (
     id                INTEGER PRIMARY KEY AUTOINCREMENT,
     job_id            INTEGER NOT NULL REFERENCES cmd_jobs(id) ON DELETE CASCADE,
