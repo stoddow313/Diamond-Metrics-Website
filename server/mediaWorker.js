@@ -9,6 +9,7 @@
 // clip   → evidence clip from a rendition with pre/post-roll (used from M4).
 import { log, captureError } from './observability.js';
 import { execFile } from 'node:child_process';
+import { createRequire } from 'node:module';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -17,8 +18,45 @@ import { fetchToScratch, putObject, localPathFor, storageMode } from './storage.
 import { emitJobEvent } from './notifications.js';
 
 const run = promisify(execFile);
-const FFMPEG = process.env.FFMPEG_PATH || '/opt/homebrew/bin/ffmpeg';
-const FFPROBE = process.env.FFPROBE_PATH || '/opt/homebrew/bin/ffprobe';
+
+// Binary resolution, in order: an explicit env override, the static binaries
+// installed as dependencies (this is what production uses — Render's Node
+// runtime has no system ffmpeg), then whatever is on PATH. The bundled
+// packages ship a per-platform binary as an optional dependency, so `npm ci`
+// installs the right one with no download step at build time.
+function resolveBinary(envVar, installerPkg, fallback) {
+  // The bundled binary wins unless the override points at a file that really
+  // exists. A stale `FFMPEG_PATH=ffmpeg` (a bare PATH lookup) would otherwise
+  // shadow a working bundled binary with one Render does not have.
+  const override = process.env[envVar];
+  if (override && path.isAbsolute(override) && fs.existsSync(override)) return override;
+  try {
+    const { path: binPath } = createRequire(import.meta.url)(installerPkg);
+    // Some environments skip install scripts, which is where the +x comes
+    // from; restore it rather than failing on the first job.
+    try { fs.accessSync(binPath, fs.constants.X_OK); } catch { fs.chmodSync(binPath, 0o755); }
+    return binPath;
+  } catch {
+    return override || fallback;   // last resort: whatever is on PATH
+  }
+}
+
+export const FFMPEG = resolveBinary('FFMPEG_PATH', '@ffmpeg-installer/ffmpeg', 'ffmpeg');
+export const FFPROBE = resolveBinary('FFPROBE_PATH', '@ffprobe-installer/ffprobe', 'ffprobe');
+
+// Reported on /command/ops so the pipeline can be verified without uploading.
+export async function ffmpegStatus() {
+  const probeOne = async (label, bin) => {
+    try {
+      const { stdout } = await run(bin, ['-version'], { maxBuffer: 1024 * 1024 });
+      return { ok: true, path: bin, version: stdout.split('\n')[0].replace(/ Copyright.*$/, '') };
+    } catch (err) {
+      return { ok: false, path: bin, error: String(err?.message || err).split('\n')[0] };
+    }
+  };
+  const [ffmpeg, ffprobe] = await Promise.all([probeOne('ffmpeg', FFMPEG), probeOne('ffprobe', FFPROBE)]);
+  return { ok: ffmpeg.ok && ffprobe.ok, ffmpeg, ffprobe };
+}
 
 const parseRate = s => {
   if (!s || s === '0/0') return null;

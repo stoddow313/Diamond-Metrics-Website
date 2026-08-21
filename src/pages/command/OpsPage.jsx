@@ -183,6 +183,11 @@ export default function OpsPage() {
             <p className="text-xs py-1" style={{ color: '#f87171' }}>{storageCheck.error}</p>
           )}
           <HealthRow label="Media worker" value={ops.worker_mode} />
+          <HealthRow
+            label="Video processing"
+            value={ops.video?.ok ? ops.video.ffmpeg.version : `unavailable — ${ops.video?.ffmpeg?.error || 'ffmpeg not found'}`}
+            ok={!!ops.video?.ok}
+          />
           <HealthRow label="Error tracking" value={ops.error_tracking ? 'Sentry connected' : 'logs only'} ok={ops.error_tracking} />
           <HealthRow label="Customer email" value={ops.email_configured ? 'sending' : 'recorded in-app only'} ok={ops.email_configured} />
           <HealthRow label="Media queue" value={`${ops.media_queue.queued || 0} queued · ${ops.media_queue.failed || 0} failed`} ok={!ops.media_queue.failed} />
