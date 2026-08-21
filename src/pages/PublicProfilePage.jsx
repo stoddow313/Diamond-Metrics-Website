@@ -796,10 +796,21 @@ export default function PublicProfilePage({ portal = false }) {
     window.history.replaceState(null, '', `#${key}`);
   }
 
-  const heroMetrics = useMemo(
-    () => (data ? data.heroKeys.map(k => data.metrics[k]).filter(Boolean) : []),
-    [data]
-  );
+  // Key Metrics shows the position's hero set. When none of those were
+  // measured, fall back to whatever this player actually has — a Command
+  // release can deliver metrics that fall entirely outside a position's hero
+  // set (a Rookie package on an outfielder publishes home-to-first and pitch
+  // velocity; the outfielder hero set is exit velo and sprint speed), and a
+  // profile that just received verified numbers must never read as empty.
+  // Box-score lines are the last resort — they have their own tab.
+  const heroMetrics = useMemo(() => {
+    if (!data) return [];
+    const fromHeroSet = data.heroKeys.map(k => data.metrics[k]).filter(Boolean);
+    if (fromHeroSet.length > 0) return fromHeroSet;
+    const all = Object.values(data.metrics);
+    const measured = all.filter(m => m.category !== 'box');
+    return (measured.length > 0 ? measured : all).slice(0, 6);
+  }, [data]);
 
   async function copyLink() {
     try {
