@@ -651,6 +651,49 @@ db.exec(`
   );
   CREATE INDEX IF NOT EXISTS idx_cmd_results_job ON cmd_metric_results(job_id, metric_code, player_id, status);
 
+  -- Ordered event spine (TDR §1). Phase 1 uses running_attempt events;
+  -- Phase 2 scorekeeping adds pitch/PA/play types to the SAME table so the
+  -- Rookie workflow never becomes a dead-end schema.
+  CREATE TABLE IF NOT EXISTS cmd_events (
+    id               INTEGER PRIMARY KEY AUTOINCREMENT,
+    job_id           INTEGER NOT NULL REFERENCES cmd_jobs(id) ON DELETE CASCADE,
+    sequence         INTEGER NOT NULL DEFAULT 0,
+    event_type       TEXT NOT NULL,              -- running_attempt (Phase 1) | pitch | plate_appearance | play … (Phase 2)
+    parent_event_id  INTEGER REFERENCES cmd_events(id),
+    player_id        INTEGER REFERENCES players(id),
+    payload          TEXT NOT NULL DEFAULT '{}', -- typed per event_type (attempt_type, bases, outcome…)
+    selected_feed_id INTEGER REFERENCES cmd_video_feeds(id),
+    timecode_s       REAL,
+    clip_start_s     REAL, clip_end_s REAL,
+    status           TEXT NOT NULL DEFAULT 'active',   -- active | superseded
+    superseded_by    INTEGER,
+    created_by       INTEGER REFERENCES admins(id),
+    created_at       TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+  CREATE INDEX IF NOT EXISTS idx_cmd_events_job ON cmd_events(job_id, event_type, status);
+
+  -- Frame measurements: the Kinovea replacement. The system does the
+  -- arithmetic; the analyst only marks frames. FPS always comes from the
+  -- measured rendition (never nominal source FPS).
+  CREATE TABLE IF NOT EXISTS cmd_measurements (
+    id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+    event_id           INTEGER NOT NULL REFERENCES cmd_events(id) ON DELETE CASCADE,
+    measurement_type   TEXT NOT NULL DEFAULT 'elapsed_time',
+    rendition_id       INTEGER REFERENCES cmd_media_renditions(id),
+    start_frame        INTEGER,
+    end_frame          INTEGER,
+    fps_used           REAL,
+    elapsed_s          REAL,
+    formula_version    TEXT NOT NULL DEFAULT '',
+    validity           TEXT NOT NULL DEFAULT 'valid',   -- valid | unavailable
+    unavailable_reason TEXT DEFAULT '',
+    note               TEXT DEFAULT '',
+    created_by         INTEGER REFERENCES admins(id),
+    created_at         TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at         TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+  CREATE INDEX IF NOT EXISTS idx_cmd_measurements_event ON cmd_measurements(event_id);
+
   CREATE TABLE IF NOT EXISTS cmd_game_record_sources (
     id                INTEGER PRIMARY KEY AUTOINCREMENT,
     job_id            INTEGER NOT NULL REFERENCES cmd_jobs(id) ON DELETE CASCADE,

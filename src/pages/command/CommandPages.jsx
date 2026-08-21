@@ -498,6 +498,13 @@ export function JobDetailPage() {
               >
                 Radar queue →
               </Link>
+              <Link
+                to={`/command/jobs/${job.id}/running`}
+                className="px-4 py-2 rounded-xl text-sm font-bold"
+                style={{ backgroundColor: 'rgba(56, 189, 248, 0.12)', color: '#38bdf8' }}
+              >
+                Running queue →
+              </Link>
               {nextMetric.map(to => (
                 <PrimaryButton key={to} onClick={() => transition('metric_release', to)}>
                   Metrics → {to.replace(/_/g, ' ')}
