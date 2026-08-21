@@ -491,6 +491,13 @@ export function JobDetailPage() {
               Approve/release requires reviewer or admin. Signed in as <b style={{ color: '#38bdf8' }}>{user?.role}</b>.
             </p>
             <div className="flex flex-wrap gap-2">
+              <Link
+                to={`/command/jobs/${job.id}/radar`}
+                className="px-4 py-2 rounded-xl text-sm font-bold"
+                style={{ backgroundColor: 'rgba(74, 222, 128, 0.12)', color: '#4ade80' }}
+              >
+                Radar queue →
+              </Link>
               {nextMetric.map(to => (
                 <PrimaryButton key={to} onClick={() => transition('metric_release', to)}>
                   Metrics → {to.replace(/_/g, ' ')}

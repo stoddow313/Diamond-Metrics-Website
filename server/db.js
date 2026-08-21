@@ -588,6 +588,69 @@ db.exec(`
   );
   CREATE INDEX IF NOT EXISTS idx_cmd_media_jobs_status ON cmd_media_jobs(status, id);
 
+  -- Radar imports: one row per uploaded CSV (raw preserved, idempotent by
+  -- file hash per job). Readings reference their batch for provenance.
+  CREATE TABLE IF NOT EXISTS cmd_radar_imports (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    job_id     INTEGER NOT NULL REFERENCES cmd_jobs(id) ON DELETE CASCADE,
+    filename   TEXT NOT NULL,
+    file_hash  TEXT NOT NULL,
+    raw_content TEXT NOT NULL,
+    row_count  INTEGER NOT NULL DEFAULT 0,
+    created_by INTEGER REFERENCES admins(id),
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE (job_id, file_hash)
+  );
+
+  -- Radar readings: immutable source rows (velocity/timestamp/raw never
+  -- change). Analyst decisions — player, pitch/exit, pitch type, status —
+  -- layer on top and are audited. matched + player → draft metric result.
+  CREATE TABLE IF NOT EXISTS cmd_radar_readings (
+    id               INTEGER PRIMARY KEY AUTOINCREMENT,
+    job_id           INTEGER NOT NULL REFERENCES cmd_jobs(id) ON DELETE CASCADE,
+    source           TEXT NOT NULL,                 -- csv_import | manual
+    import_id        INTEGER REFERENCES cmd_radar_imports(id),
+    row_index        INTEGER,
+    velocity         REAL,                          -- null when the row didn't parse
+    unit             TEXT NOT NULL DEFAULT 'mph',
+    source_timestamp TEXT DEFAULT '',
+    raw_row          TEXT DEFAULT '',
+    player_id        INTEGER REFERENCES players(id),
+    pitch_or_exit    TEXT NOT NULL DEFAULT 'unknown',   -- pitch | exit | unknown
+    pitch_type       TEXT NOT NULL DEFAULT 'unknown',   -- fastball | curveball | slider | changeup | other | unknown
+    context          TEXT DEFAULT '',
+    note             TEXT DEFAULT '',
+    status           TEXT NOT NULL DEFAULT 'unmatched', -- unmatched | matched | invalid
+    confirmed_by     INTEGER REFERENCES admins(id),
+    confirmed_at     TEXT,
+    created_by       INTEGER REFERENCES admins(id),
+    created_at       TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+  CREATE INDEX IF NOT EXISTS idx_cmd_radar_job ON cmd_radar_readings(job_id, status);
+
+  -- Atomic metric results: every individual reading/attempt with evidence
+  -- (TDR §5a). The M5 release adapter rolls approved results up into the
+  -- existing stat_entries path; unavailable stays unavailable with a reason.
+  CREATE TABLE IF NOT EXISTS cmd_metric_results (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    job_id              INTEGER NOT NULL REFERENCES cmd_jobs(id) ON DELETE CASCADE,
+    metric_code         TEXT NOT NULL REFERENCES cmd_metric_registry(metric_code),
+    player_id           INTEGER NOT NULL REFERENCES players(id),
+    value               REAL,
+    unit                TEXT DEFAULT '',
+    method              TEXT NOT NULL,
+    status              TEXT NOT NULL DEFAULT 'draft',   -- draft | ready_for_review | approved | published | unavailable
+    unavailable_reason  TEXT DEFAULT '',
+    evidence_kind       TEXT NOT NULL,                   -- radar_reading | measurement | manual
+    evidence_id         INTEGER,
+    calculation_version TEXT NOT NULL DEFAULT '',
+    superseded_by       INTEGER,
+    created_by          INTEGER REFERENCES admins(id),
+    created_at          TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at          TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+  CREATE INDEX IF NOT EXISTS idx_cmd_results_job ON cmd_metric_results(job_id, metric_code, player_id, status);
+
   CREATE TABLE IF NOT EXISTS cmd_game_record_sources (
     id                INTEGER PRIMARY KEY AUTOINCREMENT,
     job_id            INTEGER NOT NULL REFERENCES cmd_jobs(id) ON DELETE CASCADE,
