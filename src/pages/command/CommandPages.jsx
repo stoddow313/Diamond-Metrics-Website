@@ -505,6 +505,13 @@ export function JobDetailPage() {
               >
                 Running queue →
               </Link>
+              <Link
+                to={`/command/jobs/${job.id}/review`}
+                className="px-4 py-2 rounded-xl text-sm font-bold"
+                style={{ backgroundColor: 'rgba(251, 191, 36, 0.12)', color: '#fbbf24' }}
+              >
+                Review &amp; publish →
+              </Link>
               {nextMetric.map(to => (
                 <PrimaryButton key={to} onClick={() => transition('metric_release', to)}>
                   Metrics → {to.replace(/_/g, ' ')}

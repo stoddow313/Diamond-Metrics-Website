@@ -140,6 +140,8 @@ export const api = {
   commandCreateAttempt: (jobId, attempt) => request(`/api/command/jobs/${jobId}/attempts`, { method: 'POST', body: attempt }),
   commandMeasureAttempt: (attemptId, marks) => request(`/api/command/attempts/${attemptId}/measure`, { method: 'POST', body: marks }),
   commandAttemptUnavailable: (attemptId, fields) => request(`/api/command/attempts/${attemptId}/unavailable`, { method: 'POST', body: fields }),
+  commandReview: (jobId) => request(`/api/command/jobs/${jobId}/review`),
+  commandDecideResult: (resultId, decision, note = '') => request(`/api/command/results/${resultId}/decision`, { method: 'POST', body: { decision, note } }),
 
   // public
   publicProfile: (slug) => request(`/api/public/players/${slug}`, { auth: false }),

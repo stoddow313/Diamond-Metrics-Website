@@ -357,6 +357,8 @@ addColumnIfMissing('stat_entries', 'excluded', 'excluded INTEGER NOT NULL DEFAUL
 // Command metric-release adapter provenance (Phase 4.2 / Command M1+):
 addColumnIfMissing('stat_entries', 'method', 'method TEXT');
 addColumnIfMissing('stat_entries', 'metric_result_id', 'metric_result_id INTEGER');
+// The adapter creates at most one game per player per Command job.
+addColumnIfMissing('games', 'command_job_id', 'command_job_id INTEGER REFERENCES cmd_jobs(id)');
 // Internal roles: admin (full), analyst (Command workspace), reviewer (QA+publish).
 addColumnIfMissing('admins', 'role', "role TEXT NOT NULL DEFAULT 'admin'");
 // External/source ids so re-imports are idempotent and never duplicate
