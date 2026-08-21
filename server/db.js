@@ -518,7 +518,37 @@ db.exec(`
     created_at   TEXT NOT NULL DEFAULT (datetime('now'))
   );
   CREATE INDEX IF NOT EXISTS idx_cmd_audit_target ON cmd_review_actions(target_table, target_id);
+
+  -- Auditable customer/internal notification events (owner directive: in
+  -- Phase 1). Email dispatch rides the adapter; event rows are the audit.
+  CREATE TABLE IF NOT EXISTS cmd_notifications (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    job_id       INTEGER NOT NULL REFERENCES cmd_jobs(id) ON DELETE CASCADE,
+    event_key    TEXT NOT NULL,          -- footage_received | review_started | metrics_ready | full_review_pending | full_review_complete | paid_metric_unavailable
+    audience     TEXT NOT NULL DEFAULT 'customer',   -- customer | internal
+    payload      TEXT NOT NULL DEFAULT '{}',
+    email_status TEXT NOT NULL DEFAULT 'skipped',    -- skipped | queued | sent | failed
+    created_at   TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+  CREATE INDEX IF NOT EXISTS idx_cmd_notifications_job ON cmd_notifications(job_id, created_at);
+
+  -- Game-record sources (GameChanger scorecard import, live internal entry,
+  -- postgame manual score). Non-blocking for Rookie; raw import preserved
+  -- for later validation and box-score completion.
+  CREATE TABLE IF NOT EXISTS cmd_game_record_sources (
+    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+    job_id            INTEGER NOT NULL REFERENCES cmd_jobs(id) ON DELETE CASCADE,
+    source_kind       TEXT NOT NULL,     -- gamechanger_export | live_internal | postgame_manual
+    label             TEXT DEFAULT '',
+    storage_key       TEXT DEFAULT '',   -- raw file reference once media storage lands (M2)
+    raw_import        TEXT DEFAULT '',   -- raw parsed payload when supplied inline
+    validation_status TEXT NOT NULL DEFAULT 'pending_validation',  -- pending_validation | validating | validated | rejected
+    note              TEXT DEFAULT '',
+    created_by        INTEGER REFERENCES admins(id),
+    created_at        TEXT NOT NULL DEFAULT (datetime('now'))
+  );
 `);
+addColumnIfMissing('cmd_orders', 'contact_email', 'contact_email TEXT DEFAULT \'\'');
 
 // ── Seed Command reference data (idempotent; active flags follow code) ──
 {

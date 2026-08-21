@@ -77,7 +77,7 @@ model from the roadmap, mapped onto the existing publish gates.
 - **Metric release (Phase 1):** approved `metric_results` → adapter → existing per-player `games` + `stat_entries` rows (method-tagged). Profiles, Pro Day cards, team/tournament dashboards, and the rating engine consume them with zero changes. Verified-method badges on profile/dashboard displays ride a later UI pass reading `stat_entries.method`.
 - **Two-release model:** metric release updates player metrics immediately after QA; box-score/game/team/tournament statistics wait for `release-game-record` (Phase 2), which writes `bs_*` stat_entries + `tournament_games` scores through the validated game record. Customer UI states "full review pending" between the two (dashboards already carry coverage language).
 - **Evidence clips on customer surfaces:** Phase 1 publishes **numbers only**; clips remain internal/role-gated pending the consent/display product decision (question below).
-- **Notifications:** Phase 1 = in-app status on existing staff portal + admin queue states; transactional email adapter (Resend or Postmark) is a small later add once a provider is approved.
+- **Notifications (Phase 1 scope, owner-directed):** auditable notification events written on workflow transitions — `footage_received`, `review_started`, `metrics_ready`, `full_review_pending`, `full_review_complete`, `paid_metric_unavailable` — stored per job with audience + payload, surfaced in Command, and dispatched through a transactional-email adapter. **Provider recommendation: Resend** (simple API, per-message pricing, domain verification only); the adapter ships now with a logging backend and activates by setting `RESEND_API_KEY` + a from-address — no workflow redesign. Recipients: order contact email + authorized team staff.
 - **No duplicate entities:** jobs bind to existing organizations/teams/rosters/tournament_games; bulk tournament triage reuses the Phase-3 entities and import-engine duplicate rules.
 
 ## 4. Phase 1 vertical slice — Rookie workflow
@@ -89,10 +89,10 @@ shared event/metric model is laid in M1 so nothing is Rookie-only:
 |---|---|---|
 | 1 | cmd schema + roles + metric registry (seeded incl. steal_time) + orders/requirements + job CRUD + production queue UI | Job created against existing team/game; requirements activate from order |
 | 2 | R2 direct multipart upload + worker (probe/proxy/thumbnails/clips) + feed states + **frame-step prototype acceptance** | 2 h file uploads resumably; proxy streams; frame stepping verified accurate vs known-FPS test clip; VFR flagged |
-| 3 | Radar CSV import (immutable rows, idempotent), radar queue UI, match/confirm/invalidate, radar-verified velocity results | Sample Pocket Radar CSV → confirmed matches → draft velocity results with evidence |
+| 3 | Radar CSV import (immutable rows, idempotent) **and manual radar entry** (player, velocity, pitch/exit classification, pitch type, context, note, unmatched/invalid status), radar queue UI, match/confirm/invalidate, radar-verified velocity results | Sample Pocket Radar CSV → confirmed matches → draft velocity results with evidence; manual readings follow the same immutability + match rules |
 | 4 | Analysis workspace (player, feed selector, timeline, keyboard) + running queues + measurement drawer (H2F, steal) with save-and-advance + unavailable pathway | Clean candidate measured in ≤15 s; frames/FPS/version stored as evidence |
 | 5 | Capture-readiness gate, automated QA flags, review/publish screen, **metric-release adapter**, correction/supersede flow, audit surfaces | Rookie acceptance test: valid-capture game start→publish with no spreadsheet/CSV handoff; results live on the real profile |
-| 6 | Pilot hardening: telemetry (stage timing, unavailable/match/return rates), notifications-in-app, SQLite nightly R2 backup, Sentry + structured logs, staging env, bulk job creation for tournaments | Pilot games processed; timing dashboard shows the measured median |
+| 6 | Pilot hardening: telemetry (stage timing, unavailable/match/return rates), SQLite nightly R2 backup, Sentry + structured logs, staging env, bulk job creation for tournaments | Pilot games processed; timing dashboard shows the measured median |
 
 **Estimate.** At our demonstrated cadence (working sessions + your same-day PR
 merges): M1–M2 ≈ one week of sessions together (M2 carries the prototype risk),
@@ -117,6 +117,26 @@ sequence are estimated per-phase after Phase 1 pilots, as instructed.
 
 **Waiting on samples:** real Pocket Radar CSV export(s), 2–3 representative game files (incl. one 30 fps and one VFR phone capture), a GameChanger scorecard export, roster file. M3/M2 acceptance tests are written against these.
 
+## 5a. Metric-release mapping (atomic Command records → existing profile records)
+
+Implemented in `server/metricRelease.js` (pure, versioned `DM_RELEASE_V1`, tested)
+and consumed by the M5 release adapter. Principles: `metric_results` keeps **every**
+individual reading/attempt with evidence and validity; `stat_entries` receives only
+**approved display rollups**; unavailable results stay unavailable with a reason and
+never become zeroes or enter denominators.
+
+| Command metric | Atomic records kept | Published rollups → existing keys |
+|---|---|---|
+| Pitch velocity — radar | every valid confirmed reading (+ invalid/unmatched rows retained, excluded) | `max_velo` = max(valid), `avg_velo` = mean(valid); valid-reading count stored as sample metadata |
+| Exit velocity — radar (later phase) | every valid matched BIP reading | `max_exit_velo` = max, `avg_exit_velo` = mean, valid count |
+| Home-to-first | every valid attempt (frames, FPS, elapsed) + unavailable attempts with reason | best (min) time → `home_to_first`; average + attempt count as metadata |
+| Steal time | every valid attempt incl. failed steals (timing is outcome-independent) + unavailable attempts | best (min) time → `steal_time`; average + attempt count as metadata |
+
+Rollup rows land in the existing per-player `games`/`stat_entries` path (method-tagged,
+linked to their `metric_result_id`), so profiles/dashboards/rating engine read them
+unchanged. A job with only unavailable results publishes **no** stat_entries row for
+that metric — absence, never zero.
+
 ## 6. Decision log
 
 | Date | Decision | Status |
@@ -128,3 +148,9 @@ sequence are estimated per-phase after Phase 1 pilots, as instructed.
 | 2026-08-20 | Command lives at `/command` (internal-only route group, shared dark system) | Confirmed by owner |
 | 2026-08-20 | Order-level consent checkbox at job setup, auditable | Working approach — **pending review with Cam**; legal language to follow |
 | 2026-08-20 | Sample plan: Dropbox test/Pro Day footage for pipeline; synthetic burned-in frame-counter clip for the M2 frame-accuracy gate; Pocket Radar CSV expected from next tournament (gates M3 acceptance only) | Agreed |
+| 2026-08-20 | Owner approval: proceed M1–M2 incl. frame-accuracy gate; retention approach approved as specified | Approved |
+| 2026-08-20 | M3 gains manual Pocket Radar entry (player, velocity, pitch/exit, pitch type, context, note, unmatched/invalid) alongside CSV | Directed |
+| 2026-08-20 | Customer notification system moves INTO Phase 1: six auditable event types + Resend-ready email adapter (in-app events now, email activates by env config) | Directed |
+| 2026-08-20 | Explicit release mapping documented (§5a) and implemented as versioned pure module before M5; unavailable never becomes zero | Directed |
+| 2026-08-20 | GameChanger scorecard stays a supported game-record source at job setup (non-blocking for Rookie); raw upload preserved pending validation | Directed |
+| 2026-08-20 | 2–3-week estimate scope confirmed: controlled pilot-ready Rookie workflow only; scorekeeping/advanced modules/tournament scale estimated after pilot | Aligned |

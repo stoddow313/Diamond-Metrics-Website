@@ -2,6 +2,7 @@
 // index.js with shared db + auth middleware. Every state change writes a
 // cmd_review_actions row; creation flows are transactional.
 import { PACKAGES, buildRequirements, canTransition, roleCanTransition, METRIC_RELEASE_STATES, GAME_RECORD_STATES } from './commandLogic.js';
+import { emitJobEvent } from './notifications.js';
 
 export function mountCommandRoutes(app, { db, requireInternal }) {
   const audit = (targetTable, targetId, actorId, action, { note = '', prev = '', next = '' } = {}) =>
@@ -67,8 +68,8 @@ export function mountCommandRoutes(app, { db, requireInternal }) {
     const ruleset = db.prepare("SELECT id FROM rulesets WHERE key = 'baseball_default'").get();
 
     const create = db.transaction(() => {
-      const orderId = db.prepare('INSERT INTO cmd_orders (package_key, label, notes, created_by) VALUES (?, ?, ?, ?)')
-        .run(b.package_key, PACKAGES[b.package_key].label, String(b.notes || ''), req.internal.id).lastInsertRowid;
+      const orderId = db.prepare('INSERT INTO cmd_orders (package_key, label, notes, contact_email, created_by) VALUES (?, ?, ?, ?, ?)')
+        .run(b.package_key, PACKAGES[b.package_key].label, String(b.notes || ''), String(b.contact_email || '').toLowerCase().trim(), req.internal.id).lastInsertRowid;
       const insReq = db.prepare(
         'INSERT INTO cmd_metric_requirements (order_id, metric_code, priority, capture_requirement, enabled) VALUES (?, ?, ?, ?, ?)'
       );
@@ -102,7 +103,7 @@ export function mountCommandRoutes(app, { db, requireInternal }) {
     SELECT j.*, t.name AS team_name, o.package_key, o.label AS order_label,
            a.name AS assigned_name, tr.name AS tournament_name,
            (SELECT COUNT(*) FROM cmd_metric_requirements r WHERE r.order_id = j.order_id AND r.enabled = 1) AS requirement_count,
-           c.media_consent, c.sharing_scope
+           o.contact_email, c.media_consent, c.sharing_scope
     FROM cmd_jobs j
     JOIN teams t ON t.id = j.team_id
     JOIN cmd_orders o ON o.id = j.order_id
@@ -132,7 +133,14 @@ export function mountCommandRoutes(app, { db, requireInternal }) {
       `SELECT ra.*, a.name AS actor_name FROM cmd_review_actions ra LEFT JOIN admins a ON a.id = ra.actor_id
        WHERE ra.target_table = 'cmd_jobs' AND ra.target_id = ? ORDER BY ra.id DESC`
     ).all(id);
-    return { ...job, requirements, audit: auditTrail };
+    const notifications = db.prepare(
+      'SELECT id, event_key, audience, email_status, created_at FROM cmd_notifications WHERE job_id = ? ORDER BY id DESC'
+    ).all(id);
+    const gameRecordSources = db.prepare(
+      `SELECT g.*, a.name AS created_by_name FROM cmd_game_record_sources g LEFT JOIN admins a ON a.id = g.created_by
+       WHERE g.job_id = ? ORDER BY g.id DESC`
+    ).all(id);
+    return { ...job, requirements, audit: auditTrail, notifications, game_record_sources: gameRecordSources };
   }
 
   app.get('/api/command/jobs/:id', requireInternal, (req, res) => {
@@ -182,7 +190,37 @@ export function mountCommandRoutes(app, { db, requireInternal }) {
     }
     db.prepare(`UPDATE cmd_jobs SET ${col} = ?, updated_at = datetime('now') WHERE id = ?`).run(to, job.id);
     audit('cmd_jobs', job.id, req.internal.id, 'status_changed', { note: `${kind}${note ? ` — ${note}` : ''}`, prev: from, next: to });
+
+    // Customer notification events (TDR §3): auditable rows; email rides the adapter.
+    if (kind === 'metric_release' && to === 'in_progress' && from === 'not_started') {
+      emitJobEvent(db, { jobId: job.id, eventKey: 'review_started' });
+    }
+    if (kind === 'metric_release' && to === 'released') {
+      emitJobEvent(db, { jobId: job.id, eventKey: 'metrics_ready' });
+      if (!['released', 'not_ordered'].includes(job.game_record_status)) {
+        emitJobEvent(db, { jobId: job.id, eventKey: 'full_review_pending' });
+      }
+    }
+    if (kind === 'game_record' && to === 'released') {
+      emitJobEvent(db, { jobId: job.id, eventKey: 'full_review_complete' });
+    }
     res.json({ job: jobDetail(job.id) });
+  });
+
+  // GameChanger scorecard / manual game-record sources: non-blocking for
+  // Rookie; raw import preserved, pending validation (box score completes later).
+  app.post('/api/command/jobs/:id/game-record-sources', requireInternal, (req, res) => {
+    const job = db.prepare('SELECT id FROM cmd_jobs WHERE id = ?').get(req.params.id);
+    if (!job) return res.status(404).json({ error: 'Job not found' });
+    const b = req.body || {};
+    if (!['gamechanger_export', 'live_internal', 'postgame_manual'].includes(b.source_kind)) {
+      return res.status(400).json({ error: 'source_kind must be gamechanger_export, live_internal, or postgame_manual' });
+    }
+    const info = db.prepare(
+      'INSERT INTO cmd_game_record_sources (job_id, source_kind, label, raw_import, note, created_by) VALUES (?, ?, ?, ?, ?, ?)'
+    ).run(job.id, b.source_kind, String(b.label || ''), typeof b.raw_import === 'string' ? b.raw_import : JSON.stringify(b.raw_import || ''), String(b.note || ''), req.internal.id);
+    audit('cmd_jobs', job.id, req.internal.id, 'game_record_source_attached', { note: `${b.source_kind}${b.label ? ` — ${b.label}` : ''}` });
+    res.status(201).json({ job: jobDetail(job.id), source_id: info.lastInsertRowid });
   });
 
   app.put('/api/command/requirements/:id', requireInternal, (req, res) => {

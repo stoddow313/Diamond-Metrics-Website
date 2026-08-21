@@ -172,7 +172,7 @@ export function NewJobPage() {
   const [form, setForm] = useState({
     package_key: 'rookie', team_id: '', opponent_label: '', tournament_game_id: '',
     game_date: '', game_type: 'game', event_label: '', assigned_to: '', due_date: '',
-    media_consent: true, sharing_scope: 'internal', notes: '',
+    media_consent: true, sharing_scope: 'internal', notes: '', contact_email: '',
   });
   const navigate = useNavigate();
 
@@ -302,7 +302,10 @@ export function NewJobPage() {
               />
               Order includes media consent (recorded and auditable; legal language pending)
             </label>
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+              <Field label="Customer contact email (notifications)">
+                <TextInput type="email" value={form.contact_email} onChange={e => setForm(f => ({ ...f, contact_email: e.target.value }))} placeholder="coach@example.com" />
+              </Field>
               <Field label="Sharing scope">
                 <Select value={form.sharing_scope} onChange={e => setForm(f => ({ ...f, sharing_scope: e.target.value }))}>
                   <option value="internal">Internal only</option>
@@ -460,6 +463,50 @@ export function JobDetailPage() {
                 />
               </Field>
             </div>
+          </section>
+
+          <section className="rounded-2xl border p-6" style={cardStyle}>
+            <h2 className="text-lg font-bold text-white mb-1" style={{ fontSize: '1.125rem' }}>Game record sources</h2>
+            <p className="text-xs mb-3" style={{ color: '#64748b' }}>
+              GameChanger scorecards and manual scores attach here for later validation — they never block metric release.
+            </p>
+            {(job.game_record_sources || []).length === 0 ? (
+              <p className="text-sm mb-3" style={{ color: '#94a3b8' }}>No game-record source attached yet.</p>
+            ) : (job.game_record_sources || []).map(g => (
+              <p key={g.id} className="text-xs py-1.5 border-t" style={{ borderColor: '#1e3a5f', color: '#cfe8ff' }}>
+                <b>{g.source_kind.replace(/_/g, ' ')}</b>{g.label ? ` · ${g.label}` : ''} ·{' '}
+                <span style={{ color: '#fbbf24' }}>{g.validation_status.replace(/_/g, ' ')}</span>
+                <span style={{ color: '#475569' }}> · {g.created_by_name || ''} {g.created_at}</span>
+              </p>
+            ))}
+            <GhostButton
+              onClick={async () => {
+                try {
+                  const label = window.prompt('Source label (e.g. GameChanger export — vs Chargers 8/7):');
+                  if (label === null) return;
+                  const { job: updated } = await api.commandAttachGameRecordSource(job.id, { source_kind: 'gamechanger_export', label });
+                  setJob(updated);
+                } catch (err) { setError(err.message); }
+              }}
+            >
+              + Attach GameChanger scorecard
+            </GhostButton>
+          </section>
+
+          <section className="rounded-2xl border p-6" style={cardStyle}>
+            <h2 className="text-lg font-bold text-white mb-1" style={{ fontSize: '1.125rem' }}>Customer notifications</h2>
+            <p className="text-xs mb-3" style={{ color: '#64748b' }}>
+              Auditable events{job.contact_email ? ` · contact: ${job.contact_email}` : ' · no contact email on order'} · email sends automatically once the provider is configured.
+            </p>
+            {(job.notifications || []).length === 0 ? (
+              <p className="text-sm" style={{ color: '#94a3b8' }}>No events yet.</p>
+            ) : (job.notifications || []).map(n => (
+              <p key={n.id} className="text-xs py-1.5 border-t" style={{ borderColor: '#1e3a5f', color: '#cfe8ff' }}>
+                <b>{n.event_key.replace(/_/g, ' ')}</b> · {n.audience} ·{' '}
+                <span style={{ color: n.email_status === 'sent' ? '#4ade80' : n.email_status === 'failed' ? '#f87171' : '#64748b' }}>email {n.email_status}</span>
+                <span style={{ color: '#475569' }}> · {n.created_at}</span>
+              </p>
+            ))}
           </section>
 
           <section className="rounded-2xl border p-6" style={cardStyle}>
