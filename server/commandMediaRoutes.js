@@ -49,19 +49,36 @@ export function mountCommandMediaRoutes(app, { db, requireInternal }) {
       });
     }
 
+    // Content-hash dedupe, but only against a feed that actually made it.
+    // A feed still in 'uploading' (or one that failed) is the remains of an
+    // interrupted transfer — a dropped connection partway through a 2-hour
+    // game file. Treating that as a duplicate would hand back a broken feed
+    // and refuse the re-upload forever, so those get a fresh upload session
+    // against the same row instead.
+    const RESUMABLE = ['uploading', 'failed'];
+    let reuseFeedId = null;
     if (b.content_hash && b.size_bytes) {
       const existing = db.prepare(
         'SELECT * FROM cmd_video_feeds WHERE job_id = ? AND content_hash = ? AND size_bytes = ?'
       ).get(job.id, b.content_hash, b.size_bytes);
-      if (existing) return res.json({ feed: existing, upload: null, duplicate: true });
+      if (existing && !RESUMABLE.includes(existing.status)) {
+        return res.json({ feed: existing, upload: null, duplicate: true });
+      }
+      if (existing) reuseFeedId = existing.id;
     }
 
-    const info = db.prepare(
-      `INSERT INTO cmd_video_feeds (job_id, label, capture_profile_key, storage_key, original_name, size_bytes, content_hash, recording_notes, created_by)
-       VALUES (?, ?, ?, '', ?, ?, ?, ?, ?)`
-    ).run(job.id, String(b.label || 'Behind Home'), String(b.capture_profile_key || ''), String(b.original_name),
-      b.size_bytes ?? null, String(b.content_hash || ''), String(b.recording_notes || ''), req.internal.id);
-    const feedId = info.lastInsertRowid;
+    let feedId;
+    if (reuseFeedId) {
+      // Restart the interrupted transfer in place: same feed, clean state.
+      db.prepare("UPDATE cmd_video_feeds SET status = 'uploading', error = '', updated_at = datetime('now') WHERE id = ?").run(reuseFeedId);
+      feedId = reuseFeedId;
+    } else {
+      feedId = db.prepare(
+        `INSERT INTO cmd_video_feeds (job_id, label, capture_profile_key, storage_key, original_name, size_bytes, content_hash, recording_notes, created_by)
+         VALUES (?, ?, ?, '', ?, ?, ?, ?, ?)`
+      ).run(job.id, String(b.label || 'Behind Home'), String(b.capture_profile_key || ''), String(b.original_name),
+        b.size_bytes ?? null, String(b.content_hash || ''), String(b.recording_notes || ''), req.internal.id).lastInsertRowid;
+    }
     const ext = (String(b.original_name).match(/\.[A-Za-z0-9]+$/) || ['.mp4'])[0].toLowerCase();
     const storageKey = `originals/${feedId}/source${ext}`;
     db.prepare('UPDATE cmd_video_feeds SET storage_key = ? WHERE id = ?').run(storageKey, feedId);
