@@ -59,6 +59,12 @@ export function createAttempt(db, jobId, { attempt_type, player_id, feed_id, bas
 function syncResults(db, event, measurement, actorId) {
   const payload = JSON.parse(event.payload);
   const code = METRIC_BY_ATTEMPT[payload.attempt_type];
+  // Pre-decision results are safe to replace outright; approved/published
+  // results survive as history — superseded by their replacement below
+  // (corrections after release keep the full chain).
+  const prior = db.prepare(
+    "SELECT id, metric_code FROM cmd_metric_results WHERE evidence_kind='measurement' AND evidence_id IN (SELECT id FROM cmd_measurements WHERE event_id = ?) AND status IN ('approved','published') AND superseded_by IS NULL"
+  ).all(event.id);
   db.prepare(
     "DELETE FROM cmd_metric_results WHERE evidence_kind='measurement' AND evidence_id IN (SELECT id FROM cmd_measurements WHERE event_id = ?) AND status IN ('draft','unavailable')"
   ).run(event.id);
@@ -79,6 +85,16 @@ function syncResults(db, event, measurement, actorId) {
       `INSERT INTO cmd_metric_results (job_id, metric_code, player_id, value, unit, method, status, unavailable_reason, evidence_kind, evidence_id, calculation_version, created_by)
        VALUES (?, ?, ?, NULL, 's', 'frame_timed', 'unavailable', ?, 'measurement', ?, ?, ?)`
     ).run(event.job_id, code, event.player_id, measurement.unavailable_reason, measurement.id, MEASURE_VERSION, actorId);
+  }
+  for (const old of prior) {
+    const successor = db.prepare(
+      "SELECT id FROM cmd_metric_results WHERE evidence_kind='measurement' AND evidence_id IN (SELECT id FROM cmd_measurements WHERE event_id = ?) AND metric_code = ? AND superseded_by IS NULL AND id != ?"
+    ).get(event.id, old.metric_code, old.id);
+    if (successor) {
+      db.prepare("UPDATE cmd_metric_results SET superseded_by = ?, updated_at = datetime('now') WHERE id = ?").run(successor.id, old.id);
+    } else {
+      db.prepare("UPDATE cmd_metric_results SET status = 'withdrawn', updated_at = datetime('now') WHERE id = ?").run(old.id);
+    }
   }
 }
 

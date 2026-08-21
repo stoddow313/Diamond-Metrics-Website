@@ -106,25 +106,33 @@ export function classifyReading(db, readingId, { player_id, pitch_or_exit, pitch
        confirmed_by=?, confirmed_at=datetime('now') WHERE id=?`
     ).run(next.player_id ?? null, next.pitch_or_exit, next.pitch_type, next.status, next.note, actorId, readingId);
 
-    // Draft metric result mirrors the reading's current state. One result per
-    // reading; drafts are safe to remove when a reading stops being matched.
+    // The reading's active metric result mirrors its current state. Drafts
+    // update or delete outright; approved/published results are history —
+    // a reclassification supersedes them (corrections keep the chain) or
+    // withdraws them when the evidence stops being releasable.
     const existing = db.prepare(
-      "SELECT id, status FROM cmd_metric_results WHERE evidence_kind='radar_reading' AND evidence_id=?"
+      "SELECT id, status, player_id FROM cmd_metric_results WHERE evidence_kind='radar_reading' AND evidence_id=? AND superseded_by IS NULL AND status != 'withdrawn'"
     ).get(readingId);
     const code = next.status === 'matched' ? activeVelocityCode(db, reading.job_id, next.pitch_or_exit) : null;
+    const decided = existing && ['approved', 'published'].includes(existing.status);
 
     if (next.status === 'matched' && code) {
-      if (existing) {
+      if (existing && !decided) {
         db.prepare("UPDATE cmd_metric_results SET metric_code=?, player_id=?, value=?, updated_at=datetime('now') WHERE id=? AND status='draft'")
           .run(code, next.player_id, reading.velocity, existing.id);
-      } else {
-        db.prepare(
+      } else if (!existing || existing.player_id !== next.player_id) {
+        const newId = db.prepare(
           `INSERT INTO cmd_metric_results (job_id, metric_code, player_id, value, unit, method, status, evidence_kind, evidence_id, calculation_version, created_by)
            VALUES (?, ?, ?, ?, 'mph', 'radar_verified', 'draft', 'radar_reading', ?, 'CMD_V1', ?)`
-        ).run(reading.job_id, code, next.player_id, reading.velocity, readingId, actorId);
+        ).run(reading.job_id, code, next.player_id, reading.velocity, readingId, actorId).lastInsertRowid;
+        if (decided) {
+          db.prepare("UPDATE cmd_metric_results SET superseded_by = ?, updated_at = datetime('now') WHERE id = ?").run(newId, existing.id);
+        }
       }
-    } else if (existing && existing.status === 'draft') {
+    } else if (existing && !decided) {
       db.prepare('DELETE FROM cmd_metric_results WHERE id = ?').run(existing.id);
+    } else if (existing && decided) {
+      db.prepare("UPDATE cmd_metric_results SET status = 'withdrawn', updated_at = datetime('now') WHERE id = ?").run(existing.id);
     }
 
     db.prepare(

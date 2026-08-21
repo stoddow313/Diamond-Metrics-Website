@@ -3,6 +3,7 @@
 // cmd_review_actions row; creation flows are transactional.
 import { PACKAGES, buildRequirements, canTransition, roleCanTransition, METRIC_RELEASE_STATES, GAME_RECORD_STATES } from './commandLogic.js';
 import { emitJobEvent } from './notifications.js';
+import { computeQaFlags, releaseMetrics } from './releaseLogic.js';
 
 export function mountCommandRoutes(app, { db, requireInternal }) {
   const audit = (targetTable, targetId, actorId, action, { note = '', prev = '', next = '' } = {}) =>
@@ -188,6 +189,19 @@ export function mountCommandRoutes(app, { db, requireInternal }) {
     if (!roleCanTransition(req.internal.role, kind, to)) {
       return res.status(403).json({ error: `Role '${req.internal.role}' cannot move ${kind} to '${to}' — reviewer or admin required` });
     }
+    // Capture-readiness gate (M5): blocking QA flags stop approval.
+    if (kind === 'metric_release' && to === 'approved') {
+      const blocking = computeQaFlags(db, job.id).filter(f => f.level === 'blocking');
+      if (blocking.length > 0) {
+        return res.status(409).json({ error: `Cannot approve: ${blocking.map(f => f.label).join('; ')}`, qa_flags: blocking });
+      }
+    }
+    // The release adapter runs inside the released transition — approved
+    // rollups publish to games/stat_entries before the customer is notified.
+    let release = null;
+    if (kind === 'metric_release' && to === 'released') {
+      release = releaseMetrics(db, job.id, req.internal.id);
+    }
     db.prepare(`UPDATE cmd_jobs SET ${col} = ?, updated_at = datetime('now') WHERE id = ?`).run(to, job.id);
     audit('cmd_jobs', job.id, req.internal.id, 'status_changed', { note: `${kind}${note ? ` — ${note}` : ''}`, prev: from, next: to });
 
@@ -204,7 +218,7 @@ export function mountCommandRoutes(app, { db, requireInternal }) {
     if (kind === 'game_record' && to === 'released') {
       emitJobEvent(db, { jobId: job.id, eventKey: 'full_review_complete' });
     }
-    res.json({ job: jobDetail(job.id) });
+    res.json({ job: jobDetail(job.id), release });
   });
 
   // GameChanger scorecard / manual game-record sources: non-blocking for
