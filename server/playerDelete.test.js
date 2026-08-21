@@ -85,3 +85,35 @@ test('bulk delete is transactional and reports the count', () => {
   assert.equal(deletePlayers(db, [a, b]), 2);
   assert.equal(db.prepare('SELECT COUNT(*) c FROM players WHERE id IN (?, ?)').get(a, b).c, 0);
 });
+
+// Regression: Command (Phase 1) added player references in cmd_metric_results,
+// cmd_events/cmd_measurements, and cmd_radar_readings. Before these were part
+// of the cascade, deleting any athlete who had been through the analysis
+// pipeline aborted with a FOREIGN KEY error — the same 500 the admin UI hit
+// before the original cascade fix.
+test('deletes a player who has Command results, attempts, and radar readings', () => {
+  const pid = db.prepare("INSERT INTO players (slug, first_name, last_name) VALUES ('cmd-del','C','D')").run().lastInsertRowid;
+  const org = db.prepare("INSERT INTO organizations (name) VALUES ('O2')").run().lastInsertRowid;
+  const team = db.prepare("INSERT INTO teams (organization_id, name, slug) VALUES (?, 'T2', 't2')").run(org).lastInsertRowid;
+  const order = db.prepare("INSERT INTO cmd_orders (package_key, label) VALUES ('rookie', 'R')").run().lastInsertRowid;
+  const sport = db.prepare("SELECT id FROM sports WHERE key='baseball'").get().id;
+  const job = db.prepare("INSERT INTO cmd_jobs (sport_id, team_id, game_date, order_id) VALUES (?, ?, '2026-08-21', ?)").run(sport, team, order).lastInsertRowid;
+  const feed = db.prepare("INSERT INTO cmd_video_feeds (job_id, label, storage_key, original_name, status, effective_fps) VALUES (?, 'BH', 'k', 'f.mp4', 'ready', 60)").run(job).lastInsertRowid;
+  const evt = db.prepare("INSERT INTO cmd_events (job_id, sequence, event_type, player_id, payload, selected_feed_id) VALUES (?, 1, 'running_attempt', ?, '{}', ?)").run(job, pid, feed).lastInsertRowid;
+  db.prepare("INSERT INTO cmd_measurements (event_id, start_frame, end_frame, fps_used, elapsed_s, validity, formula_version) VALUES (?, 60, 332, 60, 4.533, 'valid', 'CMD_MEASURE_V1')").run(evt);
+  db.prepare("INSERT INTO cmd_metric_results (job_id, metric_code, player_id, value, method, evidence_kind) VALUES (?, 'home_to_first', ?, 4.533, 'frame_timed', 'measurement')").run(job, pid);
+  const reading = db.prepare("INSERT INTO cmd_radar_readings (job_id, source, velocity, player_id, status) VALUES (?, 'manual', 73.6, ?, 'matched')").run(job, pid).lastInsertRowid;
+
+  assert.equal(deletePlayers(db, [pid]), 1);
+  assert.equal(db.prepare('SELECT COUNT(*) n FROM cmd_metric_results WHERE player_id = ?').get(pid).n, 0);
+  assert.equal(db.prepare('SELECT COUNT(*) n FROM cmd_events WHERE player_id = ?').get(pid).n, 0);
+  assert.equal(db.prepare('SELECT COUNT(*) n FROM cmd_measurements WHERE event_id = ?').get(evt).n, 0);
+
+  // The radar reading survives, unlinked — captured evidence is not destroyed
+  // just because a player record was removed.
+  const kept = db.prepare('SELECT * FROM cmd_radar_readings WHERE id = ?').get(reading);
+  assert.ok(kept, 'radar reading retained');
+  assert.equal(kept.player_id, null);
+  assert.equal(kept.status, 'unmatched');
+  assert.equal(kept.velocity, 73.6);
+});

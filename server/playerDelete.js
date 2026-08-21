@@ -19,6 +19,21 @@ export function deletePlayers(db, ids) {
       db.prepare('DELETE FROM invites WHERE player_id = ?').run(id);
       db.prepare('DELETE FROM player_sessions WHERE player_user_id IN (SELECT id FROM player_users WHERE player_id = ?)').run(id);
       db.prepare('DELETE FROM player_users WHERE player_id = ?').run(id);
+
+      // Command (Phase 1) added three more player references. Without these
+      // the delete aborts on a foreign key for any athlete who has been
+      // through the analysis pipeline.
+      //
+      // Results and attempts are per-player and go with them. Radar readings
+      // are not: a reading is evidence that something was captured, owned by
+      // the job, so it is unlinked back to 'unmatched' rather than destroyed
+      // — deleting a player must not silently discard captured measurements
+      // from a game.
+      db.prepare('DELETE FROM cmd_metric_results WHERE player_id = ?').run(id);
+      db.prepare('DELETE FROM cmd_measurements WHERE event_id IN (SELECT id FROM cmd_events WHERE player_id = ?)').run(id);
+      db.prepare('DELETE FROM cmd_events WHERE player_id = ?').run(id);
+      db.prepare("UPDATE cmd_radar_readings SET player_id = NULL, status = 'unmatched' WHERE player_id = ?").run(id);
+
       deleted += db.prepare('DELETE FROM players WHERE id = ?').run(id).changes;
     }
     return deleted;
