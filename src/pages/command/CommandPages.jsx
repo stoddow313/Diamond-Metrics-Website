@@ -52,6 +52,8 @@ export function CommandLayout() {
             <nav className="hidden md:flex items-center gap-4 text-sm font-bold">
               <Link to="/command" className="hover:underline" style={{ color: '#cfe8ff' }}>Production Queue</Link>
               <Link to="/command/new" className="hover:underline" style={{ color: '#cfe8ff' }}>New Job</Link>
+              <Link to="/command/bulk" className="hover:underline" style={{ color: '#cfe8ff' }}>Bulk</Link>
+              <Link to="/command/ops" className="hover:underline" style={{ color: '#cfe8ff' }}>Operations</Link>
               {user?.role === 'admin' && <Link to="/admin" className="hover:underline" style={{ color: '#64748b' }}>Admin ↗</Link>}
             </nav>
           </div>

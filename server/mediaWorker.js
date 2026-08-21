@@ -7,6 +7,7 @@
 //          metrics stay blocked until a CFR proxy exists.
 // proxy  → 720p H.264 constant-frame-rate faststart proxy + thumbnail strip.
 // clip   → evidence clip from a rendition with pre/post-roll (used from M4).
+import { log, captureError } from './observability.js';
 import { execFile } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -114,7 +115,7 @@ export async function processNextMediaJob(db) {
   const job = db.prepare("SELECT * FROM cmd_media_jobs WHERE status='queued' ORDER BY id LIMIT 1").get();
   if (!job) return false;
   const claimed = db.prepare(
-    "UPDATE cmd_media_jobs SET status='running', attempts=attempts+1, updated_at=datetime('now') WHERE id=? AND status='queued'"
+    "UPDATE cmd_media_jobs SET status='running', attempts=attempts+1, started_at=datetime('now'), updated_at=datetime('now') WHERE id=? AND status='queued'"
   ).run(job.id);
   if (claimed.changes === 0) return true;   // raced; try again next tick
 
@@ -125,11 +126,14 @@ export async function processNextMediaJob(db) {
     else if (job.kind === 'proxy') await handleProxy(db, job, feed);
     else if (job.kind === 'clip') await handleClip();
     else throw new Error(`unknown media job kind ${job.kind}`);
-    db.prepare("UPDATE cmd_media_jobs SET status='done', error='', updated_at=datetime('now') WHERE id=?").run(job.id);
+    db.prepare("UPDATE cmd_media_jobs SET status='done', error='', finished_at=datetime('now'), updated_at=datetime('now') WHERE id=?").run(job.id);
   } catch (err) {
     const retryable = job.attempts < 3;
-    db.prepare("UPDATE cmd_media_jobs SET status=?, error=?, updated_at=datetime('now') WHERE id=?")
+    // A retried job goes back to 'queued' and re-stamps started_at when it
+    // is next claimed; only a terminal failure closes the timing window.
+    db.prepare(`UPDATE cmd_media_jobs SET status=?, error=?, ${retryable ? '' : "finished_at=datetime('now'),"} updated_at=datetime('now') WHERE id=?`)
       .run(retryable ? 'queued' : 'failed', String(err.message).slice(0, 500), job.id);
+    captureError(err, { event: 'media_job_failed', component: 'media_worker', job_id: job.id, kind: job.kind, attempt: job.attempts + 1, retryable });
     if (feed) {
       db.prepare("UPDATE cmd_video_feeds SET status=?, error=?, updated_at=datetime('now') WHERE id=?")
         .run(retryable ? 'retrying' : 'failed', String(err.message).slice(0, 500), feed.id);
@@ -140,10 +144,11 @@ export async function processNextMediaJob(db) {
 
 export function startInlineWorker(db, { intervalMs = 3000 } = {}) {
   const tick = async () => {
-    try { while (await processNextMediaJob(db)) { /* drain */ } } catch { /* logged on rows */ }
+    try { while (await processNextMediaJob(db)) { /* drain */ } }
+    catch (err) { captureError(err, { event: 'media_worker_tick_failed', component: 'media_worker' }); }
   };
   const timer = setInterval(tick, intervalMs);
   timer.unref?.();
-  console.log(`[media] inline worker polling every ${intervalMs}ms (storage: ${storageMode})`);
+  log('info', 'media_worker_started', { interval_ms: intervalMs, storage: storageMode });
   return timer;
 }

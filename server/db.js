@@ -711,6 +711,22 @@ db.exec(`
 `);
 addColumnIfMissing('cmd_orders', 'contact_email', 'contact_email TEXT DEFAULT \'\'');
 
+// ── Command M6: operations (backups + media job timing) ─────────────────
+db.exec(`
+  CREATE TABLE IF NOT EXISTS ops_backups (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    storage_key TEXT NOT NULL,
+    bytes       INTEGER NOT NULL DEFAULT 0,
+    status      TEXT NOT NULL DEFAULT 'ok',      -- ok | failed
+    mode        TEXT NOT NULL DEFAULT '',        -- r2 | local
+    error       TEXT DEFAULT '',
+    created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+`);
+// Stage timing for pipeline telemetry: queue wait vs processing time.
+addColumnIfMissing('cmd_media_jobs', 'started_at', 'started_at TEXT');
+addColumnIfMissing('cmd_media_jobs', 'finished_at', 'finished_at TEXT');
+
 // ── Seed Command reference data (idempotent; active flags follow code) ──
 {
   const insSport = db.prepare('INSERT OR IGNORE INTO sports (key, name) VALUES (?, ?)');

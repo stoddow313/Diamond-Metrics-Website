@@ -39,67 +39,6 @@ export function mountCommandRoutes(app, { db, requireInternal }) {
   });
 
   // One-shot job creation: order + requirements + job + consent, transactionally.
-  app.post('/api/command/jobs', requireInternal, (req, res) => {
-    const b = req.body || {};
-    const teamRow = db.prepare('SELECT id, name FROM teams WHERE id = ?').get(b.team_id);
-    if (!teamRow) return res.status(400).json({ error: 'team_id must reference an existing team' });
-    if (!b.game_date) return res.status(400).json({ error: 'game_date is required' });
-    if (b.assigned_to && !db.prepare('SELECT 1 FROM admins WHERE id = ?').get(b.assigned_to)) {
-      return res.status(400).json({ error: 'assigned_to must reference an internal account' });
-    }
-    let tournamentId = null;
-    if (b.tournament_game_id) {
-      const tg = db.prepare('SELECT id, tournament_id FROM tournament_games WHERE id = ?').get(b.tournament_game_id);
-      if (!tg) return res.status(400).json({ error: 'tournament_game_id not found' });
-      tournamentId = tg.tournament_id;
-    }
-
-    let requirements;
-    try {
-      requirements = buildRequirements({
-        packageKey: b.package_key,
-        addonCodes: Array.isArray(b.addon_codes) ? b.addon_codes : [],
-        registry: registryRows(),
-      });
-    } catch (err) {
-      return res.status(400).json({ error: err.message });
-    }
-
-    const baseball = db.prepare("SELECT id FROM sports WHERE key = 'baseball'").get().id;
-    const ruleset = db.prepare("SELECT id FROM rulesets WHERE key = 'baseball_default'").get();
-
-    const create = db.transaction(() => {
-      const orderId = db.prepare('INSERT INTO cmd_orders (package_key, label, notes, contact_email, created_by) VALUES (?, ?, ?, ?, ?)')
-        .run(b.package_key, PACKAGES[b.package_key].label, String(b.notes || ''), String(b.contact_email || '').toLowerCase().trim(), req.internal.id).lastInsertRowid;
-      const insReq = db.prepare(
-        'INSERT INTO cmd_metric_requirements (order_id, metric_code, priority, capture_requirement, enabled) VALUES (?, ?, ?, ?, ?)'
-      );
-      for (const r of requirements) insReq.run(orderId, r.metric_code, r.priority, r.capture_requirement, r.enabled);
-
-      const jobId = db.prepare(
-        `INSERT INTO cmd_jobs (sport_id, ruleset_id, team_id, opponent_label, tournament_id, tournament_game_id,
-                               event_label, game_date, game_type, order_id, assigned_to, due_date, created_by)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-      ).run(baseball, ruleset?.id ?? null, teamRow.id, String(b.opponent_label || ''), tournamentId, b.tournament_game_id ?? null,
-        String(b.event_label || ''), b.game_date, b.game_type === 'pro_day' ? 'pro_day' : 'game',
-        orderId, b.assigned_to ?? null, b.due_date || null, req.internal.id).lastInsertRowid;
-
-      db.prepare('INSERT INTO cmd_consent (job_id, media_consent, sharing_scope, recorded_by) VALUES (?, ?, ?, ?)')
-        .run(jobId, b.media_consent ? 1 : 0, ['internal', 'customer', 'public'].includes(b.sharing_scope) ? b.sharing_scope : 'internal', req.internal.id);
-
-      audit('cmd_jobs', jobId, req.internal.id, 'created', { note: `${PACKAGES[b.package_key].label} · ${teamRow.name} · ${b.game_date}` });
-      if (b.assigned_to) audit('cmd_jobs', jobId, req.internal.id, 'assigned', { next: String(b.assigned_to) });
-      return jobId;
-    });
-
-    try {
-      const jobId = create();
-      res.status(201).json({ job: jobDetail(jobId) });
-    } catch (err) {
-      res.status(500).json({ error: `Job creation failed: ${err.message}` });
-    }
-  });
-
   const jobListSql = `
     SELECT j.*, t.name AS team_name, o.package_key, o.label AS order_label,
            a.name AS assigned_name, tr.name AS tournament_name,
@@ -176,6 +115,70 @@ export function mountCommandRoutes(app, { db, requireInternal }) {
   });
 
   // Two-release status transitions with role gates.
+  // Job creation, shared by the single-job route and bulk tournament
+  // creation (M6). Throws {status, message} on validation failure so both
+  // callers surface the same errors.
+  const createJob = (b, actorId) => {
+    const fail = (message, status = 400) => { throw Object.assign(new Error(message), { status }); };
+    const teamRow = db.prepare('SELECT id, name FROM teams WHERE id = ?').get(b.team_id);
+    if (!teamRow) fail('team_id must reference an existing team');
+    if (!b.game_date) fail('game_date is required');
+    if (b.assigned_to && !db.prepare('SELECT 1 FROM admins WHERE id = ?').get(b.assigned_to)) {
+      fail('assigned_to must reference an internal account');
+    }
+    let tournamentId = b.tournament_id ?? null;
+    if (b.tournament_game_id) {
+      const tg = db.prepare('SELECT id, tournament_id FROM tournament_games WHERE id = ?').get(b.tournament_game_id);
+      if (!tg) fail('tournament_game_id not found');
+      tournamentId = tg.tournament_id;
+    }
+
+    let requirements;
+    try {
+      requirements = buildRequirements({
+        packageKey: b.package_key,
+        addonCodes: Array.isArray(b.addon_codes) ? b.addon_codes : [],
+        registry: registryRows(),
+      });
+    } catch (err) {
+      fail(err.message);
+    }
+
+    const baseball = db.prepare("SELECT id FROM sports WHERE key = 'baseball'").get().id;
+    const ruleset = db.prepare("SELECT id FROM rulesets WHERE key = 'baseball_default'").get();
+
+    const orderId = db.prepare('INSERT INTO cmd_orders (package_key, label, notes, contact_email, created_by) VALUES (?, ?, ?, ?, ?)')
+      .run(b.package_key, PACKAGES[b.package_key].label, String(b.notes || ''), String(b.contact_email || '').toLowerCase().trim(), actorId).lastInsertRowid;
+    const insReq = db.prepare(
+      'INSERT INTO cmd_metric_requirements (order_id, metric_code, priority, capture_requirement, enabled) VALUES (?, ?, ?, ?, ?)'
+    );
+    for (const r of requirements) insReq.run(orderId, r.metric_code, r.priority, r.capture_requirement, r.enabled);
+
+    const jobId = db.prepare(
+      `INSERT INTO cmd_jobs (sport_id, ruleset_id, team_id, opponent_label, tournament_id, tournament_game_id,
+                             event_label, game_date, game_type, order_id, assigned_to, due_date, created_by)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(baseball, ruleset?.id ?? null, teamRow.id, String(b.opponent_label || ''), tournamentId, b.tournament_game_id ?? null,
+      String(b.event_label || ''), b.game_date, b.game_type === 'pro_day' ? 'pro_day' : 'game',
+      orderId, b.assigned_to ?? null, b.due_date || null, actorId).lastInsertRowid;
+
+    db.prepare('INSERT INTO cmd_consent (job_id, media_consent, sharing_scope, recorded_by) VALUES (?, ?, ?, ?)')
+      .run(jobId, b.media_consent ? 1 : 0, ['internal', 'customer', 'public'].includes(b.sharing_scope) ? b.sharing_scope : 'internal', actorId);
+
+    audit('cmd_jobs', jobId, actorId, 'created', { note: `${PACKAGES[b.package_key].label} · ${teamRow.name} · ${b.game_date}` });
+    if (b.assigned_to) audit('cmd_jobs', jobId, actorId, 'assigned', { next: String(b.assigned_to) });
+    return jobId;
+  };
+
+  app.post('/api/command/jobs', requireInternal, (req, res) => {
+    try {
+      const jobId = db.transaction(() => createJob(req.body || {}, req.internal.id))();
+      res.status(201).json({ job: jobDetail(jobId) });
+    } catch (err) {
+      res.status(err.status || 500).json({ error: err.status ? err.message : `Job creation failed: ${err.message}` });
+    }
+  });
+
   app.post('/api/command/jobs/:id/status', requireInternal, (req, res) => {
     const job = db.prepare('SELECT * FROM cmd_jobs WHERE id = ?').get(req.params.id);
     if (!job) return res.status(404).json({ error: 'Job not found' });
@@ -246,4 +249,7 @@ export function mountCommandRoutes(app, { db, requireInternal }) {
     if (job) audit('cmd_jobs', job.id, req.internal.id, 'requirement_toggled', { note: row.metric_code, prev: String(row.enabled), next: String(enabled) });
     res.json({ ok: true });
   });
+
+  // Shared with the ops routes (bulk tournament job creation).
+  return { createJob, jobDetail };
 }

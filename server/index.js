@@ -18,6 +18,9 @@ import { mountCommandRadarRoutes } from './commandRadarRoutes.js';
 import { mountCommandMeasureRoutes } from './commandMeasureRoutes.js';
 import { mountCommandReviewRoutes } from './commandReviewRoutes.js';
 import { startInlineWorker } from './mediaWorker.js';
+import { mountCommandOpsRoutes } from './commandOpsRoutes.js';
+import { startBackupScheduler } from './backup.js';
+import { requestLogger, errorHandler, installProcessHandlers, log, ENV } from './observability.js';
 import {
   attributedGames, aggregateByPlayer, teamCategoryBlocks, standings,
   leaderboard, overallLeaderboard, trendSeries, calcStamp, DEFAULT_MINS,
@@ -27,6 +30,10 @@ const app = express();
 // Render (and most hosts) inject PORT; DM_API_PORT is the local-dev override.
 const PORT = process.env.PORT || process.env.DM_API_PORT || 3001;
 const SESSION_TTL_DAYS = 30;
+
+// Structured request logging (M6) sits ahead of every route.
+installProcessHandlers();
+app.use(requestLogger);
 
 // Limit sized for base64 photo uploads (clients downscale before sending).
 app.use(express.json({ limit: '8mb' }));
@@ -1750,15 +1757,22 @@ app.get('/api/view/tournaments/:slug', (req, res) => {
 });
 
 // ── Diamond Metrics Command (internal analyst platform) ─────────────────
-mountCommandRoutes(app, { db, requireInternal });
+const { createJob } = mountCommandRoutes(app, { db, requireInternal });
 mountCommandMediaRoutes(app, { db, requireInternal });
 mountCommandRadarRoutes(app, { db, requireInternal });
 mountCommandMeasureRoutes(app, { db, requireInternal });
 mountCommandReviewRoutes(app, { db, requireInternal });
+mountCommandOpsRoutes(app, { db, requireInternal, createJob });
 // Media processing: inline worker in dev / single-service deployments;
 // DM_INLINE_WORKER=0 turns it off when the dedicated Render worker runs.
 if (process.env.DM_INLINE_WORKER !== '0') startInlineWorker(db);
 
+// Nightly SQLite snapshot to the storage adapter (DM_BACKUPS=0 disables).
+startBackupScheduler(db);
+
+// Terminal error handler — must be registered after every route.
+app.use(errorHandler);
+
 app.listen(PORT, () => {
-  console.log(`[api] Diamond Metrics API listening on http://localhost:${PORT}`);
+  log('info', 'api_started', { port: Number(PORT), env: ENV, storage: process.env.DM_STORAGE || 'local' });
 });

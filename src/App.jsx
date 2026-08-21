@@ -15,6 +15,8 @@ import FeedViewerPage from './pages/command/FeedViewerPage';
 import RadarQueuePage from './pages/command/RadarQueuePage';
 import RunningQueuePage from './pages/command/RunningQueuePage';
 import ReviewPage from './pages/command/ReviewPage';
+import OpsPage from './pages/command/OpsPage';
+import BulkJobsPage from './pages/command/BulkJobsPage';
 import AdminLayout from './components/admin/AdminLayout';
 import AdminPlayersPage from './pages/admin/AdminPlayersPage';
 import AdminPlayerEditorPage from './pages/admin/AdminPlayerEditorPage';
@@ -84,6 +86,8 @@ function AppRoutes() {
         <Route path="jobs/:jobId/radar" element={<RadarQueuePage />} />
         <Route path="jobs/:jobId/running" element={<RunningQueuePage />} />
         <Route path="jobs/:jobId/review" element={<ReviewPage />} />
+        <Route path="bulk" element={<BulkJobsPage />} />
+        <Route path="ops" element={<OpsPage />} />
       </Route>
       <Route path="/admin" element={<RoleRoute role="admin"><AdminLayout /></RoleRoute>}>
         <Route index element={<AdminPlayersPage />} />

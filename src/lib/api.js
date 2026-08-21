@@ -142,6 +142,10 @@ export const api = {
   commandAttemptUnavailable: (attemptId, fields) => request(`/api/command/attempts/${attemptId}/unavailable`, { method: 'POST', body: fields }),
   commandReview: (jobId) => request(`/api/command/jobs/${jobId}/review`),
   commandDecideResult: (resultId, decision, note = '') => request(`/api/command/results/${resultId}/decision`, { method: 'POST', body: { decision, note } }),
+  commandTelemetry: (days = 30) => request(`/api/command/telemetry?days=${days}`),
+  commandOps: () => request('/api/command/ops'),
+  commandRunBackup: () => request('/api/command/backups/run', { method: 'POST' }),
+  commandBulkJobs: (body) => request('/api/command/jobs/bulk', { method: 'POST', body }),
 
   // public
   publicProfile: (slug) => request(`/api/public/players/${slug}`, { auth: false }),

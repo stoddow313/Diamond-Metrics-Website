@@ -6,7 +6,7 @@
 // Selection: DM_STORAGE=r2 requires R2_* env; anything else falls back local.
 import fs from 'node:fs';
 import path from 'node:path';
-import { S3Client, CreateMultipartUploadCommand, UploadPartCommand, CompleteMultipartUploadCommand, AbortMultipartUploadCommand, GetObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
+import { S3Client, CreateMultipartUploadCommand, UploadPartCommand, CompleteMultipartUploadCommand, AbortMultipartUploadCommand, GetObjectCommand, PutObjectCommand, ListObjectsV2Command, DeleteObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
 const MODE = process.env.DM_STORAGE === 'r2' ? 'r2' : 'local';
@@ -69,6 +69,31 @@ export async function abortUpload(key, uploadId) {
     return;
   }
   fs.rmSync(localPathFor(key) + '.parts', { force: true });
+}
+
+// Key listing/deletion — used by backup retention, not the media path.
+export async function listObjects(prefix) {
+  if (MODE === 'r2') {
+    const keys = [];
+    let token;
+    do {
+      const page = await client().send(new ListObjectsV2Command({ Bucket: BUCKET(), Prefix: prefix, ContinuationToken: token }));
+      for (const obj of page.Contents || []) keys.push(obj.Key);
+      token = page.IsTruncated ? page.NextContinuationToken : undefined;
+    } while (token);
+    return keys;
+  }
+  const dir = localPathFor(prefix);
+  if (!fs.existsSync(dir)) return [];
+  return fs.readdirSync(dir).map(name => `${prefix}${name}`);
+}
+
+export async function deleteObject(key) {
+  if (MODE === 'r2') {
+    await client().send(new DeleteObjectCommand({ Bucket: BUCKET(), Key: key }));
+    return;
+  }
+  fs.rmSync(localPathFor(key), { force: true });
 }
 
 export async function putObject(key, filePath) {
