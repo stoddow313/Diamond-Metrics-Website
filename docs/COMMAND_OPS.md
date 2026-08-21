@@ -174,15 +174,42 @@ of discovering a problem partway through a 12 GB upload.
 
 Then upload one short real clip end to end before trusting a full game.
 
-### 3.7 ffmpeg is a separate prerequisite
+### 3.7 Video processing (ffmpeg)
 
-R2 solves storage, not processing. Video probing and proxy generation shell
-out to `ffmpeg`/`ffprobe`, which are **not present on Render's stock Node
-runtime** — feeds will register and upload, then fail during processing.
-Either switch the service to a Docker runtime with ffmpeg installed, or add a
-build step that provides the binaries, and set `FFMPEG_PATH`/`FFPROBE_PATH`
-accordingly. Everything that does not touch video (jobs, radar entry and
-import, review, release, notifications, telemetry) works without it.
+Render's Node runtime has no system ffmpeg, so the binaries ship as
+dependencies: `@ffmpeg-installer/ffmpeg` and `@ffprobe-installer/ffprobe`.
+Each publishes a per-platform binary as an optional dependency, so `npm ci`
+installs the correct one for the build machine with **no download step** —
+nothing extra to configure, and no build-time fetch that can fail.
+
+Resolution order at runtime:
+
+1. `FFMPEG_PATH` / `FFPROBE_PATH` — honoured **only** if set to an absolute
+   path that exists. A bare name like `ffmpeg` is deliberately ignored so a
+   stale override cannot shadow the working bundled binary.
+2. The bundled package binary (this is what production uses).
+3. Whatever is on `PATH`.
+
+**Do not set `FFMPEG_PATH`/`FFPROBE_PATH` in Render.** If they are already
+set there from an earlier configuration, remove them — the resolver ignores
+bare names, but leaving them is confusing.
+
+Verify on `/command/ops` → Service health → **Video processing**, which
+reports the resolved binary's version, or `unavailable` with the reason.
+
+**Equivalence check.** The bundled build is ffmpeg 4.4, older than a typical
+local Homebrew install. Regenerating the frame-accuracy gate clip's proxy
+with it produced output that is **bit-identical frame-for-frame** to the
+proxy the original gate validated (600/600 frames matching by `framemd5`),
+at the same 1280×720 / 60 fps CFR, with a worst-case timestamp deviation of
+0.00002 frames from a perfect 60 fps grid. Frame math is unaffected.
+
+**Capacity, which is the real constraint.** Proxy generation is CPU-bound and
+runs inline on the API instance. On Render's starter plan (0.5 CPU) a
+full-length 1080p60 game will transcode far slower than real time and will
+compete with API requests. Short clips and Pro Day segments are fine; before
+running full games regularly, bump the instance size — that is cheaper and
+simpler than splitting services while the database is SQLite (§1).
 
 ---
 

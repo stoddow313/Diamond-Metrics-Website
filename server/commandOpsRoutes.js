@@ -5,6 +5,7 @@ import { pipelineTelemetry } from './telemetry.js';
 import { lastBackup, runBackup, RETENTION_DAYS } from './backup.js';
 import { storageMode, selfTest, storageReady, missingStorageConfig } from './storage.js';
 import { ENV, errorTrackingEnabled } from './observability.js';
+import { ffmpegStatus } from './mediaWorker.js';
 import { emailConfigured } from './notifications.js';
 
 export function mountCommandOpsRoutes(app, { db, requireInternal, createJob }) {
@@ -20,7 +21,7 @@ export function mountCommandOpsRoutes(app, { db, requireInternal, createJob }) {
 
   // Service health at a glance: what the pilot operator needs to know
   // before trusting the queue on a Saturday morning.
-  app.get('/api/command/ops', requireInternal, (_req, res) => {
+  app.get('/api/command/ops', requireInternal, async (_req, res) => {
     const mediaQueue = db.prepare(
       "SELECT status, COUNT(*) n FROM cmd_media_jobs GROUP BY status"
     ).all().reduce((acc, r) => ({ ...acc, [r.status]: r.n }), {});
@@ -37,6 +38,7 @@ export function mountCommandOpsRoutes(app, { db, requireInternal, createJob }) {
       storage_missing_config: missingStorageConfig,
       worker_mode: process.env.DM_INLINE_WORKER === '0' ? 'dedicated' : 'inline',
       error_tracking: errorTrackingEnabled,
+      video: await ffmpegStatus(),
       email_configured: emailConfigured(),
       backups: {
         enabled: process.env.DM_BACKUPS !== '0',
