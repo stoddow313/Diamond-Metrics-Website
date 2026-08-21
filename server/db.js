@@ -1,6 +1,7 @@
 import Database from 'better-sqlite3';
 import { scryptSync, randomBytes, timingSafeEqual } from 'node:crypto';
 import path from 'node:path';
+import { REGISTRY_SEED, CAPTURE_PROFILE_SEED } from './commandLogic.js';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -353,6 +354,11 @@ addColumnIfMissing('games', 'event_id', 'event_id INTEGER REFERENCES events(id)'
 addColumnIfMissing('games', 'tournament_game_id', 'tournament_game_id INTEGER REFERENCES tournament_games(id)');
 // Admin exclusion of invalid/duplicate observations without deleting them.
 addColumnIfMissing('stat_entries', 'excluded', 'excluded INTEGER NOT NULL DEFAULT 0');
+// Command metric-release adapter provenance (Phase 4.2 / Command M1+):
+addColumnIfMissing('stat_entries', 'method', 'method TEXT');
+addColumnIfMissing('stat_entries', 'metric_result_id', 'metric_result_id INTEGER');
+// Internal roles: admin (full), analyst (Command workspace), reviewer (QA+publish).
+addColumnIfMissing('admins', 'role', "role TEXT NOT NULL DEFAULT 'admin'");
 // External/source ids so re-imports are idempotent and never duplicate
 // players, teams, games, or events (requirements §3/§8).
 for (const table of ['players', 'organizations', 'teams', 'tournaments', 'tournament_games']) {
@@ -392,6 +398,179 @@ export function verifyPassword(password, stored) {
   const candidate = scryptSync(password, salt, 64);
   const expected = Buffer.from(hash, 'hex');
   return candidate.length === expected.length && timingSafeEqual(candidate, expected);
+}
+
+// ═══ Diamond Metrics Command (internal analyst platform) ═════════════════
+// Shared-foundation rule: Command references existing organizations, teams,
+// rosters, tournaments, tournament_games, and players. It never duplicates
+// them. Approved results publish through the metric-release adapter into the
+// existing stat_entries path. docs/COMMAND_TDR.md is the decision record.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS sports (
+    id   INTEGER PRIMARY KEY AUTOINCREMENT,
+    key  TEXT NOT NULL UNIQUE,
+    name TEXT NOT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS rulesets (
+    id        INTEGER PRIMARY KEY AUTOINCREMENT,
+    sport_id  INTEGER NOT NULL REFERENCES sports(id),
+    key       TEXT NOT NULL UNIQUE,
+    name      TEXT NOT NULL,
+    config    TEXT NOT NULL DEFAULT '{}'      -- innings, time/run rules, tiebreaker
+  );
+
+  -- Sellable/production metric registry (appendix recipes). Distinct from the
+  -- display catalog: a registry row knows its recipe, capture tier, and which
+  -- public metric keys it publishes to.
+  CREATE TABLE IF NOT EXISTS cmd_metric_registry (
+    id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+    metric_code        TEXT NOT NULL UNIQUE,      -- e.g. pitch_velocity_radar
+    label              TEXT NOT NULL,
+    category           TEXT NOT NULL,             -- rookie | pitching | hitting | fielding | athleticism | game_context
+    availability_tier  TEXT NOT NULL,             -- A | B | C | D | X (appendix)
+    recipe_version     TEXT NOT NULL,
+    unit               TEXT DEFAULT '',
+    decimals           INTEGER NOT NULL DEFAULT 2,
+    method             TEXT NOT NULL,             -- radar_verified | frame_timed | video_estimated | manual | scorebook_derived
+    publishes_to       TEXT NOT NULL DEFAULT '[]',-- JSON array of public metricCatalog keys
+    capture_requirements TEXT NOT NULL DEFAULT '',
+    dependencies       TEXT NOT NULL DEFAULT '[]',
+    sellable           INTEGER NOT NULL DEFAULT 1,
+    active             INTEGER NOT NULL DEFAULT 0,-- activated per delivery phase
+    created_at         TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+
+  -- Orders select the metric modules for a job (package or custom).
+  CREATE TABLE IF NOT EXISTS cmd_orders (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    package_key TEXT NOT NULL,                  -- rookie | rookie_plus | pro | custom
+    label       TEXT DEFAULT '',
+    notes       TEXT DEFAULT '',
+    created_by  INTEGER REFERENCES admins(id),
+    created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+
+  CREATE TABLE IF NOT EXISTS cmd_metric_requirements (
+    id                  INTEGER PRIMARY KEY AUTOINCREMENT,
+    order_id            INTEGER NOT NULL REFERENCES cmd_orders(id) ON DELETE CASCADE,
+    metric_code         TEXT NOT NULL REFERENCES cmd_metric_registry(metric_code),
+    priority            INTEGER NOT NULL DEFAULT 100,
+    capture_requirement TEXT DEFAULT '',
+    enabled             INTEGER NOT NULL DEFAULT 1,
+    UNIQUE (order_id, metric_code)
+  );
+
+  -- The analyst job: one game/event to produce. Metric release and game
+  -- record advance independently (two-release model).
+  CREATE TABLE IF NOT EXISTS cmd_jobs (
+    id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+    sport_id              INTEGER NOT NULL REFERENCES sports(id),
+    ruleset_id            INTEGER REFERENCES rulesets(id),
+    team_id               INTEGER NOT NULL REFERENCES teams(id),
+    opponent_label        TEXT DEFAULT '',
+    tournament_id         INTEGER REFERENCES tournaments(id),
+    tournament_game_id    INTEGER REFERENCES tournament_games(id),
+    event_label           TEXT DEFAULT '',
+    game_date             TEXT NOT NULL,
+    game_type             TEXT NOT NULL DEFAULT 'game',   -- game | pro_day
+    order_id              INTEGER NOT NULL REFERENCES cmd_orders(id),
+    assigned_to           INTEGER REFERENCES admins(id),
+    due_date              TEXT,
+    metric_release_status TEXT NOT NULL DEFAULT 'not_started',
+    game_record_status    TEXT NOT NULL DEFAULT 'pending',
+    blocker_reason        TEXT DEFAULT '',
+    created_by            INTEGER REFERENCES admins(id),
+    created_at            TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at            TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+  CREATE INDEX IF NOT EXISTS idx_cmd_jobs_status ON cmd_jobs(metric_release_status, assigned_to);
+
+  -- Order/job-level consent snapshot (auditable; legal language pending).
+  CREATE TABLE IF NOT EXISTS cmd_consent (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    job_id        INTEGER NOT NULL REFERENCES cmd_jobs(id) ON DELETE CASCADE,
+    media_consent INTEGER NOT NULL DEFAULT 0,
+    sharing_scope TEXT NOT NULL DEFAULT 'internal',   -- internal | customer | public
+    recorded_by   INTEGER REFERENCES admins(id),
+    recorded_at   TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+
+  -- Reusable capture profiles (expected eligible metrics + standard metadata).
+  CREATE TABLE IF NOT EXISTS cmd_capture_profiles (
+    id               INTEGER PRIMARY KEY AUTOINCREMENT,
+    key              TEXT NOT NULL UNIQUE,
+    label            TEXT NOT NULL,
+    expected_metrics TEXT NOT NULL DEFAULT '[]',
+    notes            TEXT DEFAULT ''
+  );
+
+  -- Append-only audit trail for every Command state change.
+  CREATE TABLE IF NOT EXISTS cmd_review_actions (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    target_table TEXT NOT NULL,
+    target_id    INTEGER NOT NULL,
+    actor_id     INTEGER REFERENCES admins(id),
+    action       TEXT NOT NULL,               -- created | assigned | status_changed | requirement_toggled | blocked | note
+    note         TEXT DEFAULT '',
+    prev_state   TEXT DEFAULT '',
+    new_state    TEXT DEFAULT '',
+    created_at   TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+  CREATE INDEX IF NOT EXISTS idx_cmd_audit_target ON cmd_review_actions(target_table, target_id);
+
+  -- Auditable customer/internal notification events (owner directive: in
+  -- Phase 1). Email dispatch rides the adapter; event rows are the audit.
+  CREATE TABLE IF NOT EXISTS cmd_notifications (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    job_id       INTEGER NOT NULL REFERENCES cmd_jobs(id) ON DELETE CASCADE,
+    event_key    TEXT NOT NULL,          -- footage_received | review_started | metrics_ready | full_review_pending | full_review_complete | paid_metric_unavailable
+    audience     TEXT NOT NULL DEFAULT 'customer',   -- customer | internal
+    payload      TEXT NOT NULL DEFAULT '{}',
+    email_status TEXT NOT NULL DEFAULT 'skipped',    -- skipped | queued | sent | failed
+    created_at   TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+  CREATE INDEX IF NOT EXISTS idx_cmd_notifications_job ON cmd_notifications(job_id, created_at);
+
+  -- Game-record sources (GameChanger scorecard import, live internal entry,
+  -- postgame manual score). Non-blocking for Rookie; raw import preserved
+  -- for later validation and box-score completion.
+  CREATE TABLE IF NOT EXISTS cmd_game_record_sources (
+    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+    job_id            INTEGER NOT NULL REFERENCES cmd_jobs(id) ON DELETE CASCADE,
+    source_kind       TEXT NOT NULL,     -- gamechanger_export | live_internal | postgame_manual
+    label             TEXT DEFAULT '',
+    storage_key       TEXT DEFAULT '',   -- raw file reference once media storage lands (M2)
+    raw_import        TEXT DEFAULT '',   -- raw parsed payload when supplied inline
+    validation_status TEXT NOT NULL DEFAULT 'pending_validation',  -- pending_validation | validating | validated | rejected
+    note              TEXT DEFAULT '',
+    created_by        INTEGER REFERENCES admins(id),
+    created_at        TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+`);
+addColumnIfMissing('cmd_orders', 'contact_email', 'contact_email TEXT DEFAULT \'\'');
+
+// ── Seed Command reference data (idempotent; active flags follow code) ──
+{
+  const insSport = db.prepare('INSERT OR IGNORE INTO sports (key, name) VALUES (?, ?)');
+  insSport.run('baseball', 'Baseball');
+  const baseball = db.prepare("SELECT id FROM sports WHERE key = 'baseball'").get().id;
+  db.prepare('INSERT OR IGNORE INTO rulesets (sport_id, key, name, config) VALUES (?, ?, ?, ?)')
+    .run(baseball, 'baseball_default', 'Baseball — default', JSON.stringify({ innings: 7, extra_innings: true }));
+
+  const insMetric = db.prepare(
+    `INSERT OR IGNORE INTO cmd_metric_registry
+       (metric_code, label, category, availability_tier, recipe_version, unit, decimals, method, publishes_to, capture_requirements, dependencies, sellable, active)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)`
+  );
+  const setActive = db.prepare('UPDATE cmd_metric_registry SET active = ?, recipe_version = ? WHERE metric_code = ?');
+  for (const r of REGISTRY_SEED) {
+    insMetric.run(r.metric_code, r.label, r.category, r.availability_tier, r.recipe_version, r.unit, r.decimals,
+      r.method, JSON.stringify(r.publishes_to || []), r.capture_requirements || '', JSON.stringify(r.dependencies || []), r.active);
+    setActive.run(r.active, r.recipe_version, r.metric_code);   // phase activation is code-driven
+  }
+  const insProfile = db.prepare('INSERT OR IGNORE INTO cmd_capture_profiles (key, label, expected_metrics, notes) VALUES (?, ?, ?, ?)');
+  for (const cp of CAPTURE_PROFILE_SEED) insProfile.run(cp.key, cp.label, JSON.stringify(cp.expected_metrics), cp.notes);
 }
 
 // ── Seed default admin ───────────────────────────────────────────────────

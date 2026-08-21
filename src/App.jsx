@@ -10,6 +10,7 @@ import ClaimPage from './pages/ClaimPage';
 import ClaimStaffPage from './pages/ClaimStaffPage';
 import SignupInfoPage from './pages/SignupInfoPage';
 import { StaffLayout, StaffHomePage, StaffTeamPage, StaffTournamentPage } from './pages/staff/StaffPages';
+import { CommandLayout, ProductionQueuePage, NewJobPage, JobDetailPage } from './pages/command/CommandPages';
 import AdminLayout from './components/admin/AdminLayout';
 import AdminPlayersPage from './pages/admin/AdminPlayersPage';
 import AdminPlayerEditorPage from './pages/admin/AdminPlayerEditorPage';
@@ -26,13 +27,24 @@ import BlogPage from './pages/BlogPage';
 import BaseballFilmingGuidePage from './pages/BaseballFilmingGuidePage';
 import YouthBaseballVideoAnalysisPage from './pages/YouthBaseballVideoAnalysisPage';
 
-const HOME_BY_ROLE = { admin: '/admin', player: '/me', staff: '/staff' };
+const HOME_BY_ROLE = { admin: '/admin', analyst: '/command', reviewer: '/command', player: '/me', staff: '/staff' };
 
 function RoleRoute({ role, children }) {
   const { user, loading } = useAuth();
   if (loading) return null;
   if (!user) return <Navigate to="/login" replace />;
   if (user.role !== role) return <Navigate to={HOME_BY_ROLE[user.role] || '/login'} replace />;
+  return children;
+}
+
+// Internal-only surfaces (Command): any of admin | analyst | reviewer.
+function InternalRoute({ children }) {
+  const { user, loading } = useAuth();
+  if (loading) return null;
+  if (!user) return <Navigate to="/login" replace />;
+  if (!['admin', 'analyst', 'reviewer'].includes(user.role)) {
+    return <Navigate to={HOME_BY_ROLE[user.role] || '/login'} replace />;
+  }
   return children;
 }
 
@@ -59,6 +71,11 @@ function AppRoutes() {
         <Route index element={<StaffHomePage />} />
         <Route path="teams/:teamId" element={<StaffTeamPage />} />
         <Route path="tournaments/:tournamentId" element={<StaffTournamentPage />} />
+      </Route>
+      <Route path="/command" element={<InternalRoute><CommandLayout /></InternalRoute>}>
+        <Route index element={<ProductionQueuePage />} />
+        <Route path="new" element={<NewJobPage />} />
+        <Route path="jobs/:jobId" element={<JobDetailPage />} />
       </Route>
       <Route path="/admin" element={<RoleRoute role="admin"><AdminLayout /></RoleRoute>}>
         <Route index element={<AdminPlayersPage />} />

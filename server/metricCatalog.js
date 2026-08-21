@@ -53,6 +53,7 @@ export const METRICS = [
   // ── Running ──────────────────────────────────────────────────────────
   { key: 'sprint_speed',   label: 'Sprint Speed',          unit: 'ft/s', category: 'running',  aggregate: 'max',    decimals: 1, zeroMeansUnmeasured: true },
   { key: 'home_to_first',  label: 'Home-to-First Time',    unit: 's',    category: 'running',  aggregate: 'max',    decimals: 2, lowerIsBetter: true, zeroMeansUnmeasured: true },
+  { key: 'steal_time',     label: 'Steal Time',            unit: 's',    category: 'running',  aggregate: 'max',    decimals: 2, lowerIsBetter: true, zeroMeansUnmeasured: true },
   { key: 'sprint_30',      label: '30-Yard Sprint',        unit: 's',    category: 'running',  aggregate: 'max',    decimals: 2, lowerIsBetter: true, zeroMeansUnmeasured: true },
   { key: 'dash_60',        label: '60-Yard Dash',          unit: 's',    category: 'running',  aggregate: 'max',    decimals: 2, lowerIsBetter: true, zeroMeansUnmeasured: true },
 

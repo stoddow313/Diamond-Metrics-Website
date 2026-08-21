@@ -106,6 +106,19 @@ export const api = {
   },
   viewTournament: (slug) => request(`/api/view/tournaments/${slug}`),
 
+  // Diamond Metrics Command (internal analyst platform)
+  commandBootstrap: () => request('/api/command/bootstrap'),
+  commandCreateJob: (job) => request('/api/command/jobs', { method: 'POST', body: job }),
+  commandJobs: (params = {}) => {
+    const qs = new URLSearchParams(Object.entries(params).filter(([, v]) => v != null && v !== '')).toString();
+    return request(`/api/command/jobs${qs ? `?${qs}` : ''}`);
+  },
+  commandJob: (id) => request(`/api/command/jobs/${id}`),
+  commandUpdateJob: (id, fields) => request(`/api/command/jobs/${id}`, { method: 'PUT', body: fields }),
+  commandJobStatus: (id, kind, to, note = '') => request(`/api/command/jobs/${id}/status`, { method: 'POST', body: { kind, to, note } }),
+  commandToggleRequirement: (id, enabled) => request(`/api/command/requirements/${id}`, { method: 'PUT', body: { enabled } }),
+  commandAttachGameRecordSource: (jobId, source) => request(`/api/command/jobs/${jobId}/game-record-sources`, { method: 'POST', body: source }),
+
   // public
   publicProfile: (slug) => request(`/api/public/players/${slug}`, { auth: false }),
   proDayCard: (slug) => request(`/api/public/players/${slug}/card`, { auth: false }),

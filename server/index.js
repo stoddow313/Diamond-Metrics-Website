@@ -12,6 +12,7 @@ import { resolveEventRoster, slugify } from './rosterLogic.js';
 import { IMPORT_KINDS, planImport, applyImport } from './importEngine.js';
 import { deletePlayers } from './playerDelete.js';
 import { findInvalidZeroEntries, excludeInvalidZeroEntries, summarizeZeroReport } from './zeroCleanup.js';
+import { mountCommandRoutes } from './commandRoutes.js';
 import {
   attributedGames, aggregateByPlayer, teamCategoryBlocks, standings,
   leaderboard, overallLeaderboard, trendSeries, calcStamp, DEFAULT_MINS,
@@ -41,19 +42,38 @@ function createSession(adminId) {
   return token;
 }
 
+function internalFromToken(token) {
+  if (!token) return null;
+  return db.prepare(
+    `SELECT s.token, a.id, a.email, a.name, a.role FROM sessions s
+     JOIN admins a ON a.id = s.admin_id
+     WHERE s.token = ? AND s.expires_at > datetime('now')`
+  ).get(token) || null;
+}
+
 function requireAdmin(req, res, next) {
   const header = req.headers.authorization || '';
   const token = header.startsWith('Bearer ') ? header.slice(7) : null;
   if (!token) return res.status(401).json({ error: 'Not authenticated' });
 
-  const row = db.prepare(
-    `SELECT s.token, a.id, a.email, a.name FROM sessions s
-     JOIN admins a ON a.id = s.admin_id
-     WHERE s.token = ? AND s.expires_at > datetime('now')`
-  ).get(token);
+  const row = internalFromToken(token);
   if (!row) return res.status(401).json({ error: 'Session expired or invalid' });
+  // Analysts/reviewers are internal but do not manage the admin surface.
+  if (row.role !== 'admin') return res.status(403).json({ error: 'Admin role required' });
 
-  req.admin = { id: row.id, email: row.email, name: row.name };
+  req.admin = { id: row.id, email: row.email, name: row.name, role: row.role };
+  req.sessionToken = token;
+  next();
+}
+
+// Command workspace access: any internal role (admin | analyst | reviewer).
+function requireInternal(req, res, next) {
+  const header = req.headers.authorization || '';
+  const token = header.startsWith('Bearer ') ? header.slice(7) : null;
+  if (!token) return res.status(401).json({ error: 'Not authenticated' });
+  const row = internalFromToken(token);
+  if (!row) return res.status(401).json({ error: 'Session expired or invalid' });
+  req.internal = { id: row.id, email: row.email, name: row.name, role: row.role };
   req.sessionToken = token;
   next();
 }
@@ -139,7 +159,7 @@ app.post('/api/auth/login', (req, res) => {
   const admin = db.prepare('SELECT * FROM admins WHERE email = ?').get(normEmail);
   if (admin && verifyPassword(password, admin.password_hash)) {
     const token = createSession(admin.id);
-    return res.json({ token, admin: { id: admin.id, email: admin.email, name: admin.name, role: 'admin' } });
+    return res.json({ token, admin: { id: admin.id, email: admin.email, name: admin.name, role: admin.role || 'admin' } });
   }
 
   const pu = db.prepare(
@@ -169,10 +189,10 @@ app.get('/api/auth/me', (req, res) => {
   if (!token) return res.status(401).json({ error: 'Not authenticated' });
 
   const adminRow = db.prepare(
-    `SELECT a.id, a.email, a.name FROM sessions s JOIN admins a ON a.id = s.admin_id
+    `SELECT a.id, a.email, a.name, a.role FROM sessions s JOIN admins a ON a.id = s.admin_id
      WHERE s.token = ? AND s.expires_at > datetime('now')`
   ).get(token);
-  if (adminRow) return res.json({ admin: { ...adminRow, role: 'admin' } });
+  if (adminRow) return res.json({ admin: { ...adminRow, role: adminRow.role || 'admin' } });
 
   const playerRow = playerFromToken(token);
   if (playerRow) {
@@ -1723,6 +1743,9 @@ app.get('/api/view/tournaments/:slug', (req, res) => {
     })),
   });
 });
+
+// ── Diamond Metrics Command (internal analyst platform) ─────────────────
+mountCommandRoutes(app, { db, requireInternal });
 
 app.listen(PORT, () => {
   console.log(`[api] Diamond Metrics API listening on http://localhost:${PORT}`);
