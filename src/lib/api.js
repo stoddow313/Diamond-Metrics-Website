@@ -132,6 +132,10 @@ export const api = {
   commandFeed: (feedId) => request(`/api/command/feeds/${feedId}`),
   commandJobFeeds: (jobId) => request(`/api/command/jobs/${jobId}/feeds`),
   commandRetryFeed: (feedId) => request(`/api/command/feeds/${feedId}/retry`, { method: 'POST' }),
+  commandRadarQueue: (jobId) => request(`/api/command/jobs/${jobId}/radar`),
+  commandRadarImport: (jobId, filename, content) => request(`/api/command/jobs/${jobId}/radar-imports`, { method: 'POST', body: { filename, content } }),
+  commandManualReading: (jobId, reading) => request(`/api/command/jobs/${jobId}/radar-readings`, { method: 'POST', body: reading }),
+  commandClassifyReading: (readingId, fields) => request(`/api/command/radar-readings/${readingId}`, { method: 'PUT', body: fields }),
 
   // public
   publicProfile: (slug) => request(`/api/public/players/${slug}`, { auth: false }),
