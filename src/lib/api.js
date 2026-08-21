@@ -118,6 +118,20 @@ export const api = {
   commandJobStatus: (id, kind, to, note = '') => request(`/api/command/jobs/${id}/status`, { method: 'POST', body: { kind, to, note } }),
   commandToggleRequirement: (id, enabled) => request(`/api/command/requirements/${id}`, { method: 'PUT', body: { enabled } }),
   commandAttachGameRecordSource: (jobId, source) => request(`/api/command/jobs/${jobId}/game-record-sources`, { method: 'POST', body: source }),
+  commandRegisterFeed: (jobId, meta) => request(`/api/command/jobs/${jobId}/feeds`, { method: 'POST', body: meta }),
+  commandPresignPart: (feedId, uploadId, partNumber) => request(`/api/command/feeds/${feedId}/parts/presign`, { method: 'POST', body: { uploadId, partNumber } }),
+  commandUploadLocalPart: async (feedId, partNumber, blob) => {
+    const res = await fetch(`/api/command/feeds/${feedId}/parts/${partNumber}`, {
+      method: 'POST', headers: { Authorization: `Bearer ${getToken()}`, 'Content-Type': 'application/octet-stream' }, body: blob,
+    });
+    if (!res.ok) throw new Error(`Part upload failed (${res.status})`);
+    return res.json();
+  },
+  commandCompleteFeed: (feedId, uploadId, parts) => request(`/api/command/feeds/${feedId}/complete`, { method: 'POST', body: { uploadId, parts } }),
+  commandAbortFeed: (feedId, uploadId) => request(`/api/command/feeds/${feedId}/abort`, { method: 'POST', body: { uploadId } }),
+  commandFeed: (feedId) => request(`/api/command/feeds/${feedId}`),
+  commandJobFeeds: (jobId) => request(`/api/command/jobs/${jobId}/feeds`),
+  commandRetryFeed: (feedId) => request(`/api/command/feeds/${feedId}/retry`, { method: 'POST' }),
 
   // public
   publicProfile: (slug) => request(`/api/public/players/${slug}`, { auth: false }),

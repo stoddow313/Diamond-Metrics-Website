@@ -11,6 +11,7 @@ import ClaimStaffPage from './pages/ClaimStaffPage';
 import SignupInfoPage from './pages/SignupInfoPage';
 import { StaffLayout, StaffHomePage, StaffTeamPage, StaffTournamentPage } from './pages/staff/StaffPages';
 import { CommandLayout, ProductionQueuePage, NewJobPage, JobDetailPage } from './pages/command/CommandPages';
+import FeedViewerPage from './pages/command/FeedViewerPage';
 import AdminLayout from './components/admin/AdminLayout';
 import AdminPlayersPage from './pages/admin/AdminPlayersPage';
 import AdminPlayerEditorPage from './pages/admin/AdminPlayerEditorPage';
@@ -76,6 +77,7 @@ function AppRoutes() {
         <Route index element={<ProductionQueuePage />} />
         <Route path="new" element={<NewJobPage />} />
         <Route path="jobs/:jobId" element={<JobDetailPage />} />
+        <Route path="feeds/:feedId" element={<FeedViewerPage />} />
       </Route>
       <Route path="/admin" element={<RoleRoute role="admin"><AdminLayout /></RoleRoute>}>
         <Route index element={<AdminPlayersPage />} />

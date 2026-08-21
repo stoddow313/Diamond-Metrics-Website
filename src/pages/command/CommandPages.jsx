@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link, Outlet, useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { api } from '../../lib/api';
+import { uploadFeed } from '../../lib/mediaUpload';
 import BrandMark from '../../components/BrandMark';
 import { Field, TextInput, Select, PrimaryButton, GhostButton, ErrorNote } from '../../components/admin/ui';
 import { cardStyle } from '../../components/admin/theme';
@@ -332,12 +333,40 @@ export function JobDetailPage() {
   const { user } = useAuth();
   const [job, setJob] = useState(null);
   const [boot, setBoot] = useState(null);
+  const [feeds, setFeeds] = useState([]);
+  const [uploadPct, setUploadPct] = useState(null);
   const [error, setError] = useState('');
 
   useEffect(() => {
     api.commandJob(jobId).then(d => setJob(d.job)).catch(err => setError(err.message));
     api.commandBootstrap().then(setBoot).catch(() => {});
+    api.commandJobFeeds(jobId).then(d => setFeeds(d.feeds)).catch(() => {});
   }, [jobId]);
+
+  // Poll while any feed is mid-pipeline so statuses land without refreshes.
+  useEffect(() => {
+    const busy = feeds.some(f => ['uploading', 'uploaded', 'queued', 'processing', 'retrying'].includes(f.status));
+    if (!busy) return;
+    const t = setInterval(() => {
+      api.commandJobFeeds(jobId).then(d => setFeeds(d.feeds)).catch(() => {});
+    }, 2500);
+    return () => clearInterval(t);
+  }, [feeds, jobId]);
+
+  async function handleUpload(file) {
+    if (!file) return;
+    setError('');
+    setUploadPct(0);
+    try {
+      await uploadFeed(jobId, file, { label: 'Behind Home', onProgress: p => setUploadPct(p) });
+      const d = await api.commandJobFeeds(jobId);
+      setFeeds(d.feeds);
+    } catch (err) {
+      setError(`Upload failed: ${err.message}`);
+    } finally {
+      setUploadPct(null);
+    }
+  }
 
   async function transition(kind, to) {
     setError('');
@@ -392,6 +421,49 @@ export function JobDetailPage() {
       <ErrorNote>{error}</ErrorNote>
 
       <div className="grid lg:grid-cols-2 gap-6 items-start">
+        <div className="flex flex-col gap-6">
+        <section className="rounded-2xl border p-6" style={cardStyle}>
+          <h2 className="text-lg font-bold text-white mb-1" style={{ fontSize: '1.125rem' }}>Video feeds</h2>
+          <p className="text-xs mb-3" style={{ color: '#64748b' }}>
+            Originals stream to storage in resumable 50 MB parts; the worker inspects, flags VFR, and builds the constant-frame-rate review proxy.
+          </p>
+          {feeds.length === 0 && <p className="text-sm mb-3" style={{ color: '#94a3b8' }}>No feeds attached yet.</p>}
+          {feeds.map(f => (
+            <div key={f.id} className="flex items-center justify-between gap-3 py-2.5 border-t" style={{ borderColor: '#1e3a5f' }}>
+              <div className="min-w-0">
+                <p className="text-sm font-bold text-white truncate">
+                  {f.label} <span className="font-normal text-xs" style={{ color: '#64748b' }}>{f.original_name}</span>
+                </p>
+                <p className="text-xs" style={{ color: '#64748b' }}>
+                  {f.width ? `${f.width}×${f.height} · ` : ''}{f.effective_fps ? `${f.effective_fps.toFixed(2)} fps · ` : ''}
+                  {f.vfr ? 'VFR (normalized in proxy) · ' : ''}{f.error || ''}
+                </p>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <StatusBadge value={f.status} />
+                {f.status === 'ready' && (
+                  <Link to={`/command/feeds/${f.id}`} className="text-xs font-bold hover:underline" style={{ color: '#38bdf8' }}>Open viewer</Link>
+                )}
+                {['failed', 'retrying'].includes(f.status) && (
+                  <GhostButton onClick={async () => { await api.commandRetryFeed(f.id).catch(e => setError(e.message)); const d = await api.commandJobFeeds(jobId); setFeeds(d.feeds); }}>Retry</GhostButton>
+                )}
+              </div>
+            </div>
+          ))}
+          <div className="mt-3">
+            {uploadPct == null ? (
+              <label className="inline-block px-4 py-2 rounded-lg text-sm font-bold cursor-pointer" style={{ backgroundColor: '#38bdf8', color: '#06122b' }}>
+                + Attach video feed
+                <input type="file" accept="video/*,.mp4,.mov,.mts,.m2ts" className="hidden" onChange={e => handleUpload(e.target.files?.[0])} />
+              </label>
+            ) : (
+              <div className="w-full rounded-full h-2 overflow-hidden" style={{ backgroundColor: 'rgba(30, 41, 59, 0.9)' }}>
+                <div className="h-2 rounded-full transition-all" style={{ width: `${Math.round(uploadPct * 100)}%`, backgroundColor: '#38bdf8' }} />
+              </div>
+            )}
+          </div>
+        </section>
+
         <section className="rounded-2xl border p-6" style={cardStyle}>
           <h2 className="text-lg font-bold text-white mb-1" style={{ fontSize: '1.125rem' }}>Metric requirements</h2>
           <p className="text-xs mb-4" style={{ color: '#64748b' }}>The job checklist is generated from these. M2 adds feeds + capture readiness against them.</p>
@@ -410,6 +482,7 @@ export function JobDetailPage() {
             </div>
           ))}
         </section>
+        </div>
 
         <div className="flex flex-col gap-6">
           <section className="rounded-2xl border p-6" style={cardStyle}>
