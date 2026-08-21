@@ -627,9 +627,11 @@ function buildCardPayload(player) {
     .filter(m => m.category !== 'box' && ownStats[m.key] !== undefined)
     .map(m => ({ key: m.key, label: m.label, unit: m.unit, decimals: m.decimals, value: ownStats[m.key] }));
 
-  // Front headline chips: position-adaptive hero metrics measured at this event.
-  const chips = heroSetForPosition(player.primary_position)
-    .filter(k => ownStats[k] !== undefined)
+  // Front headline chips: position-adaptive hero metrics measured at this
+  // event, falling back to whatever was measured when none of the hero set
+  // was — same reason as the profile Overview, so a card never headlines blank.
+  const chipKeys = heroSetForPosition(player.primary_position).filter(k => ownStats[k] !== undefined);
+  const chips = (chipKeys.length > 0 ? chipKeys : results.map(r => r.key))
     .slice(0, 4)
     .map(k => {
       const m = METRIC_BY_KEY.get(k);
