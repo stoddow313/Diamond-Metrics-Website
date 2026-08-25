@@ -7,11 +7,12 @@
 // managed database. Until then production runs the inline worker inside the
 // API service (DM_INLINE_WORKER unset). See docs/COMMAND_OPS.md.
 import { db } from './db.js';
-import { processNextMediaJob } from './mediaWorker.js';
+import { processNextMediaJob, recoverOrphanedJobs } from './mediaWorker.js';
 import { log, captureError, installProcessHandlers } from './observability.js';
 
 installProcessHandlers();
 log('info', 'worker_started', { component: 'media_worker' });
+recoverOrphanedJobs(db);
 
 const loop = async () => {
   try {

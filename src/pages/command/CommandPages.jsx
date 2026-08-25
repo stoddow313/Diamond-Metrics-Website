@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link, Outlet, useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { api } from '../../lib/api';
-import { uploadFeed } from '../../lib/mediaUpload';
+import { uploadFeed, validateUpload } from '../../lib/mediaUpload';
 import BrandMark from '../../components/BrandMark';
 import { Field, TextInput, Select, PrimaryButton, GhostButton, ErrorNote } from '../../components/admin/ui';
 import { cardStyle } from '../../components/admin/theme';
@@ -337,6 +337,8 @@ export function JobDetailPage() {
   const [boot, setBoot] = useState(null);
   const [feeds, setFeeds] = useState([]);
   const [uploadPct, setUploadPct] = useState(null);
+  const [uploadLabel, setUploadLabel] = useState('');
+  const [notice, setNotice] = useState('');
   const [error, setError] = useState('');
 
   useEffect(() => {
@@ -358,15 +360,32 @@ export function JobDetailPage() {
   async function handleUpload(file) {
     if (!file) return;
     setError('');
+    setNotice('');
+    // Policy check before a byte moves — a blocked file never starts.
+    const verdict = validateUpload({ name: file.name, size: file.size, type: file.type });
+    if (!verdict.ok) return setError(verdict.error);
+    if (verdict.warning) setNotice(verdict.warning);
     setUploadPct(0);
+    setUploadLabel('starting…');
     try {
-      await uploadFeed(jobId, file, { label: 'Behind Home', onProgress: p => setUploadPct(p) });
+      const result = await uploadFeed(jobId, file, {
+        label: 'Behind Home',
+        onProgress: p => {
+          setUploadPct(p.pct);
+          setUploadLabel(`part ${p.part}/${p.totalParts}${p.resumed ? ' (resumed)' : ''} — ${Math.round(p.pct * 100)}%`);
+        },
+      });
+      if (result.duplicate) setNotice('This exact file is already attached to the job — nothing was re-uploaded.');
+      else if (result.resumed) setNotice('Resumed the interrupted upload — only the missing parts were sent.');
       const d = await api.commandJobFeeds(jobId);
       setFeeds(d.feeds);
     } catch (err) {
-      setError(`Upload failed: ${err.message}`);
+      // Stage-labelled failure from mediaUpload — show it verbatim, plus the
+      // one action that matters when the transfer is resumable.
+      setError(`${err.message}${err.resumable ? ' Nothing is lost — choose the same file again and the upload resumes where it stopped.' : ''}`);
     } finally {
       setUploadPct(null);
+      setUploadLabel('');
     }
   }
 
@@ -459,10 +478,14 @@ export function JobDetailPage() {
                 <input type="file" accept="video/*,.mp4,.mov,.mts,.m2ts" className="hidden" onChange={e => handleUpload(e.target.files?.[0])} />
               </label>
             ) : (
-              <div className="w-full rounded-full h-2 overflow-hidden" style={{ backgroundColor: 'rgba(30, 41, 59, 0.9)' }}>
-                <div className="h-2 rounded-full transition-all" style={{ width: `${Math.round(uploadPct * 100)}%`, backgroundColor: '#38bdf8' }} />
+              <div>
+                <div className="w-full rounded-full h-2 overflow-hidden" style={{ backgroundColor: 'rgba(30, 41, 59, 0.9)' }}>
+                  <div className="h-2 rounded-full transition-all" style={{ width: `${Math.round(uploadPct * 100)}%`, backgroundColor: '#38bdf8' }} />
+                </div>
+                <p className="text-xs mt-1.5 tabular-nums" style={{ color: '#94a3b8' }}>Uploading {uploadLabel}</p>
               </div>
             )}
+            {notice && <p className="text-xs mt-2" style={{ color: '#fbbf24' }}>{notice}</p>}
           </div>
         </section>
 

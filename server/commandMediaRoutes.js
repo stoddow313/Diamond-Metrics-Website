@@ -1,11 +1,11 @@
 // Command media routes (M2): feed registration, resumable multipart upload
 // (R2 presigned parts in prod, API-relayed parts in local dev), completion →
 // probe/proxy pipeline, playback URLs, and role-gated local media streaming.
-import { ENV } from './observability.js';
+import { ENV, log } from './observability.js';
 import express from 'express';
 import fs from 'node:fs';
 import { createHmac, randomBytes } from 'node:crypto';
-import { createUpload, presignPart, appendLocalPart, completeUpload, abortUpload, playbackUrl, localPathFor, storageMode, storageReady, missingStorageConfig } from './storage.js';
+import { createUpload, presignPart, appendLocalPart, completeUpload, abortUpload, listUploadedParts, playbackUrl, localPathFor, storageMode, storageReady, missingStorageConfig } from './storage.js';
 
 // Local-mode playback: <video> cannot send auth headers, so local URLs carry
 // a short-TTL HMAC token — the same trust model as R2 presigned GETs.
@@ -36,6 +36,11 @@ export function mountCommandMediaRoutes(app, { db, requireInternal }) {
     if (!job) return res.status(404).json({ error: 'Job not found' });
     const b = req.body || {};
     if (!b.original_name) return res.status(400).json({ error: 'original_name is required' });
+    // Mirror of the client-side media policy (src/lib/mediaPolicy.js).
+    const MAX_UPLOAD_BYTES = 128 * 1024 ** 3;
+    if (b.size_bytes && b.size_bytes > MAX_UPLOAD_BYTES) {
+      return res.status(400).json({ error: `File is ${(b.size_bytes / 1024 ** 3).toFixed(1)} GB — above the 128 GB limit. Split the recording or re-encode before uploading.` });
+    }
 
     // Guard: in production the local backend writes to the same small disk as
     // the database. One real game file would fill it and take the public API
@@ -69,7 +74,24 @@ export function mountCommandMediaRoutes(app, { db, requireInternal }) {
 
     let feedId;
     if (reuseFeedId) {
-      // Restart the interrupted transfer in place: same feed, clean state.
+      const prior = db.prepare('SELECT * FROM cmd_video_feeds WHERE id = ?').get(reuseFeedId);
+      // A live multipart session can resume where it stopped: hand back the
+      // same uploadId plus the parts R2 already holds, so the client skips
+      // them instead of re-sending a half-finished 10 GB transfer.
+      if (prior.upload_id && storageMode === 'r2') {
+        try {
+          const uploaded = await listUploadedParts(prior.storage_key, prior.upload_id);
+          db.prepare("UPDATE cmd_video_feeds SET status = 'uploading', error = '', updated_at = datetime('now') WHERE id = ?").run(reuseFeedId);
+          log('info', 'upload_resumed', { feed_id: reuseFeedId, job_id: job.id, name: prior.original_name, size: prior.size_bytes, parts_done: uploaded.length });
+          return res.status(201).json({
+            feed: db.prepare('SELECT * FROM cmd_video_feeds WHERE id = ?').get(reuseFeedId),
+            upload: { mode: 'r2', uploadId: prior.upload_id, part_size: PART_SIZE, uploaded_parts: uploaded },
+            resumed: true,
+          });
+        } catch {
+          // Session expired or aborted on R2's side — fall through to a fresh one.
+        }
+      }
       db.prepare("UPDATE cmd_video_feeds SET status = 'uploading', error = '', updated_at = datetime('now') WHERE id = ?").run(reuseFeedId);
       feedId = reuseFeedId;
     } else {
@@ -85,13 +107,16 @@ export function mountCommandMediaRoutes(app, { db, requireInternal }) {
 
     try {
       const session = await createUpload(storageKey);
+      db.prepare('UPDATE cmd_video_feeds SET upload_id = ? WHERE id = ?').run(session.uploadId || null, feedId);
       audit(job.id, req.internal.id, 'feed_registered', `${b.label || 'Behind Home'} — ${b.original_name}`);
+      log('info', 'upload_started', { feed_id: feedId, job_id: job.id, name: String(b.original_name), size: b.size_bytes ?? null, parts: b.size_bytes ? Math.ceil(b.size_bytes / PART_SIZE) : null });
       res.status(201).json({
         feed: db.prepare('SELECT * FROM cmd_video_feeds WHERE id = ?').get(feedId),
         upload: { mode: session.mode, uploadId: session.uploadId || null, part_size: PART_SIZE },
       });
     } catch (err) {
       db.prepare('DELETE FROM cmd_video_feeds WHERE id = ?').run(feedId);
+      log('error', 'upload_session_failed', { job_id: job.id, name: String(b.original_name), message: String(err.message) });
       res.status(500).json({ error: `Upload session failed: ${err.message}` });
     }
   });
@@ -125,7 +150,8 @@ export function mountCommandMediaRoutes(app, { db, requireInternal }) {
     if (!feed) return res.status(404).json({ error: 'Feed not found' });
     try {
       await completeUpload(feed.storage_key, req.body?.uploadId, req.body?.parts || []);
-      db.prepare("UPDATE cmd_video_feeds SET status='queued', updated_at=datetime('now') WHERE id=?").run(feed.id);
+      db.prepare("UPDATE cmd_video_feeds SET status='queued', upload_id=NULL, updated_at=datetime('now') WHERE id=?").run(feed.id);
+      log('info', 'upload_completed', { feed_id: feed.id, job_id: feed.job_id, name: feed.original_name, size: feed.size_bytes, parts: (req.body?.parts || []).length });
       db.prepare("INSERT OR IGNORE INTO cmd_media_jobs (feed_id, kind) VALUES (?, 'probe')").run(feed.id);
       audit(feed.job_id, req.internal.id, 'feed_uploaded', feed.original_name);
       res.json({ feed: db.prepare('SELECT * FROM cmd_video_feeds WHERE id = ?').get(feed.id) });
@@ -134,11 +160,14 @@ export function mountCommandMediaRoutes(app, { db, requireInternal }) {
     }
   });
 
+  // Abort is now an explicit user cancel only — transient failures keep the
+  // feed row and the R2 session so the transfer can resume (see register).
   app.post('/api/command/feeds/:id/abort', requireInternal, async (req, res) => {
     const feed = db.prepare('SELECT * FROM cmd_video_feeds WHERE id = ?').get(req.params.id);
     if (!feed) return res.status(404).json({ error: 'Feed not found' });
-    await abortUpload(feed.storage_key, req.body?.uploadId);
-    db.prepare('DELETE FROM cmd_video_feeds WHERE id = ? AND status = \'uploading\'').run(feed.id);
+    await abortUpload(feed.storage_key, req.body?.uploadId || feed.upload_id);
+    db.prepare("DELETE FROM cmd_video_feeds WHERE id = ? AND status = 'uploading'").run(feed.id);
+    log('info', 'upload_aborted', { feed_id: feed.id, job_id: feed.job_id, name: feed.original_name, reason: String(req.body?.reason || 'client_abort') });
     res.json({ ok: true });
   });
 

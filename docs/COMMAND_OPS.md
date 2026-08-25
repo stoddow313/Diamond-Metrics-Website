@@ -211,6 +211,67 @@ compete with API requests. Short clips and Pro Day segments are fine; before
 running full games regularly, bump the instance size — that is cheaper and
 simpler than splitting services while the database is SQLite (§1).
 
+### 3.8 Supported media policy (uploads)
+
+Enforced client-side before a byte moves (`src/lib/mediaPolicy.js`) and
+mirrored by the register endpoint — the UI names the rule it applied.
+
+| Rule | Value |
+|---|---|
+| Containers | `.mp4` `.mov` `.m4v` `.mts` `.m2ts` (or any `video/*` MIME) |
+| Codecs | Anything ffmpeg decodes; H.264 and HEVC are the verified set |
+| Hard size cap | **128 GB** (2,621 parts of 50 MB — comfortably under R2's 10,000-part limit) |
+| Advisory | Above 16 GB the UI suggests clipping before upload |
+| Frame rate | Any. VFR normalizes to CFR in the proxy; sources above 60 fps halve to an exact divisor (119.88 → 59.94), so proxy frame N is source frame 2N and frame math stays integral |
+| Empty/placeholder files | Rejected with an iCloud/OneDrive hint — cloud placeholders read as 0 bytes |
+
+### 3.9 Upload reliability (field-failure postmortem, 2026-08-25)
+
+Testers reported "Failed to fetch" on a 44 MB MP4 and a 0.91 GB 4K/HEVC
+file while an 11.6 MB file succeeded. Server and R2 logs showed every
+register/presign/abort returning 2xx — the dying request was always the
+browser's PUT **directly to R2**. Packet capture showed Chrome pairs every
+preflighted PUT with a raced provisional request that surfaces as
+`net::ERR_ABORTED`; on some network paths the race resolves against the
+real request, fetch rejects, and the old zero-retry client aborted the
+whole transfer (deleting the feed row — hence "no trace in the queue").
+
+The upload client now:
+- retries each part 3× with backoff and a 10-minute stall timeout;
+- never aborts on failure — the feed row and the R2 multipart session
+  persist, and re-selecting the same file **resumes from the last good
+  part** (the server hands back the same `uploadId` plus the parts R2
+  already holds);
+- reports stage-labelled errors ("Uploading part 7/19 … HTTP 403 …"),
+  never a bare "Failed to fetch";
+- logs `upload_started` / `upload_resumed` / `upload_completed` /
+  `upload_aborted` server-side with feed id, size, and part counts.
+
+A controlled ladder (10→100 MB, same H.264 encode) and a resolution matrix
+(720p/1080p/4K at matched sizes) all pass against production; there is no
+size threshold in the platform. Every successful part still shows one
+paired raced-abort — that is normal Chrome behaviour, not a failure.
+
+### 3.10 Processing safety on small instances (outage postmortem, 2026-08-25)
+
+Processing a 0.91 GB 4K/119.88fps HEVC original OOM-killed the starter
+instance twice (Render events: `oomKilled`, then a failed health check).
+Cause: the worker downloaded the full original to the instance before
+probing/transcoding — the page cache for a ~1 GB write counts against the
+container's 512 MB memory limit.
+
+Fixes now in place:
+- **The worker streams sources from R2** (presigned GET; ffmpeg/ffprobe
+  make range requests). No full-file scratch copies, at any size.
+- **Proxy fps caps at 60** (exact halving above it) and transcodes with
+  `-threads 2`, bounding both encode cost and API starvation.
+- **Orphan recovery**: media jobs left `running` by a crashed instance are
+  requeued at boot; three crashes marks the job and feed `failed` with a
+  visible reason instead of looping or hanging in `processing` forever.
+
+A full-length 1080p60 game still deserves a larger instance (§1) — the cap
+bounds the damage, it does not make 0.5 CPU fast.
+
 ---
 
 ## 4. Backups and restore
