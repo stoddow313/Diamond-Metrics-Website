@@ -7,7 +7,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { S3Client, CreateMultipartUploadCommand, UploadPartCommand, CompleteMultipartUploadCommand, AbortMultipartUploadCommand, GetObjectCommand, PutObjectCommand, ListObjectsV2Command, DeleteObjectCommand } from '@aws-sdk/client-s3';
+import { S3Client, CreateMultipartUploadCommand, UploadPartCommand, CompleteMultipartUploadCommand, AbortMultipartUploadCommand, GetObjectCommand, PutObjectCommand, ListObjectsV2Command, DeleteObjectCommand, ListPartsCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
 const MODE = process.env.DM_STORAGE === 'r2' ? 'r2' : 'local';
@@ -64,6 +64,20 @@ export async function presignPart(key, uploadId, partNumber) {
 
 export function appendLocalPart(key, chunk) {
   fs.appendFileSync(localPathFor(key) + '.parts', chunk);
+}
+
+// Parts already uploaded for an in-flight multipart session — lets a
+// resumed transfer skip what R2 already has instead of restarting.
+export async function listUploadedParts(key, uploadId) {
+  if (MODE !== 'r2' || !uploadId) return [];
+  const parts = [];
+  let marker;
+  do {
+    const page = await client().send(new ListPartsCommand({ Bucket: BUCKET(), Key: key, UploadId: uploadId, PartNumberMarker: marker }));
+    for (const p of page.Parts || []) parts.push({ partNumber: p.PartNumber, etag: p.ETag, size: p.Size });
+    marker = page.IsTruncated ? page.NextPartNumberMarker : undefined;
+  } while (marker);
+  return parts;
 }
 
 export async function completeUpload(key, uploadId, parts) {
@@ -159,6 +173,16 @@ export async function fetchToScratch(key, scratchPath) {
 }
 
 // Playback: short-TTL signed URL (R2) or the role-gated API stream (local).
+// Worker-side source access. R2: a long-TTL presigned GET that ffmpeg/
+// ffprobe stream directly (range requests) — no gigabyte scratch copy, no
+// page-cache OOM on a small instance. Local: the file path itself.
+export async function workerSourceRef(key) {
+  if (MODE === 'r2') {
+    return getSignedUrl(client(), new GetObjectCommand({ Bucket: BUCKET(), Key: key }), { expiresIn: 6 * 3600 });
+  }
+  return localPathFor(key);
+}
+
 export async function playbackUrl(key) {
   if (MODE === 'r2') {
     return getSignedUrl(client(), new GetObjectCommand({ Bucket: BUCKET(), Key: key }), { expiresIn: 900 });

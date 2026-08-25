@@ -14,7 +14,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
-import { fetchToScratch, putObject, localPathFor, storageMode } from './storage.js';
+import { putObject, localPathFor, storageMode, workerSourceRef } from './storage.js';
 import { emitJobEvent } from './notifications.js';
 
 const run = promisify(execFile);
@@ -88,14 +88,15 @@ export async function probeFile(filePath) {
 }
 
 async function handleProbe(db, job, feed) {
-  const scratch = path.join(os.tmpdir(), `dm-probe-${feed.id}${path.extname(feed.storage_key) || '.mp4'}`);
-  const src = await fetchToScratch(feed.storage_key, scratch);
+  // Stream straight from storage — downloading a full-game original to the
+  // instance is what OOM-killed production (page cache counts against the
+  // container's memory limit).
+  const src = await workerSourceRef(feed.storage_key);
   const meta = await probeFile(src);
   db.prepare(
     `UPDATE cmd_video_feeds SET duration_s=?, codec=?, width=?, height=?, rotation=?, nominal_fps=?, effective_fps=?, vfr=?,
      status='processing', updated_at=datetime('now') WHERE id=?`
   ).run(meta.duration_s, meta.codec, meta.width, meta.height, meta.rotation, meta.nominal_fps, meta.effective_fps, meta.vfr, feed.id);
-  if (src !== localPathFor(feed.storage_key)) fs.rmSync(scratch, { force: true });
   // Chain the proxy job.
   db.prepare("INSERT OR IGNORE INTO cmd_media_jobs (feed_id, kind) VALUES (?, 'proxy')").run(feed.id);
 }
@@ -105,9 +106,14 @@ function proxyProbeDuration(feed) {
 }
 
 async function handleProxy(db, job, feed) {
-  const scratchIn = path.join(os.tmpdir(), `dm-in-${feed.id}${path.extname(feed.storage_key) || '.mp4'}`);
-  const src = await fetchToScratch(feed.storage_key, scratchIn);
-  const targetFps = Math.round(feed.effective_fps || feed.nominal_fps || 30);
+  const src = await workerSourceRef(feed.storage_key);
+  // Cap the review proxy at 60 fps. High-speed sources (120/119.88) halve to
+  // an exact divisor, so proxy frame N is source frame 2N — the mapping stays
+  // integral and the rendition's recorded fps stays the measurement base.
+  // Unbounded (119 fps 4K) encodes are also what starved the API instance.
+  let targetFps = feed.effective_fps || feed.nominal_fps || 30;
+  while (targetFps > 60) targetFps = targetFps / 2;
+  targetFps = Math.round(targetFps * 100) / 100;
   const outPath = path.join(os.tmpdir(), `dm-proxy-${feed.id}.mp4`);
   const thumbPath = path.join(os.tmpdir(), `dm-thumb-${feed.id}.jpg`);
 
@@ -115,6 +121,7 @@ async function handleProxy(db, job, feed) {
   // measured rendition's FPS is what measurements record (TDR §2).
   await run(FFMPEG, [
     '-y', '-i', src,
+    '-threads', '2',
     '-vf', "scale=-2:'min(720,ih)'", '-r', String(targetFps), '-vsync', 'cfr',
     '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '23', '-pix_fmt', 'yuv420p',
     '-c:a', 'aac', '-b:a', '96k', '-movflags', '+faststart', outPath,
@@ -142,7 +149,6 @@ async function handleProxy(db, job, feed) {
 
   fs.rmSync(outPath, { force: true });
   fs.rmSync(thumbPath, { force: true });
-  if (src !== localPathFor(feed.storage_key)) fs.rmSync(scratchIn, { force: true });
 }
 
 // Clip generation is exercised from M4 when events exist; the queue kind is
@@ -180,7 +186,26 @@ export async function processNextMediaJob(db) {
   return true;
 }
 
+// A media job claimed by an instance that crashed stays 'running' forever —
+// nothing re-picks it and the feed shows 'processing' until doomsday. This
+// process is the only worker, so anything 'running' at boot is an orphan.
+// attempts was already counted at claim time: three crashes = terminal fail.
+export function recoverOrphanedJobs(db) {
+  const orphans = db.prepare("SELECT id, feed_id, kind, attempts FROM cmd_media_jobs WHERE status = 'running'").all();
+  for (const o of orphans) {
+    if (o.attempts >= 3) {
+      db.prepare("UPDATE cmd_media_jobs SET status='failed', error='crashed the worker 3 times — likely resource exhaustion', finished_at=datetime('now'), updated_at=datetime('now') WHERE id=?").run(o.id);
+      db.prepare("UPDATE cmd_video_feeds SET status='failed', error='processing crashed repeatedly — see media job', updated_at=datetime('now') WHERE id=?").run(o.feed_id);
+    } else {
+      db.prepare("UPDATE cmd_media_jobs SET status='queued', updated_at=datetime('now') WHERE id=?").run(o.id);
+    }
+    log('warn', 'media_job_orphan_recovered', { job_id: o.id, feed_id: o.feed_id, kind: o.kind, attempts: o.attempts, terminal: o.attempts >= 3 });
+  }
+  return orphans.length;
+}
+
 export function startInlineWorker(db, { intervalMs = 3000 } = {}) {
+  recoverOrphanedJobs(db);
   const tick = async () => {
     try { while (await processNextMediaJob(db)) { /* drain */ } }
     catch (err) { captureError(err, { event: 'media_worker_tick_failed', component: 'media_worker' }); }

@@ -724,6 +724,9 @@ db.exec(`
   );
 `);
 // Stage timing for pipeline telemetry: queue wait vs processing time.
+// In-flight multipart session (M-upload hardening): persisting the R2
+// uploadId is what makes a resumed transfer able to skip finished parts.
+addColumnIfMissing('cmd_video_feeds', 'upload_id', 'upload_id TEXT');
 addColumnIfMissing('cmd_media_jobs', 'started_at', 'started_at TEXT');
 addColumnIfMissing('cmd_media_jobs', 'finished_at', 'finished_at TEXT');
 
