@@ -173,14 +173,11 @@ export async function fetchToScratch(key, scratchPath) {
 }
 
 // Playback: short-TTL signed URL (R2) or the role-gated API stream (local).
-// Worker-side source access. R2: a long-TTL presigned GET that ffmpeg/
-// ffprobe stream directly (range requests) — no gigabyte scratch copy, no
-// page-cache OOM on a small instance. Local: the file path itself.
-export async function workerSourceRef(key) {
-  if (MODE === 'r2') {
-    return getSignedUrl(client(), new GetObjectCommand({ Bucket: BUCKET(), Key: key }), { expiresIn: 6 * 3600 });
-  }
-  return localPathFor(key);
+// Ranged object read for the worker's localhost media gateway. Returns the
+// body stream plus the headers the gateway forwards to ffmpeg's http client.
+export async function getObjectRange(key, rangeHeader = null) {
+  const res = await client().send(new GetObjectCommand({ Bucket: BUCKET(), Key: key, ...(rangeHeader ? { Range: rangeHeader } : {}) }));
+  return { body: res.Body, contentLength: res.ContentLength ?? null, contentRange: res.ContentRange ?? null };
 }
 
 export async function playbackUrl(key) {
