@@ -42,6 +42,11 @@ function resolveBinary(envVar, installerPkg, fallback) {
   }
 }
 
+// Review-proxy ceiling. 1080p keeps cleat/base detail legible for picking
+// the exact contact frame — 720p smeared it on wide drone shots. Sources
+// below this are never upscaled.
+export const PROXY_MAX_HEIGHT = Number(process.env.DM_PROXY_MAX_HEIGHT || 1080);
+
 // Memory available to this process, in MB. Inside a container Node reports
 // the cgroup limit (0 when unconstrained), so upgrading the Render instance
 // lifts the transcode ceiling automatically — no env var to remember and no
@@ -131,13 +136,20 @@ async function handleProxy(db, job, feed) {
     );
   }
   const src = await gatewayUrlFor(feed.storage_key);
-  // Cap the review proxy at 60 fps. High-speed sources (120/119.88) halve to
-  // an exact divisor, so proxy frame N is source frame 2N — the mapping stays
-  // integral and the rendition's recorded fps stays the measurement base.
-  // Unbounded (119 fps 4K) encodes are also what starved the API instance.
+  // Frame rate: preserve the source's real rate. A 120 fps camera exists to
+  // resolve 8 ms instead of 17 ms, and halving it threw away exactly the
+  // precision the customer paid for. DM_PROXY_MAX_FPS re-imposes a ceiling
+  // (by exact halving, so the frame mapping stays integral) when a long
+  // full-game encode at native rate is not worth the wall-clock.
   let targetFps = feed.effective_fps || feed.nominal_fps || 30;
-  while (targetFps > 60) targetFps = targetFps / 2;
+  const fpsCeiling = Number(process.env.DM_PROXY_MAX_FPS || 0);
+  if (fpsCeiling > 0) while (targetFps > fpsCeiling) targetFps = targetFps / 2;
   targetFps = Math.round(targetFps * 100) / 100;
+  log('info', 'proxy_encode_started', {
+    feed_id: feed.id, source: `${feed.width}x${feed.height}@${feed.effective_fps}`,
+    target_fps: targetFps, target_height: Math.min(PROXY_MAX_HEIGHT, feed.height || PROXY_MAX_HEIGHT),
+    duration_s: feed.duration_s,
+  });
   const outPath = path.join(os.tmpdir(), `dm-proxy-${feed.id}.mp4`);
   const thumbPath = path.join(os.tmpdir(), `dm-thumb-${feed.id}.jpg`);
 
@@ -146,7 +158,7 @@ async function handleProxy(db, job, feed) {
   await run(FFMPEG, [
     '-y', '-i', src,
     '-threads', '2',
-    '-vf', "scale=-2:'min(720,ih)'", '-r', String(targetFps), '-vsync', 'cfr',
+    '-vf', `scale=-2:'min(${PROXY_MAX_HEIGHT},ih)'`, '-r', String(targetFps), '-vsync', 'cfr',
     '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '23', '-pix_fmt', 'yuv420p',
     '-c:a', 'aac', '-b:a', '96k', '-movflags', '+faststart', outPath,
   ], { maxBuffer: 64 * 1024 * 1024 });
@@ -160,6 +172,15 @@ async function handleProxy(db, job, feed) {
   await putObject(proxyKey, outPath);
   await putObject(thumbKey, thumbPath);
 
+  // Re-processing (a quality upgrade, a retry) must replace this feed's
+  // renditions rather than stack a second 'proxy' row: consumers picked the
+  // oldest, so a regenerated proxy would have been written and then ignored.
+  // Renditions cited by an existing measurement are left in place — that
+  // evidence link is the audit trail — and selection prefers the newest.
+  db.prepare(
+    `DELETE FROM cmd_media_renditions
+      WHERE feed_id = ? AND id NOT IN (SELECT rendition_id FROM cmd_measurements WHERE rendition_id IS NOT NULL)`
+  ).run(feed.id);
   const insRendition = db.prepare(
     'INSERT INTO cmd_media_renditions (feed_id, kind, storage_key, fps, width, height, duration_s) VALUES (?, ?, ?, ?, ?, ?, ?)'
   );

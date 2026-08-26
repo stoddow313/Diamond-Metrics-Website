@@ -52,7 +52,9 @@ export function mountCommandMeasureRoutes(app, { db, requireInternal }) {
     const feeds = db.prepare(
       `SELECT f.id, f.label, f.original_name, f.width, f.height, f.status, f.effective_fps, f.vfr, r.id AS proxy_rendition_id, r.fps AS proxy_fps
        FROM cmd_video_feeds f
-       LEFT JOIN cmd_media_renditions r ON r.feed_id = f.id AND r.kind = 'proxy'
+       LEFT JOIN cmd_media_renditions r ON r.id = (
+         SELECT id FROM cmd_media_renditions WHERE feed_id = f.id AND kind = 'proxy' ORDER BY id DESC LIMIT 1
+       )
        WHERE f.job_id = ? ORDER BY f.id`
     ).all(job.id);
 

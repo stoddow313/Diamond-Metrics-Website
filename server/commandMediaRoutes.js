@@ -193,7 +193,9 @@ export function mountCommandMediaRoutes(app, { db, requireInternal }) {
        WHERE f.id = ?`
     ).get(req.params.id);
     if (!feed) return res.status(404).json({ error: 'Feed not found' });
-    const renditions = db.prepare('SELECT * FROM cmd_media_renditions WHERE feed_id = ? ORDER BY id').all(feed.id);
+    // Newest first: callers take the first 'proxy' they find, which must be
+    // the current one after a re-encode.
+    const renditions = db.prepare('SELECT * FROM cmd_media_renditions WHERE feed_id = ? ORDER BY id DESC').all(feed.id);
     const withUrls = await Promise.all(renditions.map(async r => ({ ...r, url: await signedPlaybackUrl(r.storage_key) })));
     const jobs = db.prepare('SELECT kind, status, attempts, error FROM cmd_media_jobs WHERE feed_id = ? ORDER BY id').all(feed.id);
     res.json({ feed, renditions: withUrls, media_jobs: jobs });
