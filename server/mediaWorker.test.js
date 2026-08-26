@@ -93,3 +93,17 @@ test('queue drives probe → proxy → ready with a CFR proxy rendition', async 
   const probes = db.prepare("SELECT COUNT(*) c FROM cmd_media_jobs WHERE feed_id=? AND kind='probe'").get(feedId).c;
   assert.equal(probes, 1);
 });
+
+test('a 4K source on a small instance fails fast with an actionable error — it must never reach ffmpeg', async () => {
+  const feedId = db.prepare(
+    "INSERT INTO cmd_video_feeds (job_id, label, storage_key, original_name, status, width, height, codec, effective_fps) VALUES (1, '4K', 'originals/x/4k.mp4', 'x.mp4', 'processing', 3840, 2160, 'hevc', 119.88)"
+  ).run().lastInsertRowid;
+  db.prepare("INSERT INTO cmd_media_jobs (feed_id, kind) VALUES (?, 'proxy')").run(feedId);
+  await processNextMediaJob(db);
+  const jobRow = db.prepare("SELECT * FROM cmd_media_jobs WHERE feed_id = ? AND kind='proxy'").get(feedId);
+  assert.equal(jobRow.status, 'failed', 'permanent failure — no retry loop');
+  assert.match(jobRow.error, /1080p/);
+  assert.match(jobRow.error, /Upgrade the instance/);
+  const feedRow = db.prepare('SELECT * FROM cmd_video_feeds WHERE id = ?').get(feedId);
+  assert.equal(feedRow.status, 'failed');
+});
