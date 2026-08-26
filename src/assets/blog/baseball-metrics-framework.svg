@@ -1,0 +1,35 @@
+<svg width="1600" height="900" viewBox="0 0 1600 900" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="1600" height="900" rx="42" fill="#071834"/>
+  <path d="M0 780C250 690 430 790 650 740C930 675 1130 620 1600 720V900H0V780Z" fill="#0B2450" opacity=".72"/>
+  <text x="104" y="118" fill="#4FC3FF" font-family="Arial, Helvetica, sans-serif" font-size="24" font-weight="700" letter-spacing="4">PLAYER DEVELOPMENT</text>
+  <text x="104" y="188" fill="white" font-family="Arial, Helvetica, sans-serif" font-size="58" font-weight="700">A useful player record builds in layers.</text>
+  <text x="104" y="235" fill="#C9E7FA" font-family="Arial, Helvetica, sans-serif" font-size="26">Start with what the game shows. Add stronger measurement when the setup supports it.</text>
+
+  <path d="M170 338H1430" stroke="#3A77B7" stroke-width="2" opacity=".9"/>
+  <circle cx="170" cy="338" r="10" fill="#4FC3FF"/><circle cx="800" cy="338" r="10" fill="#4FC3FF"/><circle cx="1430" cy="338" r="10" fill="#4FC3FF"/>
+
+  <rect x="104" y="392" width="416" height="290" rx="26" fill="#102B58" stroke="#4FC3FF" stroke-width="2"/>
+  <circle cx="155" cy="446" r="24" fill="#4FC3FF"/><text x="147" y="454" fill="#071834" font-family="Arial, Helvetica, sans-serif" font-size="22" font-weight="700">1</text>
+  <text x="195" y="454" fill="white" font-family="Arial, Helvetica, sans-serif" font-size="27" font-weight="700">GAME CONTEXT</text>
+  <text x="144" y="515" fill="#C9E7FA" font-family="Arial, Helvetica, sans-serif" font-size="24">At-bats and pitch results</text>
+  <text x="144" y="558" fill="#C9E7FA" font-family="Arial, Helvetica, sans-serif" font-size="24">Decisions and situations</text>
+  <text x="144" y="601" fill="#C9E7FA" font-family="Arial, Helvetica, sans-serif" font-size="24">A reliable game record</text>
+
+  <rect x="592" y="392" width="416" height="290" rx="26" fill="#102B58" stroke="#4FC3FF" stroke-width="2"/>
+  <circle cx="643" cy="446" r="24" fill="#4FC3FF"/><text x="635" y="454" fill="#071834" font-family="Arial, Helvetica, sans-serif" font-size="22" font-weight="700">2</text>
+  <text x="683" y="454" fill="white" font-family="Arial, Helvetica, sans-serif" font-size="27" font-weight="700">REPEATABLE SKILLS</text>
+  <text x="632" y="515" fill="#C9E7FA" font-family="Arial, Helvetica, sans-serif" font-size="24">Contact and spray patterns</text>
+  <text x="632" y="558" fill="#C9E7FA" font-family="Arial, Helvetica, sans-serif" font-size="24">Command and strike percentage</text>
+  <text x="632" y="601" fill="#C9E7FA" font-family="Arial, Helvetica, sans-serif" font-size="24">Running and defensive decisions</text>
+
+  <rect x="1080" y="392" width="416" height="290" rx="26" fill="#164568" stroke="#69D4FF" stroke-width="2"/>
+  <circle cx="1131" cy="446" r="24" fill="#69D4FF"/><text x="1123" y="454" fill="#071834" font-family="Arial, Helvetica, sans-serif" font-size="22" font-weight="700">3</text>
+  <text x="1171" y="454" fill="white" font-family="Arial, Helvetica, sans-serif" font-size="27" font-weight="700">VERIFIED PERFORMANCE</text>
+  <text x="1120" y="515" fill="#E0F5FF" font-family="Arial, Helvetica, sans-serif" font-size="24">Radar velocity</text>
+  <text x="1120" y="558" fill="#E0F5FF" font-family="Arial, Helvetica, sans-serif" font-size="24">Radar exit velocity</text>
+  <text x="1120" y="601" fill="#E0F5FF" font-family="Arial, Helvetica, sans-serif" font-size="24">High-quality video estimates</text>
+
+  <rect x="104" y="748" width="1392" height="80" rx="20" fill="#0E315B"/>
+  <circle cx="148" cy="788" r="11" fill="#50D890"/>
+  <text x="178" y="797" fill="white" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="600">Use the strongest evidence the capture supports—and keep the player’s development in context.</text>
+</svg>

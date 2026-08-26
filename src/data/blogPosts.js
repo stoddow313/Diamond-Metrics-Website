@@ -1,5 +1,17 @@
 export const blogPosts = [
   {
+    slug: 'baseball-metrics-ages-13-18',
+    category: 'Player Development',
+    title: 'What Baseball Metrics Matter Most for Players Ages 13–18?',
+    excerpt:
+      'A development-first guide to the baseball metrics that help players ages 13–18 build a stronger record of progress.',
+    readTime: '8 min read',
+    publishedAt: '2026-08-26',
+    seoTitle: 'Baseball Metrics for Players Ages 13–18 | Diamond Metrics',
+    seoDescription:
+      'Learn which baseball metrics matter most for players ages 13–18, from game context and repeatable skills to verified velocity and recruiting-ready records.',
+  },
+  {
     slug: 'how-to-record-baseball-game-video-analysis',
     category: 'Film Better',
     title: 'How to Record a Baseball Game for Video Analysis',
