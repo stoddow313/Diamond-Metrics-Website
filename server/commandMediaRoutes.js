@@ -176,7 +176,10 @@ export function mountCommandMediaRoutes(app, { db, requireInternal }) {
     const feed = db.prepare('SELECT * FROM cmd_video_feeds WHERE id = ?').get(req.params.id);
     if (!feed) return res.status(404).json({ error: 'Feed not found' });
     if (!['failed', 'retrying'].includes(feed.status)) return res.status(400).json({ error: `Feed is ${feed.status}; nothing to retry` });
-    db.prepare("UPDATE cmd_media_jobs SET status='queued', error='' WHERE feed_id=? AND status='failed'").run(feed.id);
+    // A human clicking Retry means "try again for real" — reset the counter,
+    // or jobs whose attempts burned out under a since-fixed defect go
+    // straight back to terminal failure on the next orphan sweep.
+    db.prepare("UPDATE cmd_media_jobs SET status='queued', error='', attempts=0 WHERE feed_id=? AND status='failed'").run(feed.id);
     db.prepare("INSERT OR IGNORE INTO cmd_media_jobs (feed_id, kind) VALUES (?, 'probe')").run(feed.id);
     db.prepare("UPDATE cmd_video_feeds SET status='queued', error='', updated_at=datetime('now') WHERE id=?").run(feed.id);
     res.json({ feed: db.prepare('SELECT * FROM cmd_video_feeds WHERE id = ?').get(feed.id) });
