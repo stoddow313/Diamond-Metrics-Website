@@ -14,6 +14,18 @@ import { cardStyle } from '../../components/admin/theme';
 
 const VALIDITY_COLORS = { valid: '#4ade80', unavailable: '#fbbf24' };
 
+// Two feeds on one job usually share a label ("Behind Home"), which makes
+// the selector ambiguous — and picking the wrong one means measuring the
+// wrong footage at a different frame rate. Identify each by its file and
+// real capture spec, and show the exact fps (59.94 is not 60).
+function describeFeed(f) {
+  const fps = f.proxy_fps || f.effective_fps;
+  const rate = fps ? `${Number(fps.toFixed(2))} fps` : 'fps unknown';
+  const size = f.width && f.height ? `${f.height}p` : '';
+  const name = f.original_name || f.label;
+  return `${name} — ${[size, rate].filter(Boolean).join(' · ')}${f.vfr ? ' · VFR' : ''}`;
+}
+
 export default function RunningQueuePage() {
   const { jobId } = useParams();
   const [data, setData] = useState(null);
@@ -115,7 +127,9 @@ export default function RunningQueuePage() {
         <div className="flex gap-2 items-end">
           <Field label="Feed">
             <Select value={selectedFeedId || ''} onChange={e => setSelectedFeedId(Number(e.target.value))}>
-              {readyFeeds.map(f => <option key={f.id} value={f.id}>{f.label} ({(f.proxy_fps || f.effective_fps || 0).toFixed(0)} fps)</option>)}
+              {readyFeeds.map(f => (
+                <option key={f.id} value={f.id}>{describeFeed(f)}</option>
+              ))}
             </Select>
           </Field>
         </div>
