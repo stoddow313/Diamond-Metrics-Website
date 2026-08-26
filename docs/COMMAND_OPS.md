@@ -58,6 +58,8 @@ experience, so a bare checkout runs with no configuration at all.
 | `DM_MEDIA_SECRET` | random per boot | Signs short-TTL playback URLs; set it in prod so links survive restarts |
 | `FFMPEG_PATH`, `FFPROBE_PATH` | `/opt/homebrew/bin/*` | Set to `ffmpeg`/`ffprobe` on Render |
 | `DM_INLINE_WORKER` | on | `0` disables the inline worker (only with a real dedicated worker) |
+| `DM_PROXY_MAX_HEIGHT` | `1080` | Review-proxy height ceiling. Sources below it are never upscaled. |
+| `DM_PROXY_MAX_FPS` | none (native) | Optional proxy frame-rate ceiling, applied by exact halving so frame mapping stays integral. Set it (e.g. `60`) if full-game encodes at native high frame rates cost more wall-clock than the precision is worth. |
 | `DM_TRANSCODE_MEMORY_MB` | auto-detected | Transcode memory ceiling. Detected from the container limit, so upgrading the instance lifts it automatically; set only to pin or deliberately lower it. Below 2048, sources above 1080p are refused with an actionable error rather than OOM-killing the service. |
 
 ### Backups
@@ -225,6 +227,37 @@ mirrored by the register endpoint — the UI names the rule it applied.
 | Advisory | Above 16 GB the UI suggests clipping before upload |
 | Frame rate | Any. VFR normalizes to CFR in the proxy; sources above 60 fps halve to an exact divisor (119.88 → 59.94), so proxy frame N is source frame 2N and frame math stays integral |
 | Empty/placeholder files | Rejected with an iCloud/OneDrive hint — cloud placeholders read as 0 bytes |
+
+### 3.8a Review-proxy fidelity
+
+Originals are never modified — the uploaded file is stored byte-for-byte and
+kept for the full retention window. The **proxy** is a separate review copy,
+and its settings are a direct trade between analyst accuracy and encode cost.
+
+| | Height | Frame rate |
+|---|---|---|
+| Now | 1080p ceiling, never upscaled | **native** (119.88 stays 119.88) |
+| Previously | 720p | halved above 60 |
+
+Both dimensions matter for measurement:
+
+- **Resolution** decides whether an analyst can *see* the contact frame. On a
+  wide drone shot at 720p, cleat-and-base detail smears; 1080p holds it.
+- **Frame rate** sets the finest distinction available. At 119.88 fps one
+  frame is 8.34 ms; halved to 59.94 it is 16.68 ms. A 120 fps camera exists
+  to buy that precision, and the proxy should not spend it.
+
+`DM_PROXY_MAX_FPS` re-imposes a ceiling if a full-game encode at native rate
+costs more wall-clock than the precision is worth. Halving is exact, so
+proxy frame N maps to source frame 2N and the recorded `fps_used` on each
+measurement stays the authoritative base either way.
+
+**Re-encoding a feed replaces its proxy** rather than adding a second one.
+Renditions already cited by a measurement are retained (that link is the
+evidence trail) and selection always prefers the newest. Note that changing
+a proxy's frame rate changes what a frame *number* refers to: stored
+measurements keep their own `fps_used` so historical elapsed times remain
+correct, but marks re-opened against a re-encoded proxy should be re-checked.
 
 ### 3.9 Upload reliability (field-failure postmortem, 2026-08-25)
 

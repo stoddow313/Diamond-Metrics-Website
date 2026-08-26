@@ -119,3 +119,32 @@ test('memory detection: explicit override wins, otherwise the real limit is used
   // host memory otherwise) — never a hardcoded guess that blocks a big box.
   assert.ok(availableMemoryMb() > 0);
 });
+
+test('proxy preserves native frame rate and caps height at 1080p without upscaling', async () => {
+  const { PROXY_MAX_HEIGHT } = await import('./mediaWorker.js');
+  assert.equal(PROXY_MAX_HEIGHT, 1080);
+
+  // A 480p source must stay 480p — the cap is a ceiling, not a target.
+  const small = path.join(MEDIA_DIR, 'originals/50/source.mp4');
+  fs.mkdirSync(path.dirname(small), { recursive: true });
+  execFileSync(FFMPEG, ['-y', '-f', 'lavfi', '-i', 'testsrc2=size=854x480:rate=30:duration=1',
+    '-c:v', 'libx264', '-preset', 'ultrafast', '-pix_fmt', 'yuv420p', small], { stdio: 'ignore' });
+  const feedId = db.prepare(
+    "INSERT INTO cmd_video_feeds (job_id, label, storage_key, original_name, status, width, height, effective_fps, duration_s) VALUES (1, 'SD', 'originals/50/source.mp4', 'sd.mp4', 'processing', 854, 480, 30, 1)"
+  ).run().lastInsertRowid;
+  db.prepare("INSERT INTO cmd_media_jobs (feed_id, kind) VALUES (?, 'proxy')").run(feedId);
+  await processNextMediaJob(db);
+  const r = db.prepare("SELECT * FROM cmd_media_renditions WHERE feed_id = ? AND kind='proxy'").get(feedId);
+  assert.equal(r.height, 480, 'no upscaling');
+  assert.equal(Math.round(r.fps), 30, 'native rate preserved');
+});
+
+test('re-processing replaces the proxy rather than stacking a stale duplicate', async () => {
+  const feedId = db.prepare("SELECT id FROM cmd_video_feeds WHERE original_name = 'sd.mp4'").get().id;
+  const before = db.prepare("SELECT id FROM cmd_media_renditions WHERE feed_id=? AND kind='proxy'").get(feedId).id;
+  db.prepare("INSERT INTO cmd_media_jobs (feed_id, kind, params_hash) VALUES (?, 'proxy', 'v2')").run(feedId);
+  await processNextMediaJob(db);
+  const rows = db.prepare("SELECT id FROM cmd_media_renditions WHERE feed_id=? AND kind='proxy' ORDER BY id").all(feedId);
+  assert.equal(rows.length, 1, 'exactly one proxy — the old unreferenced row is gone');
+  assert.notEqual(rows[0].id, before, 'and it is the freshly encoded one');
+});
