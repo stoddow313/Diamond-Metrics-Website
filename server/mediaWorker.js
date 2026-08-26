@@ -14,7 +14,8 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { promisify } from 'node:util';
-import { putObject, localPathFor, storageMode, workerSourceRef } from './storage.js';
+import { putObject, localPathFor, storageMode } from './storage.js';
+import { gatewayUrlFor } from './mediaGateway.js';
 import { emitJobEvent } from './notifications.js';
 
 const run = promisify(execFile);
@@ -88,10 +89,10 @@ export async function probeFile(filePath) {
 }
 
 async function handleProbe(db, job, feed) {
-  // Stream straight from storage — downloading a full-game original to the
-  // instance is what OOM-killed production (page cache counts against the
-  // container's memory limit).
-  const src = await workerSourceRef(feed.storage_key);
+  // Stream through the localhost gateway — downloading a full-game original
+  // to the instance is what OOM-killed production, and static ffmpeg builds
+  // can't be trusted with https (the linux one fails on R2 URLs outright).
+  const src = await gatewayUrlFor(feed.storage_key);
   const meta = await probeFile(src);
   db.prepare(
     `UPDATE cmd_video_feeds SET duration_s=?, codec=?, width=?, height=?, rotation=?, nominal_fps=?, effective_fps=?, vfr=?,
@@ -106,7 +107,7 @@ function proxyProbeDuration(feed) {
 }
 
 async function handleProxy(db, job, feed) {
-  const src = await workerSourceRef(feed.storage_key);
+  const src = await gatewayUrlFor(feed.storage_key);
   // Cap the review proxy at 60 fps. High-speed sources (120/119.88) halve to
   // an exact divisor, so proxy frame N is source frame 2N — the mapping stays
   // integral and the rendition's recorded fps stays the measurement base.
@@ -173,14 +174,18 @@ export async function processNextMediaJob(db) {
     db.prepare("UPDATE cmd_media_jobs SET status='done', error='', finished_at=datetime('now'), updated_at=datetime('now') WHERE id=?").run(job.id);
   } catch (err) {
     const retryable = job.attempts < 3;
+    // Prefer the stderr TAIL: exec errors prefix the whole command line, and
+    // a 500-char presigned URL used to crowd the real ffmpeg error out of
+    // the stored message entirely.
+    const detail = String(err.stderr || err.message || err).trim().slice(-500);
     // A retried job goes back to 'queued' and re-stamps started_at when it
     // is next claimed; only a terminal failure closes the timing window.
     db.prepare(`UPDATE cmd_media_jobs SET status=?, error=?, ${retryable ? '' : "finished_at=datetime('now'),"} updated_at=datetime('now') WHERE id=?`)
-      .run(retryable ? 'queued' : 'failed', String(err.message).slice(0, 500), job.id);
-    captureError(err, { event: 'media_job_failed', component: 'media_worker', job_id: job.id, kind: job.kind, attempt: job.attempts + 1, retryable });
+      .run(retryable ? 'queued' : 'failed', detail, job.id);
+    captureError(err, { event: 'media_job_failed', component: 'media_worker', job_id: job.id, kind: job.kind, attempt: job.attempts + 1, retryable, detail });
     if (feed) {
       db.prepare("UPDATE cmd_video_feeds SET status=?, error=?, updated_at=datetime('now') WHERE id=?")
-        .run(retryable ? 'retrying' : 'failed', String(err.message).slice(0, 500), feed.id);
+        .run(retryable ? 'retrying' : 'failed', detail, feed.id);
     }
   }
   return true;
