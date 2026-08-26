@@ -42,6 +42,18 @@ function resolveBinary(envVar, installerPkg, fallback) {
   }
 }
 
+// Memory available to this process, in MB. Inside a container Node reports
+// the cgroup limit (0 when unconstrained), so upgrading the Render instance
+// lifts the transcode ceiling automatically — no env var to remember and no
+// silent 4K refusal on a box that can handle it. The override exists for
+// pinning behaviour in tests or forcing a lower ceiling deliberately.
+export function availableMemoryMb() {
+  const override = Number(process.env.DM_TRANSCODE_MEMORY_MB);
+  if (Number.isFinite(override) && override > 0) return override;
+  const constrained = process.constrainedMemory?.() || 0;
+  return Math.floor((constrained > 0 ? constrained : os.totalmem()) / 1024 / 1024);
+}
+
 export const FFMPEG = resolveBinary('FFMPEG_PATH', '@ffmpeg-installer/ffmpeg', 'ffmpeg');
 export const FFPROBE = resolveBinary('FFPROBE_PATH', '@ffprobe-installer/ffprobe', 'ffprobe');
 
@@ -67,6 +79,7 @@ const parseRate = s => {
 
 export async function probeFile(filePath) {
   const { stdout } = await run(FFPROBE, [
+    '-probesize', '10M', '-analyzeduration', '10M',
     '-v', 'error', '-select_streams', 'v:0',
     '-show_entries', 'stream=codec_name,width,height,r_frame_rate,avg_frame_rate,nb_frames,duration,side_data_list:format=duration',
     '-of', 'json', filePath,
@@ -107,6 +120,16 @@ function proxyProbeDuration(feed) {
 }
 
 async function handleProxy(db, job, feed) {
+  // Capability guard: decoding 4K needs more RAM than a small instance has —
+  // the decoder's reference buffers alone OOM-killed a 512 MB container
+  // twice, taking the public API down with it. Refuse with an actionable
+  // error instead of crashing.
+  if ((feed.width || 0) * (feed.height || 0) > 1920 * 1088 && availableMemoryMb() < 2048) {
+    throw Object.assign(
+      new Error(`source is ${feed.width}x${feed.height} ${String(feed.codec || '').toUpperCase()} — transcoding above 1080p needs a >=2 GB instance (this one has ${availableMemoryMb()} MB). Upgrade the instance, or upload a <=1080p export of this footage.`),
+      { permanent: true },
+    );
+  }
   const src = await gatewayUrlFor(feed.storage_key);
   // Cap the review proxy at 60 fps. High-speed sources (120/119.88) halve to
   // an exact divisor, so proxy frame N is source frame 2N — the mapping stays
@@ -173,7 +196,7 @@ export async function processNextMediaJob(db) {
     else throw new Error(`unknown media job kind ${job.kind}`);
     db.prepare("UPDATE cmd_media_jobs SET status='done', error='', finished_at=datetime('now'), updated_at=datetime('now') WHERE id=?").run(job.id);
   } catch (err) {
-    const retryable = job.attempts < 3;
+    const retryable = !err.permanent && job.attempts < 3;
     // Prefer the stderr TAIL: exec errors prefix the whole command line, and
     // a 500-char presigned URL used to crowd the real ffmpeg error out of
     // the stored message entirely.
