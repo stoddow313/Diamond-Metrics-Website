@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { Check, ChevronRight, Video } from 'lucide-react';
+import { ChevronRight } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import MarketingLayout from '../components/MarketingLayout';
 import { getBlogPost } from '../data/blogPosts';
@@ -204,12 +204,12 @@ export default function BaseballMetricsAges1318Page() {
             <p>
               Start with stable, complete game video. Keep the original files, capture the context around each play, and add stronger measurement tools when the question calls for them.
             </p>
-            <div className="article-actions">
-              <Link className="button button-primary" to="/signup">
-                Analyze Your Player <ChevronRight size={17} aria-hidden="true" />
+            <div className="hero-buttons article-actions">
+              <Link className="primary-button" to="/signup">
+                Analyze Your Player
               </Link>
-              <Link className="button button-secondary" to="/programs">
-                <Video size={17} aria-hidden="true" /> Explore Team Analysis
+              <Link className="secondary-button" to="/programs">
+                Explore Team Analysis
               </Link>
             </div>
           </section>

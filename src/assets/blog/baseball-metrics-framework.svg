@@ -24,7 +24,7 @@
 
   <rect x="1080" y="392" width="416" height="290" rx="26" fill="#164568" stroke="#69D4FF" stroke-width="2"/>
   <circle cx="1131" cy="446" r="24" fill="#69D4FF"/><text x="1123" y="454" fill="#071834" font-family="Arial, Helvetica, sans-serif" font-size="22" font-weight="700">3</text>
-  <text x="1171" y="454" fill="white" font-family="Arial, Helvetica, sans-serif" font-size="27" font-weight="700">VERIFIED PERFORMANCE</text>
+  <text x="1171" y="454" fill="white" font-family="Arial, Helvetica, sans-serif" font-size="25" font-weight="700">VERIFIED METRICS</text>
   <text x="1120" y="515" fill="#E0F5FF" font-family="Arial, Helvetica, sans-serif" font-size="24">Radar velocity</text>
   <text x="1120" y="558" fill="#E0F5FF" font-family="Arial, Helvetica, sans-serif" font-size="24">Radar exit velocity</text>
   <text x="1120" y="601" fill="#E0F5FF" font-family="Arial, Helvetica, sans-serif" font-size="24">High-quality video estimates</text>
