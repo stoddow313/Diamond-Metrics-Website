@@ -58,6 +58,7 @@ experience, so a bare checkout runs with no configuration at all.
 | `DM_MEDIA_SECRET` | random per boot | Signs short-TTL playback URLs; set it in prod so links survive restarts |
 | `FFMPEG_PATH`, `FFPROBE_PATH` | `/opt/homebrew/bin/*` | Set to `ffmpeg`/`ffprobe` on Render |
 | `DM_INLINE_WORKER` | on | `0` disables the inline worker (only with a real dedicated worker) |
+| `DM_TRANSCODE_MEMORY_MB` | auto-detected | Transcode memory ceiling. Detected from the container limit, so upgrading the instance lifts it automatically; set only to pin or deliberately lower it. Below 2048, sources above 1080p are refused with an actionable error rather than OOM-killing the service. |
 
 ### Backups
 | Variable | Default | Purpose |

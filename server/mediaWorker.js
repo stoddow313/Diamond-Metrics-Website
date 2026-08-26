@@ -42,6 +42,18 @@ function resolveBinary(envVar, installerPkg, fallback) {
   }
 }
 
+// Memory available to this process, in MB. Inside a container Node reports
+// the cgroup limit (0 when unconstrained), so upgrading the Render instance
+// lifts the transcode ceiling automatically — no env var to remember and no
+// silent 4K refusal on a box that can handle it. The override exists for
+// pinning behaviour in tests or forcing a lower ceiling deliberately.
+export function availableMemoryMb() {
+  const override = Number(process.env.DM_TRANSCODE_MEMORY_MB);
+  if (Number.isFinite(override) && override > 0) return override;
+  const constrained = process.constrainedMemory?.() || 0;
+  return Math.floor((constrained > 0 ? constrained : os.totalmem()) / 1024 / 1024);
+}
+
 export const FFMPEG = resolveBinary('FFMPEG_PATH', '@ffmpeg-installer/ffmpeg', 'ffmpeg');
 export const FFPROBE = resolveBinary('FFPROBE_PATH', '@ffprobe-installer/ffprobe', 'ffprobe');
 
@@ -111,12 +123,10 @@ async function handleProxy(db, job, feed) {
   // Capability guard: decoding 4K needs more RAM than a small instance has —
   // the decoder's reference buffers alone OOM-killed a 512 MB container
   // twice, taking the public API down with it. Refuse with an actionable
-  // error instead of crashing; DM_TRANSCODE_MEMORY_MB raises the ceiling
-  // when the instance is upgraded.
-  const memMb = Number(process.env.DM_TRANSCODE_MEMORY_MB || 512);
-  if ((feed.width || 0) * (feed.height || 0) > 1920 * 1088 && memMb < 2048) {
+  // error instead of crashing.
+  if ((feed.width || 0) * (feed.height || 0) > 1920 * 1088 && availableMemoryMb() < 2048) {
     throw Object.assign(
-      new Error(`source is ${feed.width}x${feed.height} ${String(feed.codec || '').toUpperCase()} — transcoding above 1080p needs a >=2 GB instance (this one is configured for ${memMb} MB). Upgrade the instance, or upload a <=1080p export of this footage.`),
+      new Error(`source is ${feed.width}x${feed.height} ${String(feed.codec || '').toUpperCase()} — transcoding above 1080p needs a >=2 GB instance (this one has ${availableMemoryMb()} MB). Upgrade the instance, or upload a <=1080p export of this footage.`),
       { permanent: true },
     );
   }

@@ -95,6 +95,7 @@ test('queue drives probe → proxy → ready with a CFR proxy rendition', async 
 });
 
 test('a 4K source on a small instance fails fast with an actionable error — it must never reach ffmpeg', async () => {
+  process.env.DM_TRANSCODE_MEMORY_MB = '512';   // pin a starter-sized box
   const feedId = db.prepare(
     "INSERT INTO cmd_video_feeds (job_id, label, storage_key, original_name, status, width, height, codec, effective_fps) VALUES (1, '4K', 'originals/x/4k.mp4', 'x.mp4', 'processing', 3840, 2160, 'hevc', 119.88)"
   ).run().lastInsertRowid;
@@ -106,4 +107,15 @@ test('a 4K source on a small instance fails fast with an actionable error — it
   assert.match(jobRow.error, /Upgrade the instance/);
   const feedRow = db.prepare('SELECT * FROM cmd_video_feeds WHERE id = ?').get(feedId);
   assert.equal(feedRow.status, 'failed');
+  delete process.env.DM_TRANSCODE_MEMORY_MB;
+});
+
+test('memory detection: explicit override wins, otherwise the real limit is used', async () => {
+  const { availableMemoryMb } = await import('./mediaWorker.js');
+  process.env.DM_TRANSCODE_MEMORY_MB = '2048';
+  assert.equal(availableMemoryMb(), 2048, 'override honoured');
+  delete process.env.DM_TRANSCODE_MEMORY_MB;
+  // Unset: reports something real and positive (cgroup limit in a container,
+  // host memory otherwise) — never a hardcoded guess that blocks a big box.
+  assert.ok(availableMemoryMb() > 0);
 });
