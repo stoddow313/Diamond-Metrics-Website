@@ -3,8 +3,19 @@ import BrandMark from './BrandMark';
 
 function InstagramMark() {
   return (
-    <svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
-      <path d="M7.75 2h8.5A5.76 5.76 0 0 1 22 7.75v8.5A5.76 5.76 0 0 1 16.25 22h-8.5A5.76 5.76 0 0 1 2 16.25v-8.5A5.76 5.76 0 0 1 7.75 2Zm-.18 2A3.58 3.58 0 0 0 4 7.57v8.86A3.58 3.58 0 0 0 7.57 20h8.86A3.58 3.58 0 0 0 20 16.43V7.57A3.58 3.58 0 0 0 16.43 4H7.57ZM17 5.5a1.25 1.25 0 1 1 0 2.5 1.25 1.25 0 0 1 0-2.5ZM12 6.5A5.5 5.5 0 1 1 6.5 12 5.51 5.51 0 0 1 12 6.5Zm0 2A3.5 3.5 0 1 0 15.5 12 3.5 3.5 0 0 0 12 8.5Z" />
+    <svg aria-hidden="true" width="20" height="20" viewBox="0 0 24 24">
+      <defs>
+        <linearGradient id="instagram-gradient" x1="3" y1="22" x2="21" y2="2" gradientUnits="userSpaceOnUse">
+          <stop stopColor="#FEDA75" />
+          <stop offset="0.35" stopColor="#FA7E1E" />
+          <stop offset="0.62" stopColor="#D62976" />
+          <stop offset="1" stopColor="#4F5BD5" />
+        </linearGradient>
+      </defs>
+      <rect width="24" height="24" rx="6" fill="url(#instagram-gradient)" />
+      <rect x="6.2" y="6.2" width="11.6" height="11.6" rx="3.4" fill="none" stroke="white" strokeWidth="1.7" />
+      <circle cx="12" cy="12" r="2.7" fill="none" stroke="white" strokeWidth="1.7" />
+      <circle cx="15.9" cy="8.2" r="1" fill="white" />
     </svg>
   );
 }
