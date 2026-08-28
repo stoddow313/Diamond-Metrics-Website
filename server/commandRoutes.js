@@ -102,12 +102,23 @@ export function mountCommandRoutes(app, { db, requireInternal }) {
     }
     if ('blocker_reason' in b) updates.push(['blocker_reason', String(b.blocker_reason || ''), 'blocked']);
     if ('due_date' in b) updates.push(['due_date', b.due_date || null, 'due_date_changed']);
-    if (!updates.length) return res.status(400).json({ error: 'No supported fields to update' });
+    // The synthetic flag lives on the order and must be settable after the
+    // fact: test jobs already exist, and a flag you cannot apply to them
+    // does not isolate anything.
+    const settingSynthetic = 'synthetic' in b;
+    if (!updates.length && !settingSynthetic) return res.status(400).json({ error: 'No supported fields to update' });
     const apply = db.transaction(() => {
       for (const [col, value, action] of updates) {
         const prev = job[col];
         db.prepare(`UPDATE cmd_jobs SET ${col} = ?, updated_at = datetime('now') WHERE id = ?`).run(value, job.id);
         audit('cmd_jobs', job.id, req.internal.id, action, { prev: String(prev ?? ''), next: String(value ?? '') });
+      }
+      if (settingSynthetic) {
+        const next = b.synthetic ? 1 : 0;
+        const prev = db.prepare('SELECT synthetic FROM cmd_orders WHERE id = ?').get(job.order_id)?.synthetic ?? 0;
+        db.prepare('UPDATE cmd_orders SET synthetic = ? WHERE id = ?').run(next, job.order_id);
+        audit('cmd_jobs', job.id, req.internal.id, next ? 'marked_synthetic' : 'unmarked_synthetic',
+          { prev: String(prev), next: String(next) });
       }
     });
     apply();
