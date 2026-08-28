@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { api } from '../../lib/api';
 import { useAuth } from '../../context/AuthContext';
-import { PrimaryButton, GhostButton, ErrorNote } from '../../components/admin/ui';
+import { PrimaryButton, GhostButton, TextInput, ErrorNote } from '../../components/admin/ui';
 import { cardStyle } from '../../components/admin/theme';
 
 // Review & publish (Command M5). The reviewer sees QA flags, every active
@@ -43,6 +43,7 @@ export default function ReviewPage() {
   const [data, setData] = useState(null);
   const [error, setError] = useState('');
   const [releasing, setReleasing] = useState(false);
+  const [overrideNote, setOverrideNote] = useState({});
 
   const load = useCallback(() => api.commandReview(jobId).then(setData).catch(err => setError(err.message)), [jobId]);
   useEffect(() => { load(); }, [load]);
@@ -60,6 +61,23 @@ export default function ReviewPage() {
     }
     return [...byPlayer.values()].map(g => ({ ...g, metrics: [...g.metrics.entries()] }));
   }, [data]);
+
+  async function submitOverride(metricCode) {
+    setError('');
+    try {
+      await api.commandCaptureOverride(jobId, metricCode, overrideNote[metricCode] || '');
+      setOverrideNote(v => ({ ...v, [metricCode]: '' }));
+      await load();
+    } catch (err) { setError(err.message); }
+  }
+
+  async function removeOverride(metricCode) {
+    setError('');
+    try {
+      await api.commandRemoveCaptureOverride(jobId, metricCode);
+      await load();
+    } catch (err) { setError(err.message); }
+  }
 
   async function decide(resultId, decision) {
     setError('');
@@ -86,7 +104,7 @@ export default function ReviewPage() {
 
   if (!data) return <p style={{ color: '#94a3b8' }}>{error || 'Loading review…'}</p>;
 
-  const { job, qa_flags, metrics } = data;
+  const { job, qa_flags, metrics, capture = [] } = data;
   const metricInfo = code => metrics.find(m => m.metric_code === code) || { label: code, unit: '', decimals: 2 };
   const planFor = (playerId, code) => data.plan.find(p => p.player_id === playerId && p.metric_code === code);
   const blocking = qa_flags.filter(f => f.level === 'blocking');
@@ -127,6 +145,69 @@ export default function ReviewPage() {
       </div>
 
       <ErrorNote>{error}</ErrorNote>
+
+      {/* What each state means, and the guarantee that matters. */}
+      <div className="rounded-2xl border p-4 mb-4" style={cardStyle}>
+        <div className="flex items-center gap-4 flex-wrap">
+          <span className="text-[11px] font-bold uppercase tracking-widest" style={{ color: '#94a3b8' }}>Result states</span>
+          {[
+            ['draft', 'measured, not yet reviewed'],
+            ['approved', 'reviewed — publishes on release'],
+            ['published', 'live on the athlete profile'],
+            ['unavailable', 'could not be measured — never a zero'],
+          ].map(([k, meaning]) => (
+            <span key={k} className="flex items-center gap-1.5">
+              <StatusChip value={k} />
+              <span className="text-xs" style={{ color: '#64748b' }}>{meaning}</span>
+            </span>
+          ))}
+        </div>
+        <p className="text-xs mt-2.5" style={{ color: '#475569' }}>
+          Nothing reaches an athlete&apos;s profile until it is approved <em>and</em> the job is released — a draft result cannot affect a profile.
+        </p>
+      </div>
+
+      {/* Recipe-based capture QA, per ordered metric. */}
+      {capture.length > 0 && (
+        <section className="rounded-2xl border p-5 mb-4" style={cardStyle}>
+          <p className="text-[11px] font-bold uppercase tracking-widest mb-2" style={{ color: '#94a3b8' }}>Capture requirements</p>
+          {capture.map(c => {
+            const tone = { ok: '#4ade80', warning: '#fbbf24', blocked: '#f87171', overridden: '#fbbf24', not_applicable: '#64748b' }[c.status];
+            return (
+              <div key={c.metric_code} className="py-2 border-t" style={{ borderColor: '#1e3a5f' }}>
+                <div className="flex items-center justify-between gap-3 flex-wrap">
+                  <span className="text-sm font-bold text-white">{c.label}</span>
+                  <span className="text-xs font-bold uppercase tracking-wider" style={{ color: tone }}>
+                    {c.status === 'not_applicable' ? `derived from ${c.derived_from?.replace(/_/g, ' ')}` : c.status}
+                  </span>
+                </div>
+                {c.best_feed && (
+                  <p className="text-xs mt-0.5" style={{ color: '#64748b' }}>
+                    best feed: {c.best_feed.name} — {c.best_feed.height}p · {c.best_feed.fps ? Number(c.best_feed.fps.toFixed(2)) : '?'} fps
+                  </p>
+                )}
+                {(c.issues || []).map((i, n) => (
+                  <p key={n} className="text-xs mt-0.5" style={{ color: i.severity === 'blocking' ? '#f87171' : '#fbbf24' }}>{i.detail}</p>
+                ))}
+                {c.override && <p className="text-xs mt-0.5" style={{ color: '#fbbf24' }}>Override on record: &ldquo;{c.override.note}&rdquo;</p>}
+                {canDecide && c.status === 'blocked' && (
+                  <div className="flex gap-2 mt-2">
+                    <TextInput
+                      value={overrideNote[c.metric_code] || ''}
+                      onChange={e => setOverrideNote(v => ({ ...v, [c.metric_code]: e.target.value }))}
+                      placeholder="Reason for overriding this requirement"
+                    />
+                    <GhostButton onClick={() => submitOverride(c.metric_code)}>Override</GhostButton>
+                  </div>
+                )}
+                {canDecide && c.status === 'overridden' && (
+                  <GhostButton onClick={() => removeOverride(c.metric_code)}>Remove override</GhostButton>
+                )}
+              </div>
+            );
+          })}
+        </section>
+      )}
 
       {qa_flags.length > 0 && (
         <div className="grid md:grid-cols-2 gap-2 mb-5">
