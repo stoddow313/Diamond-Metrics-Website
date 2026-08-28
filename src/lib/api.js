@@ -114,6 +114,7 @@ export const api = {
     return request(`/api/command/jobs${qs ? `?${qs}` : ''}`);
   },
   commandJob: (id) => request(`/api/command/jobs/${id}`),
+  commandSetSynthetic: (id, synthetic) => request(`/api/command/jobs/${id}`, { method: 'PUT', body: { synthetic } }),
   commandUpdateJob: (id, fields) => request(`/api/command/jobs/${id}`, { method: 'PUT', body: fields }),
   commandJobStatus: (id, kind, to, note = '') => request(`/api/command/jobs/${id}/status`, { method: 'POST', body: { kind, to, note } }),
   commandToggleRequirement: (id, enabled) => request(`/api/command/requirements/${id}`, { method: 'PUT', body: { enabled } }),

@@ -45,3 +45,18 @@ test('a real job is unaffected', () => {
   assert.notEqual(statusOf(realJob), 'suppressed_synthetic');
   assert.ok(['skipped', 'queued'].includes(statusOf(realJob)));
 });
+
+test('an existing job can be marked synthetic after the fact, and unmarked', async () => {
+  // Test jobs already exist by the time the flag is introduced; a flag that
+  // only applies at creation isolates nothing.
+  const order = db.prepare('SELECT order_id FROM cmd_jobs WHERE id = ?').get(realJob).order_id;
+  assert.equal(db.prepare('SELECT synthetic FROM cmd_orders WHERE id = ?').get(order).synthetic, 0);
+
+  db.prepare('UPDATE cmd_orders SET synthetic = 1 WHERE id = ?').run(order);
+  emitJobEvent(db, { jobId: realJob, eventKey: 'metrics_ready' });
+  assert.equal(statusOf(realJob), 'suppressed_synthetic', 'marking it takes effect immediately');
+
+  db.prepare('UPDATE cmd_orders SET synthetic = 0 WHERE id = ?').run(order);
+  emitJobEvent(db, { jobId: realJob, eventKey: 'metrics_ready' });
+  assert.notEqual(statusOf(realJob), 'suppressed_synthetic', 'and unmarking restores normal delivery');
+});
