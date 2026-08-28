@@ -7,11 +7,6 @@ import gameActionHero from '../assets/blog/baseball-metrics-game-action.png';
 import metricFramework from '../assets/blog/baseball-metrics-framework.svg';
 import scoutContext from '../assets/blog/baseball-metrics-scout-context.png';
 
-const firstMetrics = [
-  'Game context and repeatable tendencies',
-  'Timing and movement patterns',
-  'Verified performance measurements when the capture supports them',
-];
 
 const faqs = [
   [

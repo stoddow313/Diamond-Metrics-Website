@@ -5,6 +5,7 @@
 // average; a paid metric with nothing releasable notifies the customer.
 import { rollupForMetricCode, RELEASE_VERSION } from './metricRelease.js';
 import { emitJobEvent } from './notifications.js';
+import { assessCapture } from './captureSpec.js';
 
 const httpError = (message, status = 400) => Object.assign(new Error(message), { status });
 
@@ -52,13 +53,31 @@ export function computeQaFlags(db, jobId) {
     flags.push({ code: 'no_contact_email', level: 'warning', label: 'Order has no contact email', detail: 'Customer notifications will be recorded in-app but no email can be sent.' });
   }
 
-  if (needsVideo && ready.length === 0) {
-    flags.push({ code: 'no_ready_feed', level: 'warning', label: 'Timing metrics ordered but no ready video feed', detail: 'Frame-timed metrics will release as unavailable unless footage is processed.' });
-  }
+  // Per-feed VFR note stays; resolution/frame-rate suitability is now decided
+  // per metric recipe below rather than by a blanket threshold.
   for (const f of ready) {
     if (f.vfr) flags.push({ code: 'vfr_feed', level: 'warning', label: `Feed "${f.label}" was variable frame rate`, detail: 'The proxy was normalized to constant frame rate; timing uses the proxy clock.' });
-    if (needsVideo && f.effective_fps && f.effective_fps < 50) {
-      flags.push({ code: 'low_fps', level: 'warning', label: `Feed "${f.label}" is ${f.effective_fps.toFixed(0)} fps`, detail: 'Below the preferred 60 fps — timing precision is reduced (±1 frame is larger).' });
+  }
+
+  // Recipe-based capture QA: a metric whose capture requirements are not met
+  // blocks approval until it is either re-captured or explicitly overridden.
+  for (const a of assessCapture(db, jobId)) {
+    if (a.status === 'blocked') {
+      flags.push({
+        code: `capture_${a.metric_code}`, level: 'blocking',
+        label: `${a.label}: capture requirements not met`,
+        detail: a.issues.map(i => i.detail).join(' ') + ' Re-capture, or record an explicit override.',
+      });
+    } else if (a.status === 'overridden') {
+      flags.push({
+        code: `capture_override_${a.metric_code}`, level: 'warning',
+        label: `${a.label}: capture requirements overridden`,
+        detail: `${a.issues.map(i => i.detail).join(' ')} Override on record: "${a.override.note}".`,
+      });
+    } else if (a.status === 'warning') {
+      for (const i of a.issues) {
+        flags.push({ code: `capture_${i.code}_${a.metric_code}`, level: 'warning', label: `${a.label}: ${i.code.replace(/_/g, ' ')}`, detail: i.detail });
+      }
     }
   }
 

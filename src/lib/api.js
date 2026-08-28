@@ -142,6 +142,8 @@ export const api = {
   commandAttemptUnavailable: (attemptId, fields) => request(`/api/command/attempts/${attemptId}/unavailable`, { method: 'POST', body: fields }),
   commandReview: (jobId) => request(`/api/command/jobs/${jobId}/review`),
   commandDecideResult: (resultId, decision, note = '') => request(`/api/command/results/${resultId}/decision`, { method: 'POST', body: { decision, note } }),
+  commandCaptureOverride: (jobId, metric_code, note) => request(`/api/command/jobs/${jobId}/capture-overrides`, { method: 'POST', body: { metric_code, note } }),
+  commandRemoveCaptureOverride: (jobId, code) => request(`/api/command/jobs/${jobId}/capture-overrides/${code}`, { method: 'DELETE' }),
   commandTelemetry: (days = 30) => request(`/api/command/telemetry?days=${days}`),
   commandOps: () => request('/api/command/ops'),
   commandRunBackup: () => request('/api/command/backups/run', { method: 'POST' }),

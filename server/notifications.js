@@ -18,6 +18,18 @@ const EVENT_SUBJECTS = {
 
 export function emitJobEvent(db, { jobId, eventKey, audience = 'customer', payload = {} }) {
   if (!EVENT_KEYS.includes(eventKey)) throw new Error(`Unknown notification event: ${eventKey}`);
+  // A synthetic pipeline-test job must never reach a customer. Recorded as
+  // suppressed rather than dropped, so the audit trail still shows what
+  // would have been sent.
+  const synthetic = db.prepare(
+    'SELECT o.synthetic FROM cmd_orders o JOIN cmd_jobs j ON j.order_id = o.id WHERE j.id = ?'
+  ).get(jobId)?.synthetic;
+  if (synthetic) {
+    const info = db.prepare(
+      "INSERT INTO cmd_notifications (job_id, event_key, audience, payload, email_status) VALUES (?, ?, ?, ?, 'suppressed_synthetic')"
+    ).run(jobId, eventKey, audience, JSON.stringify(payload));
+    return info.lastInsertRowid;
+  }
   const info = db.prepare(
     'INSERT INTO cmd_notifications (job_id, event_key, audience, payload, email_status) VALUES (?, ?, ?, ?, ?)'
   ).run(jobId, eventKey, audience, JSON.stringify(payload), emailConfigured() ? 'queued' : 'skipped');

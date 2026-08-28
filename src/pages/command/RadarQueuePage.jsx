@@ -31,9 +31,16 @@ export default function RadarQueuePage() {
   // same pitcher.
   const [sticky, setSticky] = useState({ player_id: '', pitch_or_exit: 'pitch', pitch_type: 'unknown' });
   const [manual, setManual] = useState({ velocity: '', context: '', note: '' });
+  const [busyId, setBusyId] = useState(null);        // row with an action in flight
+  const [invalidating, setInvalidating] = useState(null);  // { id, note } — inline reason entry
+  const [notice, setNotice] = useState('');
   const fileRef = useRef(null);
 
   const load = () => api.commandRadarQueue(jobId).then(setData).catch(err => setError(err.message));
+
+  // A reading that lands outside the active bucket is invisible, which reads
+  // as "nothing happened" even though the save succeeded. Follow it.
+  const revealBucket = (status) => setFilter(f => (f === 'all' || f === status ? f : status));
   useEffect(() => {
     api.commandRadarQueue(jobId).then(setData).catch(err => setError(err.message));
   }, [jobId]);
@@ -60,26 +67,45 @@ export default function RadarQueuePage() {
   }
 
   async function confirmReading(reading, overrides = {}) {
-    setError('');
+    setError(''); setNotice(''); setBusyId(reading.id);
     try {
+      const next = { status: 'matched', ...overrides };
       await api.commandClassifyReading(reading.id, {
         player_id: sticky.player_id ? Number(sticky.player_id) : null,
         pitch_or_exit: sticky.pitch_or_exit,
         pitch_type: sticky.pitch_type,
-        status: 'matched',
-        ...overrides,
+        ...next,
       });
       await load();
+      revealBucket(next.status);
+      setNotice(next.status === 'matched'
+        ? `${reading.velocity} mph confirmed — draft result and rollup updated.`
+        : `Reading restored to ${next.status}.`);
     } catch (err) {
-      setError(err.message);
+      setError(`Could not update that reading: ${err.message}`);
+    } finally {
+      setBusyId(null);
     }
   }
 
-  async function invalidate(reading) {
-    const note = window.prompt('Invalid reason (e.g. car radar noise, warm-up):', reading.note || '');
-    if (note === null) return;
-    await api.commandClassifyReading(reading.id, { status: 'invalid', note }).catch(err => setError(err.message));
-    await load();
+  // Invalid takes a reason inline. A native prompt() returns null whenever the
+  // browser or an extension suppresses it, which silently aborted the action
+  // with neither success nor error — the reported "hang".
+  async function submitInvalid() {
+    const { id, note } = invalidating;
+    const reading = data.readings.find(r => r.id === id);
+    setError(''); setNotice(''); setBusyId(id);
+    try {
+      await api.commandClassifyReading(id, { status: 'invalid', note: note.trim() });
+      setInvalidating(null);
+      await load();
+      revealBucket('invalid');
+      setNotice(`${reading?.velocity ?? ''} mph marked invalid — kept on the record, excluded from every rollup.`);
+    } catch (err) {
+      setError(`Could not mark that reading invalid: ${err.message}`);
+    } finally {
+      setBusyId(null);
+    }
   }
 
   async function addManual(e) {
@@ -94,10 +120,14 @@ export default function RadarQueuePage() {
         context: manual.context,
         note: manual.note,
       });
+      const v = manual.velocity;
       setManual({ velocity: '', context: '', note: '' });
       await load();
+      const landed = sticky.player_id ? 'matched' : 'unmatched';
+      revealBucket(landed);
+      setNotice(`${v} mph added${sticky.player_id ? ' and matched — rollup updated.' : ' as unmatched — confirm it to a player to include it in the rollup.'}`);
     } catch (err) {
-      setError(err.message);
+      setError(`Could not add that reading: ${err.message}`);
     }
   }
 
@@ -127,6 +157,11 @@ export default function RadarQueuePage() {
       </div>
 
       <ErrorNote>{error}</ErrorNote>
+      {notice && (
+        <p className="text-sm mb-4 px-4 py-2.5 rounded-xl border" style={{ borderColor: 'rgba(74, 222, 128, 0.35)', backgroundColor: 'rgba(74, 222, 128, 0.08)', color: '#4ade80' }}>
+          {notice}
+        </p>
+      )}
 
       {/* sticky context + manual entry */}
       <section className="rounded-2xl border p-5 mb-5" style={cardStyle}>
@@ -202,17 +237,35 @@ export default function RadarQueuePage() {
                     </td>
                     <td className="px-4 py-2.5"><ReadingStatus value={r.status} /></td>
                     <td className="px-4 py-2.5 text-right whitespace-nowrap">
-                      {r.status !== 'invalid' && r.velocity != null && (
-                        <PrimaryButton onClick={() => confirmReading(r)} disabled={!sticky.player_id}>
-                          {r.status === 'matched' ? 'Reassign' : 'Confirm'}
-                        </PrimaryButton>
-                      )}
-                      <span className="inline-block w-1.5" />
-                      {r.status !== 'invalid' && <GhostButton onClick={() => invalidate(r)}>Invalid</GhostButton>}
-                      {r.status === 'invalid' && (
-                        <GhostButton onClick={() => api.commandClassifyReading(r.id, { status: 'unmatched' }).then(load).catch(e => setError(e.message))}>
-                          Restore
-                        </GhostButton>
+                      {busyId === r.id ? (
+                        <span className="text-xs font-bold" style={{ color: '#38bdf8' }}>saving…</span>
+                      ) : invalidating?.id === r.id ? (
+                        <span className="inline-flex items-center gap-1.5">
+                          <TextInput
+                            autoFocus
+                            value={invalidating.note}
+                            onChange={e => setInvalidating(v => ({ ...v, note: e.target.value }))}
+                            onKeyDown={e => { if (e.key === 'Enter') submitInvalid(); if (e.key === 'Escape') setInvalidating(null); }}
+                            placeholder="reason (car radar, warm-up…)"
+                          />
+                          <PrimaryButton onClick={submitInvalid}>Mark invalid</PrimaryButton>
+                          <GhostButton onClick={() => setInvalidating(null)}>Cancel</GhostButton>
+                        </span>
+                      ) : (
+                        <>
+                          {r.status !== 'invalid' && r.velocity != null && (
+                            <PrimaryButton onClick={() => confirmReading(r)} disabled={!sticky.player_id}>
+                              {r.status === 'matched' ? 'Reassign' : 'Confirm'}
+                            </PrimaryButton>
+                          )}
+                          <span className="inline-block w-1.5" />
+                          {r.status !== 'invalid' && (
+                            <GhostButton onClick={() => setInvalidating({ id: r.id, note: r.note || '' })}>Invalid</GhostButton>
+                          )}
+                          {r.status === 'invalid' && (
+                            <GhostButton onClick={() => confirmReading(r, { status: 'unmatched', player_id: null })}>Restore</GhostButton>
+                          )}
+                        </>
                       )}
                     </td>
                   </tr>

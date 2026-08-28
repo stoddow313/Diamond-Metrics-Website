@@ -148,7 +148,13 @@ export function ProductionQueuePage() {
                 <tr key={j.id} className="border-t cursor-pointer hover:bg-slate-800/40" style={{ borderColor: '#1e3a5f' }}
                   onClick={() => navigate(`/command/jobs/${j.id}`)}>
                   <td className="px-4 py-3">
-                    <p className="font-bold text-white">{j.team_name}{j.opponent_label ? ` vs ${j.opponent_label}` : ''}</p>
+                    <p className="font-bold text-white">
+                      {j.team_name}{j.opponent_label ? ` vs ${j.opponent_label}` : ''}
+                      {!!j.synthetic && (
+                        <span className="ml-2 text-[9px] font-bold uppercase tracking-widest px-1.5 py-0.5 rounded align-middle"
+                          style={{ backgroundColor: 'rgba(251, 191, 36, 0.15)', color: '#fbbf24' }}>synthetic</span>
+                      )}
+                    </p>
                     <p className="text-xs" style={{ color: '#64748b' }}>{j.game_date}{j.tournament_name ? ` · ${j.tournament_name}` : ''}{j.game_type === 'pro_day' ? ' · Pro Day' : ''}</p>
                   </td>
                   <td className="px-4 py-3" style={{ color: '#cfe8ff' }}>{j.order_label}</td>
@@ -423,6 +429,12 @@ export function JobDetailPage() {
       <Link to="/command" className="text-xs hover:underline" style={{ color: '#64748b' }}>← Production queue</Link>
       <div className="flex items-start justify-between gap-4 mt-1 mb-6 flex-wrap">
         <div>
+          {!!job.synthetic && (
+            <p className="inline-block text-[10px] font-bold uppercase tracking-widest px-2 py-1 rounded mb-1.5"
+              style={{ backgroundColor: 'rgba(251, 191, 36, 0.15)', color: '#fbbf24' }}>
+              Synthetic — pipeline test · notifications suppressed
+            </p>
+          )}
           <h1 className="text-2xl font-bold text-white">
             {job.team_name}{job.opponent_label ? ` vs ${job.opponent_label}` : ''}
           </h1>

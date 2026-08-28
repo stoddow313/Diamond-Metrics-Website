@@ -710,6 +710,25 @@ db.exec(`
   );
 `);
 addColumnIfMissing('cmd_orders', 'contact_email', 'contact_email TEXT DEFAULT \'\'');
+// Synthetic pipeline-test orders. Marked jobs never emit a customer
+// notification and are labelled everywhere they appear, so internal test
+// traffic can never be mistaken for — or billed as — a real order.
+addColumnIfMissing('cmd_orders', 'synthetic', 'synthetic INTEGER NOT NULL DEFAULT 0');
+
+// Explicit, audited exceptions to a metric's capture requirements. An
+// override is the only way a blocked metric proceeds, and it names who
+// decided and why.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS cmd_capture_overrides (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    job_id      INTEGER NOT NULL REFERENCES cmd_jobs(id) ON DELETE CASCADE,
+    metric_code TEXT NOT NULL REFERENCES cmd_metric_registry(metric_code),
+    note        TEXT NOT NULL DEFAULT '',
+    actor_id    INTEGER REFERENCES admins(id),
+    created_at  TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE (job_id, metric_code)
+  );
+`);
 
 // ── Command M6: operations (backups + media job timing) ─────────────────
 db.exec(`

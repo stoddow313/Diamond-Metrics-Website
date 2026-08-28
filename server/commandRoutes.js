@@ -40,7 +40,7 @@ export function mountCommandRoutes(app, { db, requireInternal }) {
 
   // One-shot job creation: order + requirements + job + consent, transactionally.
   const jobListSql = `
-    SELECT j.*, t.name AS team_name, o.package_key, o.label AS order_label,
+    SELECT j.*, t.name AS team_name, o.package_key, o.label AS order_label, o.synthetic,
            a.name AS assigned_name, tr.name AS tournament_name,
            (SELECT COUNT(*) FROM cmd_metric_requirements r WHERE r.order_id = j.order_id AND r.enabled = 1) AS requirement_count,
            o.contact_email, c.media_consent, c.sharing_scope
@@ -147,8 +147,8 @@ export function mountCommandRoutes(app, { db, requireInternal }) {
     const baseball = db.prepare("SELECT id FROM sports WHERE key = 'baseball'").get().id;
     const ruleset = db.prepare("SELECT id FROM rulesets WHERE key = 'baseball_default'").get();
 
-    const orderId = db.prepare('INSERT INTO cmd_orders (package_key, label, notes, contact_email, created_by) VALUES (?, ?, ?, ?, ?)')
-      .run(b.package_key, PACKAGES[b.package_key].label, String(b.notes || ''), String(b.contact_email || '').toLowerCase().trim(), actorId).lastInsertRowid;
+    const orderId = db.prepare('INSERT INTO cmd_orders (package_key, label, notes, contact_email, synthetic, created_by) VALUES (?, ?, ?, ?, ?, ?)')
+      .run(b.package_key, PACKAGES[b.package_key].label, String(b.notes || ''), String(b.contact_email || '').toLowerCase().trim(), b.synthetic ? 1 : 0, actorId).lastInsertRowid;
     const insReq = db.prepare(
       'INSERT INTO cmd_metric_requirements (order_id, metric_code, priority, capture_requirement, enabled) VALUES (?, ?, ?, ?, ?)'
     );
