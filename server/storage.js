@@ -9,6 +9,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { S3Client, CreateMultipartUploadCommand, UploadPartCommand, CompleteMultipartUploadCommand, AbortMultipartUploadCommand, GetObjectCommand, PutObjectCommand, ListObjectsV2Command, DeleteObjectCommand, ListPartsCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+import { NodeHttpHandler } from '@smithy/node-http-handler';
 
 const MODE = process.env.DM_STORAGE === 'r2' ? 'r2' : 'local';
 const LOCAL_DIR = process.env.DM_MEDIA_DIR || path.join(process.env.DM_DB_PATH ? path.dirname(process.env.DM_DB_PATH) : path.join(process.cwd(), 'server', 'data'), 'media');
@@ -21,6 +22,15 @@ function client() {
       region: 'auto',
       endpoint: `https://${process.env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
       credentials: { accessKeyId: process.env.R2_ACCESS_KEY_ID, secretAccessKey: process.env.R2_SECRET_ACCESS_KEY },
+      // The SDK ships with no timeouts at all: a connection R2 never answers,
+      // or a socket that goes silent mid-stream, blocks its caller forever.
+      // requestTimeout is socket inactivity, so a slow multi-GB stream that
+      // is still moving bytes never trips it — only a dead one does.
+      requestHandler: new NodeHttpHandler({
+        connectionTimeout: Number(process.env.DM_R2_CONNECT_TIMEOUT_MS || 10_000),
+        requestTimeout: Number(process.env.DM_R2_SOCKET_TIMEOUT_MS || 120_000),
+        throwOnRequestTimeout: true,
+      }),
     });
   }
   return r2;
@@ -175,8 +185,11 @@ export async function fetchToScratch(key, scratchPath) {
 // Playback: short-TTL signed URL (R2) or the role-gated API stream (local).
 // Ranged object read for the worker's localhost media gateway. Returns the
 // body stream plus the headers the gateway forwards to ffmpeg's http client.
-export async function getObjectRange(key, rangeHeader = null) {
-  const res = await client().send(new GetObjectCommand({ Bucket: BUCKET(), Key: key, ...(rangeHeader ? { Range: rangeHeader } : {}) }));
+export async function getObjectRange(key, rangeHeader = null, { abortSignal } = {}) {
+  const res = await client().send(
+    new GetObjectCommand({ Bucket: BUCKET(), Key: key, ...(rangeHeader ? { Range: rangeHeader } : {}) }),
+    abortSignal ? { abortSignal } : {},
+  );
   return { body: res.Body, contentLength: res.ContentLength ?? null, contentRange: res.ContentRange ?? null };
 }
 

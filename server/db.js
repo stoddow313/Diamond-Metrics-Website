@@ -748,6 +748,14 @@ db.exec(`
 addColumnIfMissing('cmd_video_feeds', 'upload_id', 'upload_id TEXT');
 addColumnIfMissing('cmd_media_jobs', 'started_at', 'started_at TEXT');
 addColumnIfMissing('cmd_media_jobs', 'finished_at', 'finished_at TEXT');
+// Liveness + ownership for running media jobs: the encoder's last progress
+// report (the stall sweep reads it), how far along it is, and a per-claim
+// token so a retried job's outcome cannot be overwritten by the run it
+// replaced.
+addColumnIfMissing('cmd_media_jobs', 'heartbeat_at', 'heartbeat_at TEXT');
+addColumnIfMissing('cmd_media_jobs', 'progress_pct', 'progress_pct REAL');
+addColumnIfMissing('cmd_media_jobs', 'progress_s', 'progress_s REAL');
+addColumnIfMissing('cmd_media_jobs', 'claim_token', 'claim_token TEXT');
 
 // ── Seed Command reference data (idempotent; active flags follow code) ──
 {

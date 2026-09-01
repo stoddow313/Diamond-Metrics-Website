@@ -306,6 +306,59 @@ Fixes now in place:
 A full-length 1080p60 game still deserves a larger instance (§1) — the cap
 bounds the damage, it does not make 0.5 CPU fast.
 
+### 3.11 Processing liveness (stuck-in-PROCESSING postmortem, 2026-09-01)
+
+A 17-second 720×1280/30fps H.264 phone clip (feed 22, job 5) sat in
+`PROCESSING` for days. The probe finished in one second; the proxy encode
+logged `proxy_encode_started` and never logged anything again. The media
+job stayed `running`, so the boot-time orphan sweep (which only runs on
+restart) never saw it, and `/command/ops` counted zero stuck feeds because
+it only counted `failed`/`retrying`.
+
+Cause class: **nothing on the read path had a timeout or a watchdog.**
+- ffmpeg read the original through the localhost gateway with no
+  `rw_timeout`; one blocked read waits forever.
+- The gateway piped R2's response to ffmpeg but never destroyed the R2 body
+  when ffmpeg dropped the connection (ffmpeg seeks by reconnecting). Each
+  abandoned range request left a half-read body parked on a keep-alive
+  socket. The SDK pool is 50 sockets; once exhausted, every new read waits
+  for a socket that never frees. The process had been up since the previous
+  deploy, processing 26 jobs' worth of seeks. (Most likely mechanism — the
+  hang left no error to log, so it is inferred from the code path, not
+  observed directly.)
+- The S3 client had no connection or socket timeout.
+- No liveness check existed for a `running` job on a live process.
+
+Guarantees now in place (`server/mediaWorker.js`, `mediaGateway.js`, `storage.js`):
+- **Stall watchdog.** ffmpeg runs with `-progress` on a pipe. No progress
+  line for `DM_MEDIA_STALL_MS` (default 5 min) → SIGKILL, job error
+  `"proxy encode stalled — no encoder progress for 300s (last output 6.4s,
+  frame 192); process killed"`. Encode *speed* never trips it: a 14-hour
+  full-game transcode still reports every half second.
+- **I/O timeout.** `-rw_timeout` (`DM_MEDIA_IO_TIMEOUT_S`, default 30 s) on
+  every ffmpeg/ffprobe input; ffprobe additionally has a 120 s hard cap.
+- **Gateway teardown + first-byte timeout.** The R2 body is destroyed when
+  the client closes; R2 has 30 s to start answering (`504` otherwise).
+- **SDK timeouts.** `connectionTimeout` 10 s, socket-inactivity 120 s.
+- **Heartbeat + sweep.** Progress lands on `cmd_media_jobs.heartbeat_at` /
+  `progress_pct`; every worker tick reaps `running` jobs silent past the
+  threshold, and `/command/ops` reports them as `media_queue.stalled`.
+- **Three attempts, then terminal.** Stalls and crashes requeue up to
+  `MAX_ATTEMPTS` (3), then the feed is `failed` with the specific reason.
+- **Retry processing** (`POST /api/command/feeds/:id/retry`, button on the
+  job page and the feed viewer) re-runs against the original in storage —
+  a probed feed restarts at the proxy step. Works from `failed`, `retrying`,
+  or a stalled `processing`. Never a re-upload, never a duplicate feed.
+- **Claim tokens.** A retried job's row cannot be overwritten by the run it
+  replaced.
+
+Operator check: the job page shows the step and percentage while a feed is
+processing, an amber stall notice when the encoder has gone quiet, and a
+red **Failed processing — reason** line with **Retry processing** when it is
+terminal. If you see `PROCESSING` with no progress text for more than the
+stall threshold, the sweep is not running — check the worker log for
+`media_worker_started`.
+
 ---
 
 ## 4. Backups and restore
