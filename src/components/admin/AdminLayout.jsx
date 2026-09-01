@@ -29,7 +29,7 @@ export default function AdminLayout() {
               {['admin', 'analyst', 'reviewer'].includes(user?.role) && (
                 <Link
                   to="/command"
-                  className="hover:underline px-2 py-1 rounded"
+                  className="hover:underline px-2 py-1 rounded whitespace-nowrap"
                   style={{ color: '#fbbf24', backgroundColor: 'rgba(251, 191, 36, 0.12)' }}
                   data-testid="admin-command-link"
                 >
