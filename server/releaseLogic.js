@@ -154,6 +154,10 @@ export function releaseMetrics(db, jobId, actorId) {
   if (!job) throw httpError('Job not found', 404);
   const { metrics, plan } = releasePlan(db, jobId);
   const managedKeys = [...new Set(metrics.flatMap(m => m.publishes_to))];
+  // A synthetic (pipeline-test) job runs the whole release workflow — status,
+  // published results, audit — but never touches a customer surface: no
+  // games/stat_entries rows, so nothing appears on a player profile.
+  const synthetic = !!db.prepare('SELECT synthetic FROM cmd_orders WHERE id = ?').get(job.order_id)?.synthetic;
 
   const published = [];
   const run = db.transaction(() => {
@@ -173,6 +177,15 @@ export function releaseMetrics(db, jobId, actorId) {
 
     for (const item of plan) {
       if (!item.rollup.released) continue;
+      if (synthetic) {
+        for (const entry of item.rollup.entries) {
+          published.push({ player_id: item.player_id, metric_key: entry.metric_key, value: entry.value, sample: item.rollup.sample, withheld: 'synthetic' });
+        }
+        for (const r of item.results) {
+          if (r.status === 'approved') db.prepare("UPDATE cmd_metric_results SET status = 'published', updated_at = datetime('now') WHERE id = ?").run(r.id);
+        }
+        continue;
+      }
       const gameId = gameFor(item.player_id);
       for (const entry of item.rollup.entries) {
         // Provenance points at the exact result that holds the published
@@ -210,7 +223,7 @@ export function releaseMetrics(db, jobId, actorId) {
 
     db.prepare(
       "INSERT INTO cmd_review_actions (target_table, target_id, actor_id, action, note, prev_state, new_state) VALUES ('cmd_jobs', ?, ?, 'metrics_released', ?, '', ?)"
-    ).run(jobId, actorId, `${published.length} entr${published.length === 1 ? 'y' : 'ies'} published (${RELEASE_VERSION})`, RELEASE_VERSION);
+    ).run(jobId, actorId, `${published.length} entr${published.length === 1 ? 'y' : 'ies'} ${synthetic ? 'released but withheld from player profiles — synthetic job' : 'published'} (${RELEASE_VERSION})`, RELEASE_VERSION);
   });
   run();
 

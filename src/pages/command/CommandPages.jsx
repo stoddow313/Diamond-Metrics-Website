@@ -85,6 +85,8 @@ function FeedRow({ feed: f, onRetry }) {
   );
 }
 
+const SHARING_LABELS = { internal: 'Internal only', customer: 'Customer (numbers only in V1)', public: 'Public profile' };
+
 function StatusBadge({ value }) {
   return (
     <span
@@ -249,7 +251,7 @@ export function NewJobPage() {
   const [form, setForm] = useState({
     package_key: 'rookie', team_id: '', opponent_label: '', tournament_game_id: '',
     game_date: '', game_type: 'game', event_label: '', assigned_to: '', due_date: '',
-    media_consent: true, sharing_scope: 'internal', notes: '', contact_email: '',
+    media_consent: true, sharing_scope: 'internal', notes: '', contact_email: '', synthetic: false,
   });
   const navigate = useNavigate();
 
@@ -344,7 +346,7 @@ export function NewJobPage() {
           <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-4">
             <Field label="Package">
               <Select value={form.package_key} onChange={e => setForm(f => ({ ...f, package_key: e.target.value }))}>
-                {boot.packages.filter(p => p.key !== 'pro').map(p => <option key={p.key} value={p.key}>{p.label}</option>)}
+                {boot.packages.filter(p => p.orderable).map(p => <option key={p.key} value={p.key}>{p.label}</option>)}
               </Select>
             </Field>
             <Field label="Assign analyst">
@@ -357,6 +359,11 @@ export function NewJobPage() {
               <TextInput type="date" value={form.due_date} onChange={e => setForm(f => ({ ...f, due_date: e.target.value }))} />
             </Field>
           </div>
+          {boot.packages.some(p => !p.orderable) && (
+            <p className="text-[11px] mb-4" style={{ color: '#475569' }} data-testid="packages-unavailable">
+              Not orderable yet: {boot.packages.filter(p => !p.orderable).map(p => `${p.label} (${p.unavailable_reason})`).join(' · ')}.
+            </p>
+          )}
           <p className="text-[11px] font-bold uppercase tracking-widest mb-2" style={{ color: '#94a3b8' }}>Activated metric requirements</p>
           <div className="flex flex-wrap gap-2">
             {requirementPreview.map(r => (
@@ -385,14 +392,30 @@ export function NewJobPage() {
               </Field>
               <Field label="Sharing scope">
                 <Select value={form.sharing_scope} onChange={e => setForm(f => ({ ...f, sharing_scope: e.target.value }))}>
-                  <option value="internal">Internal only</option>
-                  <option value="customer">Customer (numbers only in V1)</option>
+                  {(boot.sharing_scopes || ['internal', 'customer']).map(sc => (
+                    <option key={sc} value={sc}>{SHARING_LABELS[sc] || sc}</option>
+                  ))}
                 </Select>
               </Field>
               <Field label="Notes">
                 <TextInput value={form.notes} onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} placeholder="Radar CSV expected from tournament ops" />
               </Field>
             </div>
+            <label className="flex items-start gap-2 text-sm cursor-pointer mt-1" style={{ color: '#fbbf24' }}>
+              <input
+                type="checkbox"
+                checked={form.synthetic}
+                onChange={e => setForm(f => ({ ...f, synthetic: e.target.checked }))}
+                className="mt-0.5 accent-amber-400"
+                data-testid="synthetic-toggle"
+              />
+              <span>
+                Synthetic / test job
+                <span className="block text-xs" style={{ color: '#94a3b8' }}>
+                  Labelled everywhere it appears. Customer notifications, player-profile publication, and pipeline analytics are suppressed — the workflow itself runs normally.
+                </span>
+              </span>
+            </label>
           </div>
         </section>
 
@@ -574,7 +597,13 @@ export function JobDetailPage() {
               </div>
               <div className="flex items-center gap-2 shrink-0">
                 <MethodChip method={r.method} />
-                <GhostButton onClick={() => toggleRequirement(r)}>{r.enabled ? 'Disable' : 'Enable'}</GhostButton>
+                <GhostButton
+                  onClick={() => toggleRequirement(r)}
+                  disabled={!!r.enabled && job.requirements.filter(x => x.enabled).length === 1}
+                  title={r.enabled && job.requirements.filter(x => x.enabled).length === 1 ? 'A job must keep at least one active metric' : undefined}
+                >
+                  {r.enabled ? 'Disable' : 'Enable'}
+                </GhostButton>
               </div>
             </div>
           ))}

@@ -68,6 +68,26 @@ experience, so a bare checkout runs with no configuration at all.
 | `DM_BACKUPS` | on | `0` disables the scheduler |
 | `DM_BACKUP_RETENTION_DAYS` | `30` | Snapshots older than this prune — except the newest, which is never pruned |
 
+### Rookie V1 order gating
+
+Only the **Rookie** package is orderable. `Rookie + add-ons`, `Pro`, and
+`Custom order` exist in the package registry for the roadmap but are hidden
+from the New Job and Bulk forms and refused by the API with the reason
+(their modules have not shipped; a custom order would activate zero
+metrics). `DM_ORDERABLE_PACKAGES=rookie,pro` overrides the gate on staging.
+Sharing scope offers `internal` and `customer` only — `public` returns when
+the public-profile release path ships. A job can never drop to zero active
+metric requirements: the last enabled one cannot be disabled.
+
+### Operator alerts
+
+| Variable | Purpose |
+|---|---|
+| `DM_ALERT_WEBHOOK_URL` | Slack or Discord incoming-webhook URL. Receives: a media job failing permanently (after 3 attempts), a backup failure, a backup that fails `integrity_check`, and an API process crash. The payload carries both `text` (Slack) and `content` (Discord). |
+
+Without it, the same events still appear in the structured log as
+`event: "ops_alert"`. The ops page shows whether alerts are connected.
+
 ### Observability
 | Variable | Default | Purpose |
 |---|---|---|
@@ -391,8 +411,14 @@ sleeping instance still produces the day's snapshot instead of skipping it.
 5. Verify on `/command/ops`: job counts, and that media feeds still resolve
    (media lives in R2 and is unaffected by a database restore).
 
-**Verify a snapshot without restoring** — this is worth doing once before
-the pilot:
+**Restore drill from the ops page:** `/command/ops` → Backups → **Verify
+latest snapshot** (admin only, or `POST /api/command/backups/verify`). It
+pulls the newest successful snapshot back from storage, opens it, runs
+`PRAGMA integrity_check`, and reports row counts for players, teams, jobs,
+and results. Run it once before the first real customer order and after any
+storage change. A failed check pages the alert webhook.
+
+**Verify a snapshot by hand** (same thing, locally):
 ```bash
 sqlite3 dm-2026-08-21T03-00-00Z.db "PRAGMA integrity_check; SELECT COUNT(*) FROM cmd_jobs;"
 ```
@@ -420,6 +446,22 @@ rejections, uncaught exceptions, and media job failures forward
 automatically with environment and release tags. Without a DSN nothing is
 lost — errors still appear in the structured log.
 
+**Alerts.** With `DM_ALERT_WEBHOOK_URL` set, the events that need a human
+page immediately: permanent media-processing failure, backup failure, a
+snapshot failing integrity, an API crash. Everything else is visible on
+`/command/ops` and in the log. Sentry (`SENTRY_DSN`) remains optional and
+additive.
+
+**Customer email.** `/command/ops` → Service health → **Email test send**
+(admin) sends one real message through the customer path and shows the
+provider's response. Setup: create a Resend account, verify the sending
+domain (`diamondmetrics.ai` DNS records Resend gives you), set
+`RESEND_API_KEY` and `DM_EMAIL_FROM` (an address on that domain) in Render,
+restart, then send a test to yourself. Until both variables are set, every
+customer event records as `skipped` in-app and the ops page says exactly
+which variable is missing. Failed sends now store the provider's error on
+the notification row (`email_error`).
+
 **What to watch during the pilot** (thresholds to revisit with real data):
 
 | Signal | Where | Investigate when |
@@ -431,13 +473,27 @@ lost — errors still appear in the structured log.
 | Unavailable rate | ops → header stats | Above ~20 % — a capture-quality conversation with the customer |
 | Turnaround p90 | ops → header stats | Trending toward the promised delivery window |
 | Pending email | `/api/command/ops` | Non-zero with `RESEND_API_KEY` set means send failures |
+| Operator alerts | ops → Service health | "not configured" before real orders — set the webhook |
 
 ---
 
-## 6. Staging
+## 6. Staging and the test path
+
+Two layers keep testing off customer records:
+
+1. **Synthetic jobs in production** — for workflow testing (radar queue,
+   measurement, review, release, notifications). Tick **Synthetic / test
+   job** when creating the job (single or bulk). It is labelled everywhere,
+   customer notifications record as `suppressed_synthetic`, release runs
+   end-to-end but writes nothing to games/stat_entries (no player-profile
+   publication), and pipeline analytics exclude it. Existing jobs can be
+   marked synthetic from the job page.
+2. **A staging service** — for infrastructure testing (deploys, worker,
+   storage, email provider, restores) where a synthetic flag is not enough.
 
 Staging is a second Render service off the same repo with its own disk and
 its own R2 prefix — it must never share the production database or bucket.
+Spinning it up is a paid Render instance; the owner approves it.
 
 1. Render → New Web Service → same repo, branch `main` (or a `staging`
    branch), start command `node server/index.js`.
@@ -451,7 +507,19 @@ its own R2 prefix — it must never share the production database or bucket.
 5. Point a Vercel preview deployment at the staging API URL.
 
 Backups default to on in staging too; set `DM_BACKUPS=0` if the noise or
-storage isn't wanted.
+storage isn't wanted. Set `DM_ORDERABLE_PACKAGES` there to preview packages
+before they are orderable in production.
+
+### Readiness checklist before the first real customer order
+
+| Check | How | Status when written (2026-09-01) |
+|---|---|---|
+| Transactional email sends | ops → Email test send returns ✓ | **Not configured** — needs Resend key + verified domain |
+| Operator alerts reach a human | set `DM_ALERT_WEBHOOK_URL`, force a test (retry a feed with a missing original) | **Not configured** — needs a Slack/Discord webhook |
+| Backups run and restore | ops → Backups shows last snapshot < 36 h; **Verify latest snapshot** ✓ | Running nightly to R2; drill available |
+| Media processing terminates | ops → Feeds needing attention = 0; §3.11 | In place |
+| Test data isolated | every test job shows the Synthetic badge | In place; toggle at creation |
+| Staging exists | second Render service per this section | **Not created** — owner decision (cost) |
 
 ---
 

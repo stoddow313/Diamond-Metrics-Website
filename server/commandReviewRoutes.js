@@ -25,12 +25,17 @@ export function mountCommandReviewRoutes(app, { db, requireInternal }) {
     const results = db.prepare(
       `SELECT r.*, p.first_name, p.last_name, p.slug,
               m.start_frame, m.end_frame, m.fps_used, e.selected_feed_id,
-              rr.velocity AS reading_velocity, rr.source_timestamp, rr.source AS reading_source, rr.pitch_type
+              rr.velocity AS reading_velocity, rr.source_timestamp, rr.source AS reading_source, rr.pitch_type,
+              rr.row_index AS reading_row, rr.raw_row AS reading_raw_row, rr.confirmed_at AS reading_confirmed_at,
+              ri.filename AS reading_import_filename, ra.name AS reading_confirmed_by_name, rc.name AS reading_created_by_name
          FROM cmd_metric_results r
          JOIN players p ON p.id = r.player_id
          LEFT JOIN cmd_measurements m ON r.evidence_kind = 'measurement' AND m.id = r.evidence_id
          LEFT JOIN cmd_events e ON e.id = m.event_id
          LEFT JOIN cmd_radar_readings rr ON r.evidence_kind = 'radar_reading' AND rr.id = r.evidence_id
+         LEFT JOIN cmd_radar_imports ri ON ri.id = rr.import_id
+         LEFT JOIN admins ra ON ra.id = rr.confirmed_by
+         LEFT JOIN admins rc ON rc.id = rr.created_by
         WHERE r.job_id = ? AND r.superseded_by IS NULL AND r.status != 'withdrawn'
         ORDER BY p.last_name, p.first_name, r.metric_code, r.id`
     ).all(job.id);

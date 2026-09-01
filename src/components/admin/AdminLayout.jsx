@@ -26,6 +26,16 @@ export default function AdminLayout() {
               <Link to="/admin/seasons" className="hover:underline" style={{ color: '#cfe8ff' }}>Seasons</Link>
               <Link to="/admin/tournaments" className="hover:underline" style={{ color: '#cfe8ff' }}>Tournaments</Link>
               <Link to="/admin/imports" className="hover:underline" style={{ color: '#cfe8ff' }}>Imports</Link>
+              {['admin', 'analyst', 'reviewer'].includes(user?.role) && (
+                <Link
+                  to="/command"
+                  className="hover:underline px-2 py-1 rounded"
+                  style={{ color: '#fbbf24', backgroundColor: 'rgba(251, 191, 36, 0.12)' }}
+                  data-testid="admin-command-link"
+                >
+                  Command →
+                </Link>
+              )}
             </nav>
           </div>
           <div className="flex items-center gap-4">

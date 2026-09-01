@@ -86,10 +86,23 @@ export function mountCommandRadarRoutes(app, { db, requireInternal }) {
     const job = db.prepare('SELECT * FROM cmd_jobs WHERE id = ?').get(req.params.id);
     if (!job) return res.status(404).json({ error: 'Job not found' });
 
+    // Provenance travels with every reading: which file, which row, and who
+    // confirmed it — the source columns themselves are immutable (db trigger).
     const readings = db.prepare(
-      `SELECT r.*, p.first_name, p.last_name FROM cmd_radar_readings r
-       LEFT JOIN players p ON p.id = r.player_id
-       WHERE r.job_id = ? ORDER BY r.import_id, r.row_index, r.id`
+      `SELECT r.*, p.first_name, p.last_name,
+              i.filename AS import_filename,
+              a.name AS confirmed_by_name, c.name AS created_by_name
+         FROM cmd_radar_readings r
+         LEFT JOIN players p ON p.id = r.player_id
+         LEFT JOIN cmd_radar_imports i ON i.id = r.import_id
+         LEFT JOIN admins a ON a.id = r.confirmed_by
+         LEFT JOIN admins c ON c.id = r.created_by
+        WHERE r.job_id = ? ORDER BY r.import_id, r.row_index, r.id`
+    ).all(job.id);
+    const imports = db.prepare(
+      `SELECT i.id, i.filename, i.row_count, i.created_at, a.name AS created_by_name
+         FROM cmd_radar_imports i LEFT JOIN admins a ON a.id = i.created_by
+        WHERE i.job_id = ? ORDER BY i.id`
     ).all(job.id);
 
     const memberships = db.prepare('SELECT * FROM roster_memberships WHERE team_id = ?').all(job.team_id);
@@ -124,6 +137,6 @@ export function mountCommandRadarRoutes(app, { db, requireInternal }) {
       return { player_id: Number(playerId), name: `${p.first_name} ${p.last_name}`, metric_code: code, ...rollup.sample };
     });
 
-    res.json({ readings, roster, summaries, pitch_types: PITCH_TYPES });
+    res.json({ readings, imports, roster, summaries, pitch_types: PITCH_TYPES });
   });
 }

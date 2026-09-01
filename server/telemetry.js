@@ -101,8 +101,12 @@ export function computeRates({ readings = [], results = [], returns = 0, reviewe
 export function pipelineTelemetry(db, { sinceDays = 30, now = Date.now() } = {}) {
   const since = new Date(now - sinceDays * 86_400_000).toISOString().slice(0, 19).replace('T', ' ');
 
+  // Synthetic (pipeline-test) jobs never enter the analytics — their timing
+  // and match rates say nothing about customer work.
   const jobs = db.prepare(
-    'SELECT id, created_at, metric_release_status, game_record_status FROM cmd_jobs WHERE created_at >= ?'
+    `SELECT j.id, j.created_at, j.metric_release_status, j.game_record_status
+       FROM cmd_jobs j JOIN cmd_orders o ON o.id = j.order_id
+      WHERE j.created_at >= ? AND o.synthetic = 0`
   ).all(since);
 
   // Both release tracks audit as 'status_changed'; the note carries the kind.
@@ -129,11 +133,14 @@ export function pipelineTelemetry(db, { sinceDays = 30, now = Date.now() } = {})
   }
 
   const readings = db.prepare(
-    'SELECT r.velocity, r.status FROM cmd_radar_readings r JOIN cmd_jobs j ON j.id = r.job_id WHERE j.created_at >= ?'
+    `SELECT r.velocity, r.status FROM cmd_radar_readings r
+       JOIN cmd_jobs j ON j.id = r.job_id JOIN cmd_orders o ON o.id = j.order_id
+      WHERE j.created_at >= ? AND o.synthetic = 0`
   ).all(since);
   const results = db.prepare(
-    `SELECT r.status FROM cmd_metric_results r JOIN cmd_jobs j ON j.id = r.job_id
-      WHERE j.created_at >= ? AND r.superseded_by IS NULL AND r.status != 'withdrawn'`
+    `SELECT r.status FROM cmd_metric_results r
+       JOIN cmd_jobs j ON j.id = r.job_id JOIN cmd_orders o ON o.id = j.order_id
+      WHERE j.created_at >= ? AND o.synthetic = 0 AND r.superseded_by IS NULL AND r.status != 'withdrawn'`
   ).all(since);
 
   // A "return" is work sent back: a job moved to needs_correction, or a

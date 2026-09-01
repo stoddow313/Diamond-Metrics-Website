@@ -67,6 +67,26 @@ function framesFrom(err) {
   });
 }
 
+// Operator alerts: the handful of events a human must act on — a media job
+// failing for good, a backup failing, the process dying. Posted to a
+// Slack/Discord-compatible incoming webhook (DM_ALERT_WEBHOOK_URL) so the
+// pilot has a pager without a Sentry account; the structured log still gets
+// every one of them.
+const ALERT_WEBHOOK = process.env.DM_ALERT_WEBHOOK_URL || '';
+export const alertsEnabled = Boolean(ALERT_WEBHOOK);
+
+export function alertOps(title, fields = {}) {
+  log('warn', 'ops_alert', { title, ...fields });
+  if (!ALERT_WEBHOOK) return;
+  const lines = Object.entries(fields).map(([k, v]) => `${k}: ${typeof v === 'string' ? v : JSON.stringify(v)}`);
+  const text = `[Diamond Metrics · ${ENV}] ${title}\n${lines.join('\n')}`.slice(0, 3500);
+  fetch(ALERT_WEBHOOK, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ text, content: text }),   // Slack reads text, Discord reads content
+  }).catch(sendErr => log('warn', 'ops_alert_failed', { message: String(sendErr?.message || sendErr) }));
+}
+
 export function captureError(err, context = {}) {
   log('error', context.event || 'unhandled_error', {
     message: String(err?.message || err),
@@ -115,6 +135,7 @@ export function installProcessHandlers() {
   process.on('unhandledRejection', reason => captureError(reason, { event: 'unhandled_rejection' }));
   process.on('uncaughtException', err => {
     captureError(err, { event: 'uncaught_exception' });
+    alertOps('API process crashed on an uncaught exception — the platform will restart it', { message: String(err?.message || err) });
     // Let the platform restart us — a process in an unknown state is worse.
     setTimeout(() => process.exit(1), 250).unref();
   });

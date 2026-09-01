@@ -14,7 +14,7 @@ export default function BulkJobsPage() {
   const [boot, setBoot] = useState(null);
   const [form, setForm] = useState({
     tournament_id: '', package_key: 'rookie', assigned_to: '', due_date: '',
-    contact_email: '', sharing_scope: 'customer', media_consent: true,
+    contact_email: '', sharing_scope: 'customer', media_consent: true, synthetic: false,
   });
   const [teamIds, setTeamIds] = useState([]);
   const [preview, setPreview] = useState(null);
@@ -44,6 +44,7 @@ export default function BulkJobsPage() {
     contact_email: form.contact_email,
     sharing_scope: form.sharing_scope,
     media_consent: form.media_consent,
+    synthetic: form.synthetic,
   });
 
   async function runPreview() {
@@ -97,7 +98,7 @@ export default function BulkJobsPage() {
           </Field>
           <Field label="Package">
             <Select value={form.package_key} onChange={e => { setForm(f => ({ ...f, package_key: e.target.value })); setPreview(null); }}>
-              {boot.packages.map(p => <option key={p.key} value={p.key}>{p.label}</option>)}
+              {boot.packages.filter(p => p.orderable).map(p => <option key={p.key} value={p.key}>{p.label}</option>)}
             </Select>
           </Field>
           <Field label="Assign to">
@@ -114,9 +115,9 @@ export default function BulkJobsPage() {
           </Field>
           <Field label="Sharing scope">
             <Select value={form.sharing_scope} onChange={e => setForm(f => ({ ...f, sharing_scope: e.target.value }))}>
-              <option value="internal">Internal only</option>
-              <option value="customer">Customer</option>
-              <option value="public">Public</option>
+              {(boot.sharing_scopes || ['internal', 'customer']).map(sc => (
+                <option key={sc} value={sc}>{sc === 'internal' ? 'Internal only' : sc === 'customer' ? 'Customer' : sc}</option>
+              ))}
             </Select>
           </Field>
         </div>
@@ -124,6 +125,10 @@ export default function BulkJobsPage() {
         <label className="flex items-center gap-2 mt-4 text-sm cursor-pointer" style={{ color: '#cfe8ff' }}>
           <input type="checkbox" checked={form.media_consent} onChange={e => setForm(f => ({ ...f, media_consent: e.target.checked }))} />
           Media consent recorded for every job in this batch
+        </label>
+        <label className="flex items-center gap-2 mt-2 text-sm cursor-pointer" style={{ color: '#fbbf24' }}>
+          <input type="checkbox" checked={form.synthetic} onChange={e => setForm(f => ({ ...f, synthetic: e.target.checked }))} className="accent-amber-400" data-testid="bulk-synthetic-toggle" />
+          Synthetic / test batch — labelled, no customer notifications, no profile publication, excluded from analytics
         </label>
 
         {tournamentTeams.length > 0 && (

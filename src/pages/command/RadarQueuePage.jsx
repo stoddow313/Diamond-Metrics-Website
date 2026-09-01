@@ -156,6 +156,13 @@ export default function RadarQueuePage() {
         </label>
       </div>
 
+      {data.imports?.length > 0 && (
+        <p className="text-xs mb-4" style={{ color: '#64748b' }} data-testid="radar-imports">
+          Imported files: {data.imports.map(i => `${i.filename} — ${i.row_count} rows${i.created_by_name ? `, ${i.created_by_name}` : ''}, ${i.created_at.slice(0, 16)} UTC`).join(' · ')}.
+          Source rows are immutable; confirmations are recorded separately in the audit trail.
+        </p>
+      )}
+
       <ErrorNote>{error}</ErrorNote>
       {notice && (
         <p className="text-sm mb-4 px-4 py-2.5 rounded-xl border" style={{ borderColor: 'rgba(74, 222, 128, 0.35)', backgroundColor: 'rgba(74, 222, 128, 0.08)', color: '#4ade80' }}>
@@ -225,8 +232,21 @@ export default function RadarQueuePage() {
                     <td className="px-4 py-2.5 font-bold text-white whitespace-nowrap">
                       {r.velocity != null ? `${r.velocity.toFixed(1)} mph` : <span style={{ color: '#64748b' }}>unreadable</span>}
                     </td>
-                    <td className="px-4 py-2.5 text-xs" style={{ color: '#64748b' }}>
-                      {r.source === 'manual' ? 'manual' : `row ${r.row_index}`}{r.source_timestamp ? ` · ${r.source_timestamp}` : ''}
+                    <td className="px-4 py-2.5 text-xs" style={{ color: '#64748b' }} title={r.raw_row || undefined} data-testid="reading-source">
+                      {r.source === 'manual' ? (
+                        <>manual entry{r.created_by_name ? ` by ${r.created_by_name}` : ''}{r.source_timestamp ? ` · ${r.source_timestamp}` : ''}</>
+                      ) : (
+                        <>
+                          <span style={{ color: '#94a3b8' }}>{r.import_filename || 'CSV'}</span> · row {r.row_index}
+                          {r.source_timestamp ? ` · ${r.source_timestamp}` : ''}
+                          {r.raw_row ? <span className="font-mono" style={{ color: '#475569' }}> · raw “{r.raw_row.length > 36 ? `${r.raw_row.slice(0, 36)}…` : r.raw_row}”</span> : ''}
+                        </>
+                      )}
+                      {r.confirmed_by_name && r.status !== 'unmatched' && (
+                        <span className="block" style={{ color: r.status === 'invalid' ? '#94a3b8' : '#4ade80' }}>
+                          {r.status === 'invalid' ? 'marked invalid' : 'confirmed'} by {r.confirmed_by_name}{r.confirmed_at ? ` · ${r.confirmed_at.slice(0, 16)} UTC` : ''}
+                        </span>
+                      )}
                       {r.note ? <span style={{ color: '#fbbf24' }}> · {r.note}</span> : ''}
                     </td>
                     <td className="px-4 py-2.5" style={{ color: '#cfe8ff' }}>

@@ -111,7 +111,20 @@ export default function ReviewPage() {
   const status = job.metric_release_status;
   const evidenceLine = r => {
     if (r.evidence_kind === 'measurement') return `frames ${r.start_frame}–${r.end_frame} @ ${r.fps_used} fps`;
-    if (r.evidence_kind === 'radar_reading') return `${r.reading_source === 'manual' ? 'manual radar entry' : 'radar CSV'}${r.pitch_type && r.pitch_type !== 'unknown' ? ` · ${r.pitch_type}` : ''}${r.source_timestamp ? ` · ${r.source_timestamp}` : ''}`;
+    if (r.evidence_kind === 'radar_reading') {
+      // Provenance first (file, row, raw reading), then the analyst's
+      // confirmation as a separate clause — the source never becomes "manual"
+      // because someone confirmed it.
+      const origin = r.reading_source === 'manual'
+        ? `manual radar entry${r.reading_created_by_name ? ` by ${r.reading_created_by_name}` : ''}`
+        : `CSV ${r.reading_import_filename || ''} · row ${r.reading_row ?? '?'}${r.reading_velocity != null ? ` · raw ${r.reading_velocity} mph` : ''}`;
+      const when = r.source_timestamp ? ` · ${r.source_timestamp}` : '';
+      const type = r.pitch_type && r.pitch_type !== 'unknown' ? ` · ${r.pitch_type}` : '';
+      const confirmed = r.reading_confirmed_by_name
+        ? ` · confirmed by ${r.reading_confirmed_by_name}${r.reading_confirmed_at ? ` ${String(r.reading_confirmed_at).slice(0, 16)} UTC` : ''}`
+        : '';
+      return `${origin}${when}${type}${confirmed}`;
+    }
     return r.evidence_kind;
   };
 

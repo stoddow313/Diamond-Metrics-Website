@@ -16,7 +16,7 @@
 // heartbeat has gone quiet; and a job that fails three times lands in a
 // terminal 'failed' state carrying the specific reason, with a Retry that
 // re-runs the pipeline against the stored original — never a re-upload.
-import { log, captureError } from './observability.js';
+import { log, captureError, alertOps } from './observability.js';
 import { execFile, spawn } from 'node:child_process';
 import { createRequire } from 'node:module';
 import { randomUUID } from 'node:crypto';
@@ -432,6 +432,10 @@ export async function processNextMediaJob(db, { stallMs = STALL_MS } = {}) {
         : `${detail}${err.permanent ? '' : ` (failed ${attempt} of ${MAX_ATTEMPTS} attempts)`}`;
       db.prepare("UPDATE cmd_video_feeds SET status=?, error=?, updated_at=datetime('now') WHERE id=?")
         .run(retryable ? 'retrying' : 'failed', reason, feed.id);
+      if (!retryable) {
+        alertOps('Media processing failed permanently — Retry processing on the job page once the cause is fixed',
+          { job_id: feed.job_id, feed_id: feed.id, file: feed.original_name, step: job.kind, reason });
+      }
     }
   }
   return true;
@@ -474,6 +478,7 @@ function failOrRequeue(db, j, why) {
     const msg = `${why} — failed ${j.attempts} of ${MAX_ATTEMPTS} attempts`;
     db.prepare("UPDATE cmd_media_jobs SET status='failed', error=?, claim_token=NULL, finished_at=datetime('now'), updated_at=datetime('now') WHERE id=? AND status='running'").run(msg, j.id);
     db.prepare("UPDATE cmd_video_feeds SET status='failed', error=?, updated_at=datetime('now') WHERE id=?").run(msg, j.feed_id);
+    alertOps('Media processing failed permanently — worker stopped reporting', { media_job_id: j.id, feed_id: j.feed_id, step: j.kind, reason: msg });
   } else {
     const msg = `${why} (attempt ${j.attempts} of ${MAX_ATTEMPTS} — retrying)`;
     db.prepare("UPDATE cmd_media_jobs SET status='queued', error=?, claim_token=NULL, heartbeat_at=NULL, updated_at=datetime('now') WHERE id=? AND status='running'").run(msg, j.id);

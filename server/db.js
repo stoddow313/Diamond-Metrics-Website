@@ -630,6 +630,19 @@ db.exec(`
   );
   CREATE INDEX IF NOT EXISTS idx_cmd_radar_job ON cmd_radar_readings(job_id, status);
 
+  -- Evidence provenance is permanent. What the radar device recorded — the
+  -- import it came from, the row, the timestamp, the velocity, the raw
+  -- line — can never be rewritten by any code path; analyst decisions live
+  -- in the other columns and in cmd_review_actions.
+  CREATE TRIGGER IF NOT EXISTS trg_radar_reading_source_immutable
+  BEFORE UPDATE ON cmd_radar_readings
+  WHEN NEW.source IS NOT OLD.source OR NEW.import_id IS NOT OLD.import_id OR NEW.row_index IS NOT OLD.row_index
+    OR NEW.velocity IS NOT OLD.velocity OR NEW.unit IS NOT OLD.unit OR NEW.source_timestamp IS NOT OLD.source_timestamp
+    OR NEW.raw_row IS NOT OLD.raw_row OR NEW.created_by IS NOT OLD.created_by OR NEW.created_at IS NOT OLD.created_at
+  BEGIN
+    SELECT RAISE(ABORT, 'radar reading source fields are immutable — record analyst decisions in status/player/note');
+  END;
+
   -- Atomic metric results: every individual reading/attempt with evidence
   -- (TDR §5a). The M5 release adapter rolls approved results up into the
   -- existing stat_entries path; unavailable stays unavailable with a reason.
@@ -756,6 +769,8 @@ addColumnIfMissing('cmd_media_jobs', 'heartbeat_at', 'heartbeat_at TEXT');
 addColumnIfMissing('cmd_media_jobs', 'progress_pct', 'progress_pct REAL');
 addColumnIfMissing('cmd_media_jobs', 'progress_s', 'progress_s REAL');
 addColumnIfMissing('cmd_media_jobs', 'claim_token', 'claim_token TEXT');
+// Provider response for a failed customer email, so "failed" is diagnosable.
+addColumnIfMissing('cmd_notifications', 'email_error', "email_error TEXT DEFAULT ''");
 
 // ── Seed Command reference data (idempotent; active flags follow code) ──
 {

@@ -1,7 +1,7 @@
 // Diamond Metrics Command — M1 routes (jobs, orders, queue). Mounted from
 // index.js with shared db + auth middleware. Every state change writes a
 // cmd_review_actions row; creation flows are transactional.
-import { PACKAGES, buildRequirements, canTransition, roleCanTransition, METRIC_RELEASE_STATES, GAME_RECORD_STATES } from './commandLogic.js';
+import { PACKAGES, buildRequirements, canTransition, roleCanTransition, METRIC_RELEASE_STATES, GAME_RECORD_STATES, orderablePackages, SHARING_SCOPES_V1, assertRequirementToggle } from './commandLogic.js';
 import { emitJobEvent } from './notifications.js';
 import { computeQaFlags, releaseMetrics } from './releaseLogic.js';
 
@@ -17,7 +17,11 @@ export function mountCommandRoutes(app, { db, requireInternal }) {
   app.get('/api/command/bootstrap', requireInternal, (_req, res) => {
     res.json({
       registry: registryRows(),
-      packages: Object.entries(PACKAGES).map(([key, p]) => ({ key, label: p.label, metric_codes: p.metric_codes, allows_addons: !!p.allows_addons })),
+      packages: Object.entries(PACKAGES).map(([key, p]) => ({
+        key, label: p.label, metric_codes: p.metric_codes, allows_addons: !!p.allows_addons,
+        orderable: orderablePackages().includes(key), unavailable_reason: p.unavailable_reason || null,
+      })),
+      sharing_scopes: SHARING_SCOPES_V1,
       capture_profiles: db.prepare('SELECT * FROM cmd_capture_profiles ORDER BY id').all()
         .map(p => ({ ...p, expected_metrics: JSON.parse(p.expected_metrics) })),
       analysts: db.prepare('SELECT id, email, name, role FROM admins ORDER BY name').all(),
@@ -144,6 +148,18 @@ export function mountCommandRoutes(app, { db, requireInternal }) {
       tournamentId = tg.tournament_id;
     }
 
+    // Rookie V1 gate: only packages whose modules exist can be ordered, and
+    // only sharing scopes with a working consumer. Hidden in the forms too,
+    // but the API is the contract — bulk creation and scripts hit this path.
+    const pkg = PACKAGES[b.package_key];
+    if (!pkg) fail(`Unknown package: ${b.package_key}`);
+    if (!orderablePackages().includes(b.package_key)) {
+      fail(`${pkg.label} is not orderable in Rookie V1 — ${pkg.unavailable_reason || 'its modules have not shipped'}. Order Rookie instead.`);
+    }
+    if (b.sharing_scope && !SHARING_SCOPES_V1.includes(b.sharing_scope)) {
+      fail(`Sharing scope "${b.sharing_scope}" is not available in Rookie V1 — use internal or customer`);
+    }
+
     let requirements;
     try {
       requirements = buildRequirements({
@@ -255,6 +271,8 @@ export function mountCommandRoutes(app, { db, requireInternal }) {
     const row = db.prepare('SELECT * FROM cmd_metric_requirements WHERE id = ?').get(req.params.id);
     if (!row) return res.status(404).json({ error: 'Requirement not found' });
     const enabled = req.body?.enabled ? 1 : 0;
+    try { assertRequirementToggle(db, row, enabled); }
+    catch (err) { return res.status(err.status || 500).json({ error: err.message }); }
     db.prepare('UPDATE cmd_metric_requirements SET enabled = ? WHERE id = ?').run(enabled, row.id);
     const job = db.prepare('SELECT id FROM cmd_jobs WHERE order_id = ?').get(row.order_id);
     if (job) audit('cmd_jobs', job.id, req.internal.id, 'requirement_toggled', { note: row.metric_code, prev: String(row.enabled), next: String(enabled) });
