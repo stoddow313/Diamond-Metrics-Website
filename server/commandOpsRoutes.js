@@ -5,7 +5,7 @@ import { pipelineTelemetry } from './telemetry.js';
 import { lastBackup, runBackup, RETENTION_DAYS } from './backup.js';
 import { storageMode, selfTest, storageReady, missingStorageConfig } from './storage.js';
 import { ENV, errorTrackingEnabled } from './observability.js';
-import { ffmpegStatus } from './mediaWorker.js';
+import { ffmpegStatus, STALL_MS, runningMediaJobs } from './mediaWorker.js';
 import { emailConfigured } from './notifications.js';
 
 export function mountCommandOpsRoutes(app, { db, requireInternal, createJob }) {
@@ -25,9 +25,16 @@ export function mountCommandOpsRoutes(app, { db, requireInternal, createJob }) {
     const mediaQueue = db.prepare(
       "SELECT status, COUNT(*) n FROM cmd_media_jobs GROUP BY status"
     ).all().reduce((acc, r) => ({ ...acc, [r.status]: r.n }), {});
-    const stuckFeeds = db.prepare(
+    // "Needs attention" = terminal failures, feeds in a retry loop, and any
+    // running job whose encoder has been silent past the stall threshold —
+    // the one case that used to look like healthy 'processing' forever.
+    const failedFeeds = db.prepare(
       "SELECT COUNT(*) n FROM cmd_video_feeds WHERE status IN ('failed', 'retrying')"
     ).get().n;
+    const stalledJobs = db.prepare(
+      "SELECT COUNT(*) n FROM cmd_media_jobs WHERE status='running' AND (strftime('%s','now') - strftime('%s', COALESCE(heartbeat_at, started_at, updated_at))) * 1000 >= ?"
+    ).get(STALL_MS).n;
+    const stuckFeeds = failedFeeds + stalledJobs;
     const pendingEmail = db.prepare(
       "SELECT COUNT(*) n FROM cmd_notifications WHERE email_status IN ('queued', 'failed')"
     ).get().n;
@@ -45,7 +52,13 @@ export function mountCommandOpsRoutes(app, { db, requireInternal, createJob }) {
         retention_days: RETENTION_DAYS,
         last: lastBackup(db),
       },
-      media_queue: { ...mediaQueue, stuck_feeds: stuckFeeds },
+      media_queue: {
+        ...mediaQueue,
+        stuck_feeds: stuckFeeds,
+        stalled: stalledJobs,
+        stall_threshold_s: Math.round(STALL_MS / 1000),
+        in_process: runningMediaJobs(),
+      },
       notifications: { pending_email: pendingEmail },
     });
   });

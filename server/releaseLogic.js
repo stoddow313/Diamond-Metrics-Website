@@ -36,7 +36,6 @@ export function computeQaFlags(db, jobId) {
   const results = db.prepare(ACTIVE_RESULTS).all(jobId);
   const feeds = db.prepare('SELECT * FROM cmd_video_feeds WHERE job_id = ?').all(jobId);
   const ready = feeds.filter(f => f.status === 'ready');
-  const needsVideo = metrics.some(m => m.method === 'frame_timed');
 
   const consent = db.prepare('SELECT * FROM cmd_consent WHERE job_id = ? AND media_consent = 1').get(jobId);
   if (!consent) {

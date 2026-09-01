@@ -6,6 +6,7 @@ import express from 'express';
 import fs from 'node:fs';
 import { createHmac, randomBytes } from 'node:crypto';
 import { createUpload, presignPart, appendLocalPart, completeUpload, abortUpload, listUploadedParts, playbackUrl, localPathFor, storageMode, storageReady, missingStorageConfig } from './storage.js';
+import { enqueueMediaJob, requeueFeedProcessing, STALL_MS } from './mediaWorker.js';
 
 // Local-mode playback: <video> cannot send auth headers, so local URLs carry
 // a short-TTL HMAC token — the same trust model as R2 presigned GETs.
@@ -152,7 +153,7 @@ export function mountCommandMediaRoutes(app, { db, requireInternal }) {
       await completeUpload(feed.storage_key, req.body?.uploadId, req.body?.parts || []);
       db.prepare("UPDATE cmd_video_feeds SET status='queued', upload_id=NULL, updated_at=datetime('now') WHERE id=?").run(feed.id);
       log('info', 'upload_completed', { feed_id: feed.id, job_id: feed.job_id, name: feed.original_name, size: feed.size_bytes, parts: (req.body?.parts || []).length });
-      db.prepare("INSERT OR IGNORE INTO cmd_media_jobs (feed_id, kind) VALUES (?, 'probe')").run(feed.id);
+      enqueueMediaJob(db, feed.id, 'probe');
       audit(feed.job_id, req.internal.id, 'feed_uploaded', feed.original_name);
       res.json({ feed: db.prepare('SELECT * FROM cmd_video_feeds WHERE id = ?').get(feed.id) });
     } catch (err) {
@@ -171,19 +172,43 @@ export function mountCommandMediaRoutes(app, { db, requireInternal }) {
     res.json({ ok: true });
   });
 
-  // Safe retry for failed processing — no duplicate feed records (§2.2).
+  // Retry processing — re-runs the pipeline against the original already in
+  // storage; never a re-upload, never a duplicate feed record (§2.2). Works
+  // from 'failed', from a 'retrying' loop, and from a 'processing' feed whose
+  // run has wedged (the analyst's escape hatch ahead of the automatic sweep).
   app.post('/api/command/feeds/:id/retry', requireInternal, (req, res) => {
-    const feed = db.prepare('SELECT * FROM cmd_video_feeds WHERE id = ?').get(req.params.id);
-    if (!feed) return res.status(404).json({ error: 'Feed not found' });
-    if (!['failed', 'retrying'].includes(feed.status)) return res.status(400).json({ error: `Feed is ${feed.status}; nothing to retry` });
-    // A human clicking Retry means "try again for real" — reset the counter,
-    // or jobs whose attempts burned out under a since-fixed defect go
-    // straight back to terminal failure on the next orphan sweep.
-    db.prepare("UPDATE cmd_media_jobs SET status='queued', error='', attempts=0 WHERE feed_id=? AND status='failed'").run(feed.id);
-    db.prepare("INSERT OR IGNORE INTO cmd_media_jobs (feed_id, kind) VALUES (?, 'probe')").run(feed.id);
-    db.prepare("UPDATE cmd_video_feeds SET status='queued', error='', updated_at=datetime('now') WHERE id=?").run(feed.id);
-    res.json({ feed: db.prepare('SELECT * FROM cmd_video_feeds WHERE id = ?').get(feed.id) });
+    const before = db.prepare('SELECT * FROM cmd_video_feeds WHERE id = ?').get(req.params.id);
+    if (!before) return res.status(404).json({ error: 'Feed not found' });
+    try {
+      const { feed, stage } = requeueFeedProcessing(db, before.id);
+      audit(feed.job_id, req.internal.id, 'feed_retry_processing', `${feed.label} — ${feed.original_name}: was ${before.status}${before.error ? ` (${before.error.slice(0, 160)})` : ''}; restarting at ${stage}`);
+      res.json({ feed: withProcessing(feed), stage });
+    } catch (err) {
+      res.status(err.status || 500).json({ error: err.message });
+    }
   });
+
+  // The feed's current pipeline step with liveness, for the job page: what
+  // is running, how far along, and how long since the encoder last spoke.
+  // Ages are computed server-side so a client clock cannot mislabel a live
+  // encode as stalled.
+  const latestJobStmt = db.prepare(
+    `SELECT id, kind, status, attempts, error, progress_pct, progress_s, started_at, heartbeat_at, finished_at,
+            (strftime('%s','now') - strftime('%s', COALESCE(heartbeat_at, started_at, updated_at))) AS quiet_s,
+            (strftime('%s','now') - strftime('%s', COALESCE(started_at, created_at))) AS running_s
+       FROM cmd_media_jobs WHERE feed_id = ? ORDER BY (status = 'running') DESC, (status = 'queued') DESC, id DESC LIMIT 1`
+  );
+  function withProcessing(feed) {
+    const j = latestJobStmt.get(feed.id) || null;
+    return {
+      ...feed,
+      processing: j && {
+        ...j,
+        stalled: j.status === 'running' && j.quiet_s * 1000 >= STALL_MS,
+        stall_threshold_s: Math.round(STALL_MS / 1000),
+      },
+    };
+  }
 
   // Feed detail: metadata + renditions + short-TTL playback URLs.
   app.get('/api/command/feeds/:id', requireInternal, async (req, res) => {
@@ -197,13 +222,17 @@ export function mountCommandMediaRoutes(app, { db, requireInternal }) {
     // the current one after a re-encode.
     const renditions = db.prepare('SELECT * FROM cmd_media_renditions WHERE feed_id = ? ORDER BY id DESC').all(feed.id);
     const withUrls = await Promise.all(renditions.map(async r => ({ ...r, url: await signedPlaybackUrl(r.storage_key) })));
-    const jobs = db.prepare('SELECT kind, status, attempts, error FROM cmd_media_jobs WHERE feed_id = ? ORDER BY id').all(feed.id);
-    res.json({ feed, renditions: withUrls, media_jobs: jobs });
+    const jobs = db.prepare(
+      `SELECT id, kind, status, attempts, error, progress_pct, progress_s, started_at, heartbeat_at, finished_at,
+              (strftime('%s','now') - strftime('%s', COALESCE(heartbeat_at, started_at, updated_at))) AS quiet_s
+         FROM cmd_media_jobs WHERE feed_id = ? ORDER BY id`
+    ).all(feed.id);
+    res.json({ feed: withProcessing(feed), renditions: withUrls, media_jobs: jobs });
   });
 
   app.get('/api/command/jobs/:id/feeds', requireInternal, (req, res) => {
     res.json({
-      feeds: db.prepare('SELECT * FROM cmd_video_feeds WHERE job_id = ? ORDER BY id').all(req.params.id),
+      feeds: db.prepare('SELECT * FROM cmd_video_feeds WHERE job_id = ? ORDER BY id').all(req.params.id).map(withProcessing),
     });
   });
 

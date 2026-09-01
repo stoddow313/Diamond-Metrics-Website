@@ -15,7 +15,75 @@ const STATUS_COLORS = {
   not_started: '#64748b', in_progress: '#38bdf8', ready_for_review: '#fbbf24',
   needs_correction: '#f87171', approved: '#4ade80', released: '#4ade80',
   pending: '#64748b', validated: '#4ade80', not_ordered: '#475569',
+  // feed pipeline
+  uploading: '#94a3b8', queued: '#38bdf8', processing: '#38bdf8', retrying: '#fbbf24',
+  ready: '#4ade80', failed: '#f87171', 'failed processing': '#f87171',
 };
+
+const fmtSecs = raw => {
+  const s = Math.max(0, Math.round(Number(raw) || 0));
+  const m = Math.floor(s / 60);
+  return m ? `${m}m ${String(s % 60).padStart(2, '0')}s` : `${s}s`;
+};
+
+// One video feed on the job page. Every pipeline state is legible here:
+// what step is running and how far along, a stall warning when the encoder
+// goes quiet, and a terminal "Failed processing" with the specific reason
+// and a Retry that re-runs against the stored original — no re-upload.
+function FeedRow({ feed: f, onRetry }) {
+  const p = f.processing;
+  const active = ['queued', 'processing', 'retrying'].includes(f.status);
+  const failed = f.status === 'failed';
+  const running = active && p?.status === 'running';
+  const stalled = running && !!p?.stalled;
+  const pct = running && p.progress_pct != null ? Math.round(p.progress_pct * 100) : null;
+  let step = '';
+  if (running) {
+    step = p.kind === 'probe'
+      ? 'Inspecting media…'
+      : `Building review proxy${pct != null ? ` · ${pct}%` : '…'}${p.progress_s && f.duration_s ? ` (${Number(p.progress_s).toFixed(1)}s of ${Number(f.duration_s).toFixed(1)}s)` : ''}`;
+  } else if (active) {
+    step = f.status === 'retrying' ? 'Waiting to retry…' : 'Queued for processing…';
+  }
+  const canRetry = failed || stalled || f.status === 'retrying';
+  return (
+    <div className="py-2.5 border-t" style={{ borderColor: '#1e3a5f' }} data-testid={`feed-${f.id}`}>
+      <div className="flex items-center justify-between gap-3">
+        <div className="min-w-0">
+          <p className="text-sm font-bold text-white truncate">
+            {f.label} <span className="font-normal text-xs" style={{ color: '#64748b' }}>{f.original_name}</span>
+          </p>
+          <p className="text-xs" style={{ color: '#64748b' }}>
+            {f.width ? `${f.width}×${f.height} · ` : ''}{f.effective_fps ? `${f.effective_fps.toFixed(2)} fps · ` : ''}
+            {f.vfr ? 'VFR (normalized in proxy) · ' : ''}{step}
+          </p>
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          <StatusBadge value={failed ? 'failed processing' : f.status} />
+          {f.status === 'ready' && (
+            <Link to={`/command/feeds/${f.id}`} className="text-xs font-bold hover:underline" style={{ color: '#38bdf8' }}>Open viewer</Link>
+          )}
+          {canRetry && <GhostButton onClick={() => onRetry(f)}>Retry processing</GhostButton>}
+        </div>
+      </div>
+      {running && pct != null && (
+        <div className="w-full rounded-full h-1.5 overflow-hidden mt-2" style={{ backgroundColor: 'rgba(30, 41, 59, 0.9)' }}>
+          <div className="h-1.5 rounded-full transition-all" style={{ width: `${pct}%`, backgroundColor: stalled ? '#fbbf24' : '#38bdf8' }} />
+        </div>
+      )}
+      {stalled && (
+        <p className="text-xs mt-1.5" style={{ color: '#fbbf24' }} data-testid="feed-stalled">
+          No progress from the encoder for {fmtSecs(p.quiet_s)}. It will be stopped and retried automatically — Retry processing restarts it now.
+        </p>
+      )}
+      {(failed || f.status === 'retrying') && f.error && (
+        <p className="text-xs mt-1.5" style={{ color: failed ? '#f87171' : '#fbbf24' }} data-testid="feed-error">
+          {failed ? 'Failed processing — ' : ''}{f.error}
+        </p>
+      )}
+    </div>
+  );
+}
 
 function StatusBadge({ value }) {
   return (
@@ -395,6 +463,19 @@ export function JobDetailPage() {
     }
   }
 
+  async function retryFeed(f) {
+    setError('');
+    setNotice('');
+    try {
+      const { stage } = await api.commandRetryFeed(f.id);
+      setNotice(`Retrying processing for ${f.original_name} — restarting at the ${stage === 'proxy' ? 'review-proxy encode' : 'media inspection'} step against the original already in storage. Nothing needs re-uploading.`);
+    } catch (err) {
+      setError(`Could not retry processing: ${err.message}`);
+    }
+    const d = await api.commandJobFeeds(jobId).catch(() => null);
+    if (d) setFeeds(d.feeds);
+  }
+
   async function transition(kind, to) {
     setError('');
     try {
@@ -461,28 +542,7 @@ export function JobDetailPage() {
             Originals stream to storage in resumable 50 MB parts; the worker inspects, flags VFR, and builds the constant-frame-rate review proxy.
           </p>
           {feeds.length === 0 && <p className="text-sm mb-3" style={{ color: '#94a3b8' }}>No feeds attached yet.</p>}
-          {feeds.map(f => (
-            <div key={f.id} className="flex items-center justify-between gap-3 py-2.5 border-t" style={{ borderColor: '#1e3a5f' }}>
-              <div className="min-w-0">
-                <p className="text-sm font-bold text-white truncate">
-                  {f.label} <span className="font-normal text-xs" style={{ color: '#64748b' }}>{f.original_name}</span>
-                </p>
-                <p className="text-xs" style={{ color: '#64748b' }}>
-                  {f.width ? `${f.width}×${f.height} · ` : ''}{f.effective_fps ? `${f.effective_fps.toFixed(2)} fps · ` : ''}
-                  {f.vfr ? 'VFR (normalized in proxy) · ' : ''}{f.error || ''}
-                </p>
-              </div>
-              <div className="flex items-center gap-2 shrink-0">
-                <StatusBadge value={f.status} />
-                {f.status === 'ready' && (
-                  <Link to={`/command/feeds/${f.id}`} className="text-xs font-bold hover:underline" style={{ color: '#38bdf8' }}>Open viewer</Link>
-                )}
-                {['failed', 'retrying'].includes(f.status) && (
-                  <GhostButton onClick={async () => { await api.commandRetryFeed(f.id).catch(e => setError(e.message)); const d = await api.commandJobFeeds(jobId); setFeeds(d.feeds); }}>Retry</GhostButton>
-                )}
-              </div>
-            </div>
-          ))}
+          {feeds.map(f => <FeedRow key={f.id} feed={f} onRetry={retryFeed} />)}
           <div className="mt-3">
             {uploadPct == null ? (
               <label className="inline-block px-4 py-2 rounded-lg text-sm font-bold cursor-pointer" style={{ backgroundColor: '#38bdf8', color: '#06122b' }}>

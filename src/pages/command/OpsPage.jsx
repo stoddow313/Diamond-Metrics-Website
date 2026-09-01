@@ -190,8 +190,12 @@ export default function OpsPage() {
           />
           <HealthRow label="Error tracking" value={ops.error_tracking ? 'Sentry connected' : 'logs only'} ok={ops.error_tracking} />
           <HealthRow label="Customer email" value={ops.email_configured ? 'sending' : 'recorded in-app only'} ok={ops.email_configured} />
-          <HealthRow label="Media queue" value={`${ops.media_queue.queued || 0} queued · ${ops.media_queue.failed || 0} failed`} ok={!ops.media_queue.failed} />
-          <HealthRow label="Feeds needing attention" value={ops.media_queue.stuck_feeds} ok={ops.media_queue.stuck_feeds === 0} />
+          <HealthRow label="Media queue" value={`${ops.media_queue.queued || 0} queued · ${ops.media_queue.running || 0} running · ${ops.media_queue.failed || 0} failed`} ok={!ops.media_queue.failed} />
+          <HealthRow
+            label="Feeds needing attention"
+            value={`${ops.media_queue.stuck_feeds}${ops.media_queue.stalled ? ` — ${ops.media_queue.stalled} stalled (silent > ${Math.round((ops.media_queue.stall_threshold_s || 300) / 60)} min, will be reaped)` : ''}`}
+            ok={ops.media_queue.stuck_feeds === 0}
+          />
         </section>
 
         <section className="rounded-2xl border p-5" style={cardStyle}>
