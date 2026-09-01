@@ -8,8 +8,10 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { putObject, listObjects, deleteObject, storageMode } from './storage.js';
-import { log, captureError, ENV } from './observability.js';
+import { putObject, listObjects, deleteObject, storageMode, getObjectRange, localPathFor } from './storage.js';
+import { log, captureError, ENV, alertOps } from './observability.js';
+import { pipeline } from 'node:stream/promises';
+import { createRequire } from 'node:module';
 
 export const BACKUP_PREFIX = 'command/backups';
 export const RETENTION_DAYS = Number(process.env.DM_BACKUP_RETENTION_DAYS || 30);
@@ -72,7 +74,49 @@ export async function runBackup(db, { now = new Date() } = {}) {
     db.prepare("INSERT INTO ops_backups (storage_key, bytes, status, mode, error) VALUES (?, 0, 'failed', ?, ?)")
       .run(key, storageMode, String(err?.message || err));
     captureError(err, { event: 'backup_failed', component: 'backup', key });
+    alertOps('Database backup failed', { key, error: String(err?.message || err) });
     throw err;
+  } finally {
+    fs.rmSync(scratch, { force: true });
+  }
+}
+
+// Restore drill without restoring: pull the newest successful snapshot back
+// from storage, open it, run integrity_check, and count what it holds. A
+// backup that exists is not the same as a backup that restores — this is
+// the check the runbook (§4) asks for before real customer orders.
+export async function verifyLatestBackup(db) {
+  const row = db.prepare("SELECT * FROM ops_backups WHERE status = 'ok' ORDER BY id DESC LIMIT 1").get();
+  if (!row) return { ok: false, error: 'No successful backup has been recorded yet' };
+  const scratch = path.join(os.tmpdir(), `dm-verify-${process.pid}-${Date.now()}.db`);
+  const started = Date.now();
+  try {
+    if (storageMode === 'r2') {
+      const obj = await getObjectRange(row.storage_key);
+      await pipeline(obj.body, fs.createWriteStream(scratch));
+    } else {
+      fs.copyFileSync(localPathFor(row.storage_key), scratch);
+    }
+    const Database = createRequire(import.meta.url)('better-sqlite3');
+    const snap = new Database(scratch);
+    try {
+      const integrity = snap.prepare('PRAGMA integrity_check').get().integrity_check;
+      const count = table => snap.prepare(`SELECT COUNT(*) c FROM ${table}`).get().c;
+      const result = {
+        ok: integrity === 'ok', key: row.storage_key, snapshot_at: row.created_at,
+        bytes: fs.statSync(scratch).size, integrity,
+        counts: { players: count('players'), teams: count('teams'), cmd_jobs: count('cmd_jobs'), cmd_metric_results: count('cmd_metric_results') },
+        ms: Date.now() - started,
+      };
+      log(result.ok ? 'info' : 'error', 'backup_verified', result);
+      if (!result.ok) alertOps('Latest database backup failed integrity_check', { key: row.storage_key, integrity });
+      return result;
+    } finally {
+      snap.close();
+    }
+  } catch (err) {
+    captureError(err, { event: 'backup_verify_failed', component: 'backup', key: row.storage_key });
+    return { ok: false, key: row.storage_key, error: String(err?.message || err) };
   } finally {
     fs.rmSync(scratch, { force: true });
   }

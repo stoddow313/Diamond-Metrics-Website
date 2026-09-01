@@ -2,11 +2,11 @@
 // backup control, and bulk tournament job creation. Read access is
 // internal; anything that mutates infrastructure (manual backup) is admin.
 import { pipelineTelemetry } from './telemetry.js';
-import { lastBackup, runBackup, RETENTION_DAYS } from './backup.js';
+import { lastBackup, runBackup, verifyLatestBackup, RETENTION_DAYS } from './backup.js';
 import { storageMode, selfTest, storageReady, missingStorageConfig } from './storage.js';
-import { ENV, errorTrackingEnabled } from './observability.js';
+import { ENV, errorTrackingEnabled, alertsEnabled } from './observability.js';
 import { ffmpegStatus, STALL_MS, runningMediaJobs } from './mediaWorker.js';
-import { emailConfigured } from './notifications.js';
+import { emailConfigured, emailMissingConfig, sendTestEmail } from './notifications.js';
 
 export function mountCommandOpsRoutes(app, { db, requireInternal, createJob }) {
   const requireAdminRole = (req, res, next) => requireInternal(req, res, () => {
@@ -45,8 +45,11 @@ export function mountCommandOpsRoutes(app, { db, requireInternal, createJob }) {
       storage_missing_config: missingStorageConfig,
       worker_mode: process.env.DM_INLINE_WORKER === '0' ? 'dedicated' : 'inline',
       error_tracking: errorTrackingEnabled,
+      ops_alerts: alertsEnabled,
       video: await ffmpegStatus(),
       email_configured: emailConfigured(),
+      email_missing_config: emailMissingConfig(),
+      email_from: process.env.DM_EMAIL_FROM || null,
       backups: {
         enabled: process.env.DM_BACKUPS !== '0',
         retention_days: RETENTION_DAYS,
@@ -75,6 +78,18 @@ export function mountCommandOpsRoutes(app, { db, requireInternal, createJob }) {
     } catch (err) {
       res.status(500).json({ error: `Backup failed: ${err.message}` });
     }
+  });
+
+  // Restore drill: fetch the newest snapshot back, integrity-check it, count
+  // its rows. The recovery process in the runbook starts with this.
+  app.post('/api/command/backups/verify', requireAdminRole, async (_req, res) => {
+    res.json({ verify: await verifyLatestBackup(db) });
+  });
+
+  // Transactional email proof: one real send through the customer path.
+  app.post('/api/command/email/test', requireAdminRole, async (req, res) => {
+    const result = await sendTestEmail(String(req.body?.to || '').trim(), { env: ENV });
+    res.status(result.ok ? 200 : 400).json({ result });
   });
 
   // ── Bulk tournament job creation ────────────────────────────────────────
@@ -150,6 +165,7 @@ export function mountCommandOpsRoutes(app, { db, requireInternal, createJob }) {
           media_consent: b.media_consent,
           sharing_scope: b.sharing_scope,
           notes: b.notes,
+          synthetic: !!b.synthetic,
         }, req.internal.id),
         team_name: p.team_name,
         game_date: p.game_date,

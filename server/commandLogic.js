@@ -36,18 +36,58 @@ export const PACKAGES = {
   rookie: {
     label: 'Rookie',
     metric_codes: ['pitch_velocity_radar', 'home_to_first', 'steal_time', 'ninety_ft_speed'],
+    orderable: true,
   },
+  // Defined for the roadmap, not orderable yet: every add-on and Pro module
+  // is an inactive registry entry, so these packages would create a job that
+  // is either identical to Rookie or has nothing to measure. They stay off
+  // the order forms until their modules ship (DM_ORDERABLE_PACKAGES can
+  // enable one early on staging).
   rookie_plus: {
     label: 'Rookie + add-ons',
     metric_codes: ['pitch_velocity_radar', 'home_to_first', 'steal_time', 'ninety_ft_speed'],
     allows_addons: true,
+    orderable: false,
+    unavailable_reason: 'no add-on modules are implemented yet, so it would be identical to Rookie',
   },
   pro: {
     label: 'Pro',
     metric_codes: REGISTRY_SEED.filter(r => r.metric_code !== 'ninety_ft_speed').map(r => r.metric_code),
+    orderable: false,
+    unavailable_reason: 'Pro modules are not implemented yet',
   },
-  custom: { label: 'Custom order', metric_codes: [], allows_addons: true },
+  custom: {
+    label: 'Custom order',
+    metric_codes: [],
+    allows_addons: true,
+    orderable: false,
+    unavailable_reason: 'needs the metric picker, which ships with the Pro modules',
+  },
 };
+
+// Package keys that may be ordered right now. Defaults to the flags above;
+// DM_ORDERABLE_PACKAGES=rookie,pro overrides (staging previews only).
+export function orderablePackages(env = process.env) {
+  const override = String(env.DM_ORDERABLE_PACKAGES || '').split(',').map(s => s.trim()).filter(Boolean);
+  if (override.length) return override.filter(k => PACKAGES[k]);
+  return Object.entries(PACKAGES).filter(([, p]) => p.orderable).map(([k]) => k);
+}
+
+// Sharing scopes with a working consumer. 'public' exists in the schema for
+// the public-profile release path, which is not part of Rookie V1.
+export const SHARING_SCOPES_V1 = ['internal', 'customer'];
+
+// A job must always keep at least one active metric requirement — a job
+// with nothing to measure cannot progress and only confuses the queue.
+export function assertRequirementToggle(db, requirement, enabled) {
+  if (enabled) return;
+  const others = db.prepare(
+    'SELECT COUNT(*) c FROM cmd_metric_requirements WHERE order_id = ? AND enabled = 1 AND id != ?'
+  ).get(requirement.order_id, requirement.id).c;
+  if (others === 0) {
+    throw Object.assign(new Error('A job must keep at least one active metric requirement — enable another metric before disabling this one'), { status: 400 });
+  }
+}
 
 // Resolve the requirement set for an order. Add-ons only apply to packages
 // that allow them; unknown or inactive (unshipped-module) codes are rejected

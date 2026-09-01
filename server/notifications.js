@@ -45,6 +45,36 @@ export function emailConfigured() {
   return Boolean(process.env.RESEND_API_KEY && process.env.DM_EMAIL_FROM);
 }
 
+// What is missing for customer email to work — shown on /command/ops so the
+// setup gap is explicit instead of a silent 'skipped'.
+export function emailMissingConfig() {
+  return ['RESEND_API_KEY', 'DM_EMAIL_FROM'].filter(k => !process.env[k]);
+}
+
+// Operator-triggered test send through the exact path customers get, with
+// the provider's raw response — the only way to prove DNS/domain
+// verification is right before a real order depends on it.
+export async function sendTestEmail(to, { env = 'production' } = {}) {
+  if (!emailConfigured()) return { ok: false, error: `Email is not configured — set ${emailMissingConfig().join(' and ')} in Render and restart` };
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(to || ''))) return { ok: false, error: 'A valid recipient address is required' };
+  try {
+    const res = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${process.env.RESEND_API_KEY}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        from: process.env.DM_EMAIL_FROM,
+        to: [to],
+        subject: `Diamond Metrics — transactional email test (${env})`,
+        text: `This is a test of Diamond Metrics customer email from the ${env} environment, sent ${new Date().toISOString()}.\n\nIf you received it, the sending domain and API key are working.`,
+      }),
+    });
+    const body = (await res.text().catch(() => '')).slice(0, 600);
+    return { ok: res.ok, status: res.status, from: process.env.DM_EMAIL_FROM, to, provider_response: body };
+  } catch (err) {
+    return { ok: false, error: String(err?.message || err) };
+  }
+}
+
 async function dispatchEmail(db, notificationId) {
   const row = db.prepare(
     `SELECT n.*, o.contact_email, t.name AS team_name, j.game_date
@@ -69,9 +99,10 @@ async function dispatchEmail(db, notificationId) {
         text: `${EVENT_SUBJECTS[row.event_key]}.\n\nTeam: ${row.team_name}\nGame date: ${row.game_date}\n\nSign in to Diamond Metrics for details.`,
       }),
     });
-    db.prepare('UPDATE cmd_notifications SET email_status = ? WHERE id = ?')
-      .run(res.ok ? 'sent' : 'failed', notificationId);
-  } catch {
-    db.prepare("UPDATE cmd_notifications SET email_status = 'failed' WHERE id = ?").run(notificationId);
+    const detail = res.ok ? '' : (await res.text().catch(() => '')).slice(0, 500);
+    db.prepare('UPDATE cmd_notifications SET email_status = ?, email_error = ? WHERE id = ?')
+      .run(res.ok ? 'sent' : 'failed', detail, notificationId);
+  } catch (err) {
+    db.prepare("UPDATE cmd_notifications SET email_status = 'failed', email_error = ? WHERE id = ?").run(String(err?.message || err).slice(0, 500), notificationId);
   }
 }

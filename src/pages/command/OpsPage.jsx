@@ -40,6 +40,40 @@ export default function OpsPage() {
   const [backingUp, setBackingUp] = useState(false);
   const [storageCheck, setStorageCheck] = useState(null);
   const [checking, setChecking] = useState(false);
+  const [verify, setVerify] = useState(null);
+  const [verifying, setVerifying] = useState(false);
+  const [testTo, setTestTo] = useState('');
+  const [emailTest, setEmailTest] = useState(null);
+  const [sendingTest, setSendingTest] = useState(false);
+
+  async function verifyBackup() {
+    setError('');
+    setVerifying(true);
+    try {
+      const { verify: v } = await api.commandBackupVerify();
+      setVerify(v);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setVerifying(false);
+    }
+  }
+
+  async function sendTest(e) {
+    e?.preventDefault();
+    setError('');
+    setSendingTest(true);
+    setEmailTest(null);
+    try {
+      const { result } = await api.commandEmailTest(testTo);
+      setEmailTest(result);
+    } catch (err) {
+      // 400s carry the provider/config reason in the message.
+      setEmailTest({ ok: false, error: err.message });
+    } finally {
+      setSendingTest(false);
+    }
+  }
 
   const load = useCallback(() => {
     Promise.all([api.commandTelemetry(days), api.commandOps()])
@@ -189,7 +223,44 @@ export default function OpsPage() {
             ok={!!ops.video?.ok}
           />
           <HealthRow label="Error tracking" value={ops.error_tracking ? 'Sentry connected' : 'logs only'} ok={ops.error_tracking} />
-          <HealthRow label="Customer email" value={ops.email_configured ? 'sending' : 'recorded in-app only'} ok={ops.email_configured} />
+          <HealthRow
+            label="Operator alerts"
+            value={ops.ops_alerts ? 'webhook connected (failed processing, failed backups, crashes)' : 'not configured — set DM_ALERT_WEBHOOK_URL'}
+            ok={ops.ops_alerts}
+          />
+          <HealthRow
+            label="Customer email"
+            value={ops.email_configured ? `sending as ${ops.email_from}` : `not configured — set ${(ops.email_missing_config || []).join(' + ') || 'RESEND_API_KEY + DM_EMAIL_FROM'}`}
+            ok={ops.email_configured}
+          />
+          {user?.role === 'admin' && (
+            <form onSubmit={sendTest} className="flex items-center justify-between gap-2 py-2 border-t flex-wrap" style={{ borderColor: '#1e3a5f' }}>
+              <span className="text-sm" style={{ color: '#94a3b8' }}>Email test send</span>
+              <span className="flex items-center gap-1.5">
+                <input
+                  type="email"
+                  value={testTo}
+                  onChange={e => setTestTo(e.target.value)}
+                  placeholder="you@diamondmetrics.ai"
+                  className="px-2.5 py-1 rounded-lg border text-xs w-48"
+                  style={{ borderColor: '#334155', backgroundColor: 'rgba(15,23,42,0.9)', color: '#f8fafc' }}
+                  data-testid="email-test-to"
+                />
+                <button type="submit" disabled={sendingTest || !testTo}
+                  className="text-xs font-bold px-3 py-1 rounded-lg border cursor-pointer hover:bg-slate-800 disabled:opacity-50"
+                  style={{ borderColor: '#334155', color: '#cfe8ff' }}>
+                  {sendingTest ? 'Sending…' : 'Send test'}
+                </button>
+              </span>
+            </form>
+          )}
+          {emailTest && (
+            <p className="text-xs py-1" style={{ color: emailTest.ok ? '#4ade80' : '#f87171' }} data-testid="email-test-result">
+              {emailTest.ok
+                ? `✓ accepted by provider (HTTP ${emailTest.status}) — check ${emailTest.to}`
+                : `✗ ${emailTest.error || `provider HTTP ${emailTest.status}: ${emailTest.provider_response || 'no detail'}`}`}
+            </p>
+          )}
           <HealthRow label="Media queue" value={`${ops.media_queue.queued || 0} queued · ${ops.media_queue.running || 0} running · ${ops.media_queue.failed || 0} failed`} ok={!ops.media_queue.failed} />
           <HealthRow
             label="Feeds needing attention"
@@ -220,8 +291,26 @@ export default function OpsPage() {
           ) : (
             <HealthRow label="Last snapshot" value="none yet" ok={false} />
           )}
+          {user?.role === 'admin' && (
+            <div className="flex items-center justify-between py-2 border-t" style={{ borderColor: '#1e3a5f' }}>
+              <span className="text-sm" style={{ color: '#94a3b8' }}>Restore drill</span>
+              {verify ? (
+                <span className="text-sm font-bold text-right" style={{ color: verify.ok ? '#4ade80' : '#f87171' }} data-testid="backup-verify-result">
+                  {verify.ok
+                    ? `✓ integrity ok · ${verify.counts.cmd_jobs} jobs · ${verify.counts.players} players · ${(verify.bytes / 1e6).toFixed(1)} MB in ${verify.ms}ms`
+                    : `✗ ${verify.error || `integrity: ${verify.integrity}`}`}
+                </span>
+              ) : (
+                <button onClick={verifyBackup} disabled={verifying}
+                  className="text-xs font-bold px-3 py-1 rounded-lg border cursor-pointer hover:bg-slate-800"
+                  style={{ borderColor: '#334155', color: '#cfe8ff' }}>
+                  {verifying ? 'Verifying…' : 'Verify latest snapshot'}
+                </button>
+              )}
+            </div>
+          )}
           <p className="text-[10px] mt-3" style={{ color: '#475569' }}>
-            Snapshots use SQLite&apos;s online backup API (safe on a live WAL database) and land in the media storage bucket. Restore runbook: docs/COMMAND_OPS.md.
+            Snapshots use SQLite&apos;s online backup API (safe on a live WAL database) and land in the media storage bucket. The restore drill pulls the newest one back, runs integrity_check, and counts its rows. Full restore runbook: docs/COMMAND_OPS.md §4.
           </p>
         </section>
       </div>
