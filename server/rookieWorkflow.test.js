@@ -164,17 +164,24 @@ test('8. approval clears the gate and release publishes exactly the approved rol
   assert.ok(entry(rg.id, 'home_to_first').metric_result_id, 'provenance points at the source result');
 });
 
-test('9. published state is visible and a correction supersedes with history', () => {
-  assert.ok(active().filter(r => r.metric_code === 'home_to_first').some(r => r.status === 'published'));
+test('9. published state is visible and a correction updates the same result — never a second one', () => {
+  const before = active().find(r => r.metric_code === 'home_to_first' && r.status === 'published');
+  assert.ok(before, 'a published home-to-first exists');
+  const rg = db.prepare('SELECT id FROM games WHERE player_id = ? AND command_job_id = ?').get(runner, jobId);
 
   const attempt = db.prepare("SELECT id FROM cmd_events WHERE job_id=? AND player_id=? ORDER BY id LIMIT 1").get(jobId, runner).id;
   saveMeasurement(db, attempt, { start_frame: 1000, end_frame: 1240 }, reviewer);   // 240/59.94 = 4.004
-  const superseded = db.prepare("SELECT * FROM cmd_metric_results WHERE job_id=? AND superseded_by IS NOT NULL").all(jobId);
-  assert.ok(superseded.length > 0, 'the published value is superseded, never deleted');
+
+  const after = db.prepare('SELECT * FROM cmd_metric_results WHERE id = ?').get(before.id);
+  assert.equal(after.status, 'draft', 'the published value goes back to review on the same row');
+  assert.equal(after.superseded_by, null, 'no chain, no duplicate');
+  assert.equal(db.prepare("SELECT COUNT(*) c FROM cmd_metric_results WHERE evidence_kind='measurement' AND evidence_id=? AND metric_code='home_to_first'").get(before.evidence_id).c, 1);
+  assert.ok(db.prepare("SELECT 1 FROM cmd_review_actions WHERE target_table='cmd_metric_results' AND target_id=? AND action='reassigned'").get(before.id), 'the audit trail records the change');
+  const stale = db.prepare("SELECT * FROM stat_entries WHERE game_id=? AND metric_key='home_to_first'").get(rg.id);
+  assert.ok(!stale || stale.metric_result_id !== before.id, 'the re-measured result no longer backs anything on the profile');
 
   for (const r of active().filter(r => r.status === 'draft')) decideResult(db, r.id, { decision: 'approved' }, reviewer);
   releaseMetrics(db, jobId, reviewer);
-  const rg = db.prepare('SELECT id FROM games WHERE player_id = ? AND command_job_id = ?').get(runner, jobId);
   const rows = db.prepare("SELECT * FROM stat_entries WHERE game_id=? AND metric_key='home_to_first'").all(rg.id);
   assert.equal(rows.length, 1, 'the correction updates in place, no duplicate');
   assert.equal(rows[0].value, 4, 'and the profile now shows the corrected best');

@@ -101,7 +101,8 @@ export function computeQaFlags(db, jobId) {
 export function decideResult(db, resultId, { decision, note = '' }, actorId) {
   const result = db.prepare('SELECT * FROM cmd_metric_results WHERE id = ?').get(resultId);
   if (!result) throw httpError('Result not found', 404);
-  if (result.superseded_by != null || result.status === 'withdrawn') throw httpError('This result was superseded — decide on its replacement', 409);
+  if (result.status === 'withdrawn') throw httpError('This result is withdrawn — restore the reading or measurement to revive it', 409);
+  if (result.superseded_by != null) throw httpError('This result was superseded — decide on its replacement', 409);
   if (!['approved', 'draft'].includes(decision)) throw httpError("decision must be 'approved' or 'draft'");
   if (result.status === 'unavailable') throw httpError('Unavailable results release with their reason — there is nothing to approve');
   if (result.status === 'published') throw httpError('Published results change via correction (reopen the job), not review');
@@ -120,12 +121,15 @@ export function decideResult(db, resultId, { decision, note = '' }, actorId) {
 // ---------------------------------------------------------------------------
 // Rollup preview: exactly what the adapter would publish right now, grouped
 // per player × ordered metric. Shared by the review screen and the release.
-export function releasePlan(db, jobId) {
+export function releasePlan(db, jobId, { publishedOnly = false } = {}) {
   const metrics = orderedMetrics(db, jobId);
   // DM_RELEASE_V1 rolls up 'approved' values. Results published by an
   // earlier release stay releasable — a correction re-release must keep
-  // them in the rollup, not treat them as undelivered.
+  // them in the rollup, not treat them as undelivered. publishedOnly is the
+  // correction resync's view: what the profile may show right now, which
+  // is only what a release has already published.
   const results = db.prepare(`${ACTIVE_RESULTS} ORDER BY r.player_id, r.metric_code, r.id`).all(jobId)
+    .filter(r => !publishedOnly || r.status === 'published')
     .map(r => (r.status === 'published' ? { ...r, status: 'approved', published: true } : r));
   const plan = [];
   for (const metric of metrics) {
@@ -144,6 +148,164 @@ export function releasePlan(db, jobId) {
 }
 
 // ---------------------------------------------------------------------------
+// Result lifecycle: one raw reading or measurement has exactly one derived
+// result per metric. Invalidation withdraws that row (remembering what it
+// was); restoring the same evidence to the same player revives that same
+// row. Nothing is deleted, nothing is duplicated, and the profile is
+// resynced immediately so a withdrawn value never lingers on a player page
+// until someone remembers to re-release.
+const auditResult = (db, resultId, actorId, action, note, prev, next) => db.prepare(
+  "INSERT INTO cmd_review_actions (target_table, target_id, actor_id, action, note, prev_state, new_state) VALUES ('cmd_metric_results', ?, ?, ?, ?, ?, ?)"
+).run(resultId, actorId ?? null, action, String(note || ''), prev ?? '', next ?? '');
+
+const sameValue = (a, b) => (a == null && b == null) || (a != null && b != null && Math.abs(Number(a) - Number(b)) < 1e-9);
+
+// The live result for a piece of evidence — the one row that may count.
+// Legacy supersede chains (pre-2026-09) are skipped; a withdrawn row is
+// returned when nothing live exists so it can be revived instead of cloned.
+export function resultForEvidence(db, evidenceKind, evidenceId, metricCode = null) {
+  return db.prepare(
+    `SELECT * FROM cmd_metric_results
+      WHERE evidence_kind = ? AND evidence_id = ? AND superseded_by IS NULL ${metricCode ? 'AND metric_code = ?' : ''}
+      ORDER BY (status != 'withdrawn') DESC, id DESC LIMIT 1`
+  ).get(...(metricCode ? [evidenceKind, evidenceId, metricCode] : [evidenceKind, evidenceId])) || null;
+}
+
+export function withdrawResult(db, resultId, { reason = '', actorId = null } = {}) {
+  const r = db.prepare('SELECT * FROM cmd_metric_results WHERE id = ?').get(resultId);
+  if (!r) throw httpError('Result not found', 404);
+  if (r.status === 'withdrawn') return r;
+  db.prepare("UPDATE cmd_metric_results SET status = 'withdrawn', restore_status = ?, updated_at = datetime('now') WHERE id = ?").run(r.status, resultId);
+  auditResult(db, resultId, actorId, 'withdrawn', reason, r.status, 'withdrawn');
+  return db.prepare('SELECT * FROM cmd_metric_results WHERE id = ?').get(resultId);
+}
+
+// Bring a result into line with its evidence. Same facts on a withdrawn row
+// → revived to the status it held before (a published value returns to the
+// profile at once). Changed facts (player, metric, value) on a decided row
+// → back to draft for review; on a draft → updated in place. Idempotent:
+// identical facts on a live row change nothing.
+const STATUS_RANK = { draft: 0, approved: 1, published: 2 };
+
+export function applyResultState(db, resultId, { player_id, metric_code, value, actorId = null, reason = '', reviveCap = null }) {
+  const r = db.prepare('SELECT * FROM cmd_metric_results WHERE id = ?').get(resultId);
+  if (!r) throw httpError('Result not found', 404);
+  const same = r.player_id === player_id && r.metric_code === metric_code && sameValue(r.value, value) && r.status !== 'unavailable';
+  if (r.status !== 'withdrawn' && same) return r;
+
+  let status;
+  let action;
+  if (r.status === 'withdrawn') {
+    status = same ? (r.restore_status || 'draft') : 'draft';
+    // A derived result can never outrank the parent it is computed from.
+    if (reviveCap && (STATUS_RANK[status] ?? 0) > (STATUS_RANK[reviveCap] ?? 0)) status = reviveCap;
+    action = 'revived';
+  } else if (['approved', 'published'].includes(r.status)) {
+    status = 'draft';
+    action = 'reassigned';
+  } else {
+    status = 'draft';   // draft or unavailable with new facts
+    action = 'updated';
+  }
+  db.prepare(
+    `UPDATE cmd_metric_results SET player_id = ?, metric_code = ?, value = ?, status = ?, restore_status = NULL, unavailable_reason = '', updated_at = datetime('now') WHERE id = ?`
+  ).run(player_id, metric_code, value, status, resultId);
+  auditResult(db, resultId, actorId, action,
+    reason || `${r.metric_code} ${r.value ?? '—'} (player ${r.player_id}) → ${metric_code} ${value ?? '—'} (player ${player_id})`,
+    r.status, status);
+  return db.prepare('SELECT * FROM cmd_metric_results WHERE id = ?').get(resultId);
+}
+
+export function markResultUnavailable(db, resultId, { reason, actorId = null, note = '' }) {
+  const r = db.prepare('SELECT * FROM cmd_metric_results WHERE id = ?').get(resultId);
+  if (!r) throw httpError('Result not found', 404);
+  if (r.status === 'unavailable' && r.unavailable_reason === reason) return r;
+  db.prepare(
+    "UPDATE cmd_metric_results SET status = 'unavailable', value = NULL, unavailable_reason = ?, restore_status = NULL, updated_at = datetime('now') WHERE id = ?"
+  ).run(reason, resultId);
+  auditResult(db, resultId, actorId, 'marked_unavailable', note || reason, r.status, 'unavailable');
+  return db.prepare('SELECT * FROM cmd_metric_results WHERE id = ?').get(resultId);
+}
+
+// Publish a plan's releasable rollups into games/stat_entries for one job
+// and remove adapter-owned entries that no longer release — for every
+// player the job has ever published for. Shared by the release and by the
+// correction resync so the profile can never disagree with the results.
+function writeRollups(db, job, { metrics, plan }) {
+  const managedKeys = [...new Set(metrics.flatMap(m => m.publishes_to))];
+  const gameIds = new Map(
+    db.prepare('SELECT id, player_id FROM games WHERE command_job_id = ?').all(job.id).map(g => [g.player_id, g.id])
+  );
+  const gameFor = (playerId) => {
+    if (gameIds.has(playerId)) return gameIds.get(playerId);
+    const id = db.prepare(
+      'INSERT INTO games (player_id, game_date, game_type, opponent, tournament_game_id, command_job_id) VALUES (?, ?, ?, ?, ?, ?)'
+    ).run(playerId, job.game_date, job.game_type, job.opponent_label || job.event_label || '', job.tournament_game_id ?? null, job.id).lastInsertRowid;
+    gameIds.set(playerId, id);
+    return id;
+  };
+  const current = db.prepare('SELECT value FROM stat_entries WHERE game_id = ? AND metric_key = ?');
+  const upsert = db.prepare(
+    `INSERT INTO stat_entries (game_id, metric_key, value, method, metric_result_id) VALUES (?, ?, ?, ?, ?)
+     ON CONFLICT (game_id, metric_key) DO UPDATE SET value = excluded.value, method = excluded.method, metric_result_id = excluded.metric_result_id`
+  );
+
+  const published = [];
+  const changes = [];
+  const publishedKeys = new Set();
+  for (const item of plan) {
+    if (!item.rollup.released) continue;
+    const gameId = gameFor(item.player_id);
+    // Provenance points at the exact result that holds the published value
+    // (max/best); averages aggregate many results and carry only the
+    // method. Published values are rounded to the registry's decimals, so
+    // the raw result value must be compared rounded too.
+    const dec = metrics.find(m => m.metric_code === item.metric_code)?.decimals ?? 2;
+    for (const entry of item.rollup.entries) {
+      const source = item.results.find(r => r.status !== 'unavailable' && r.value != null && Number(r.value.toFixed(dec)) === entry.value);
+      const before = current.get(gameId, entry.metric_key);
+      upsert.run(gameId, entry.metric_key, entry.value, item.method, source ? source.id : null);
+      if (!before || before.value !== entry.value) changes.push({ player_id: item.player_id, metric_key: entry.metric_key, from: before?.value ?? null, to: entry.value });
+      published.push({ player_id: item.player_id, metric_key: entry.metric_key, value: entry.value, sample: item.rollup.sample });
+      publishedKeys.add(`${item.player_id}:${entry.metric_key}`);
+    }
+  }
+  // Corrections: adapter-owned entries (method set) for keys that no longer
+  // release are removed — the evidence chain in cmd_metric_results is the
+  // history. Manually entered admin stats (method NULL) are never touched.
+  for (const [playerId, gameId] of gameIds) {
+    for (const key of managedKeys) {
+      if (publishedKeys.has(`${playerId}:${key}`)) continue;
+      const gone = db.prepare('SELECT value FROM stat_entries WHERE game_id = ? AND metric_key = ? AND method IS NOT NULL').get(gameId, key);
+      if (!gone) continue;
+      db.prepare('DELETE FROM stat_entries WHERE game_id = ? AND metric_key = ? AND method IS NOT NULL').run(gameId, key);
+      changes.push({ player_id: playerId, metric_key: key, from: gone.value, to: null });
+    }
+  }
+  return { published, changes };
+}
+
+// Immediate correction: make games/stat_entries match what is *still*
+// published for this job — now, not at the next release. Approved-but-
+// unreleased results never leak through here; only the release moves them.
+export function resyncPublishedRollups(db, jobId, actorId = null, reason = '') {
+  const job = db.prepare('SELECT * FROM cmd_jobs WHERE id = ?').get(jobId);
+  if (!job) return { changes: [] };
+  if (db.prepare('SELECT synthetic FROM cmd_orders WHERE id = ?').get(job.order_id)?.synthetic) return { changes: [], synthetic: true };
+  const touched = db.prepare("SELECT 1 FROM cmd_metric_results WHERE job_id = ? AND status = 'published' LIMIT 1").get(jobId)
+    || db.prepare('SELECT 1 FROM games WHERE command_job_id = ? LIMIT 1').get(jobId);
+  if (!touched) return { changes: [] };
+  const { changes } = writeRollups(db, job, releasePlan(db, jobId, { publishedOnly: true }));
+  if (changes.length) {
+    const summary = changes.map(c => `${c.metric_key} ${c.from ?? '—'}→${c.to ?? 'removed'} (player ${c.player_id})`).join(', ');
+    db.prepare(
+      "INSERT INTO cmd_review_actions (target_table, target_id, actor_id, action, note, prev_state, new_state) VALUES ('cmd_jobs', ?, ?, 'published_rollups_resynced', ?, '', ?)"
+    ).run(jobId, actorId ?? null, `${reason ? `${reason} — ` : ''}${summary}`.slice(0, 600), RELEASE_VERSION);
+  }
+  return { changes };
+}
+
+// ---------------------------------------------------------------------------
 // The release adapter. Runs when metric_release_status transitions to
 // 'released': publishes approved rollups into games/stat_entries (with
 // method + metric_result_id provenance), marks contributing results
@@ -153,74 +315,27 @@ export function releaseMetrics(db, jobId, actorId) {
   const job = db.prepare('SELECT * FROM cmd_jobs WHERE id = ?').get(jobId);
   if (!job) throw httpError('Job not found', 404);
   const { metrics, plan } = releasePlan(db, jobId);
-  const managedKeys = [...new Set(metrics.flatMap(m => m.publishes_to))];
   // A synthetic (pipeline-test) job runs the whole release workflow — status,
   // published results, audit — but never touches a customer surface: no
   // games/stat_entries rows, so nothing appears on a player profile.
   const synthetic = !!db.prepare('SELECT synthetic FROM cmd_orders WHERE id = ?').get(job.order_id)?.synthetic;
 
-  const published = [];
+  let published = [];
   const run = db.transaction(() => {
-    const gameIds = new Map();   // player_id → games.id (find-or-create per job)
-    const gameFor = (playerId) => {
-      if (gameIds.has(playerId)) return gameIds.get(playerId);
-      let game = db.prepare('SELECT id FROM games WHERE player_id = ? AND command_job_id = ?').get(playerId, jobId);
-      if (!game) {
-        const id = db.prepare(
-          'INSERT INTO games (player_id, game_date, game_type, opponent, tournament_game_id, command_job_id) VALUES (?, ?, ?, ?, ?, ?)'
-        ).run(playerId, job.game_date, job.game_type, job.opponent_label || job.event_label || '', job.tournament_game_id ?? null, jobId).lastInsertRowid;
-        game = { id };
-      }
-      gameIds.set(playerId, game.id);
-      return game.id;
-    };
-
+    if (synthetic) {
+      published = plan.filter(item => item.rollup.released).flatMap(item =>
+        item.rollup.entries.map(entry => ({ player_id: item.player_id, metric_key: entry.metric_key, value: entry.value, sample: item.rollup.sample, withheld: 'synthetic' }))
+      );
+    } else {
+      ({ published } = writeRollups(db, job, { metrics, plan }));
+    }
+    // Contributing approved results are now published (synthetic too — the
+    // workflow is real, only the customer surface is withheld).
+    const publish = db.prepare("UPDATE cmd_metric_results SET status = 'published', updated_at = datetime('now') WHERE id = ? AND status = 'approved'");
     for (const item of plan) {
       if (!item.rollup.released) continue;
-      if (synthetic) {
-        for (const entry of item.rollup.entries) {
-          published.push({ player_id: item.player_id, metric_key: entry.metric_key, value: entry.value, sample: item.rollup.sample, withheld: 'synthetic' });
-        }
-        for (const r of item.results) {
-          if (r.status === 'approved') db.prepare("UPDATE cmd_metric_results SET status = 'published', updated_at = datetime('now') WHERE id = ?").run(r.id);
-        }
-        continue;
-      }
-      const gameId = gameFor(item.player_id);
-      for (const entry of item.rollup.entries) {
-        // Provenance points at the exact result that holds the published
-        // value (max/best); averages aggregate many results and carry only
-        // the method. Published values are rounded to the registry's
-        // decimals, so the raw result value must be compared rounded too.
-        const dec = metrics.find(m => m.metric_code === item.metric_code)?.decimals ?? 2;
-        const source = item.results.find(r => r.status !== 'unavailable' && r.value != null && Number(r.value.toFixed(dec)) === entry.value);
-        db.prepare(
-          `INSERT INTO stat_entries (game_id, metric_key, value, method, metric_result_id) VALUES (?, ?, ?, ?, ?)
-           ON CONFLICT (game_id, metric_key) DO UPDATE SET value = excluded.value, method = excluded.method, metric_result_id = excluded.metric_result_id`
-        ).run(gameId, entry.metric_key, entry.value, item.method, source ? source.id : null);
-        published.push({ player_id: item.player_id, metric_key: entry.metric_key, value: entry.value, sample: item.rollup.sample });
-      }
-      for (const r of item.results) {
-        if (r.status === 'approved') {
-          db.prepare("UPDATE cmd_metric_results SET status = 'published', updated_at = datetime('now') WHERE id = ?").run(r.id);
-        }
-      }
+      for (const r of item.results) if (r.status === 'approved' && !r.published) publish.run(r.id);
     }
-
-    // Corrections: adapter-owned entries (method set) for keys that no longer
-    // release are removed — the evidence chain in cmd_metric_results is the
-    // history. Manually entered admin stats (method NULL) are never touched.
-    if (managedKeys.length > 0) {
-      const publishedKeys = new Set(published.map(p => `${p.player_id}:${p.metric_key}`));
-      for (const [playerId, gameId] of gameIds) {
-        for (const key of managedKeys) {
-          if (!publishedKeys.has(`${playerId}:${key}`)) {
-            db.prepare('DELETE FROM stat_entries WHERE game_id = ? AND metric_key = ? AND method IS NOT NULL').run(gameId, key);
-          }
-        }
-      }
-    }
-
     db.prepare(
       "INSERT INTO cmd_review_actions (target_table, target_id, actor_id, action, note, prev_state, new_state) VALUES ('cmd_jobs', ?, ?, 'metrics_released', ?, '', ?)"
     ).run(jobId, actorId, `${published.length} entr${published.length === 1 ? 'y' : 'ies'} ${synthetic ? 'released but withheld from player profiles — synthetic job' : 'published'} (${RELEASE_VERSION})`, RELEASE_VERSION);

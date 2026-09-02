@@ -111,28 +111,35 @@ test('release publishes approved rollups to games/stat_entries with provenance �
   assert.ok(activeResults().filter(r => r.metric_code === 'pitch_velocity_radar').every(r => r.status === 'published'));
 });
 
-test('corrections supersede with history: remeasure updates the profile, chain retained, no duplicate entries', () => {
+test('corrections update the same result: a remeasure leaves the profile at once and returns on re-release, no duplicates', () => {
   // Reopen and remeasure the home-to-first: 4.53s → 4.50s.
   const priorPublished = activeResults().find(r => r.metric_code === 'home_to_first');
   assert.equal(priorPublished.status, 'published');
+  const runnerGame = db.prepare('SELECT * FROM games WHERE player_id = ? AND command_job_id = ?').get(runnerId, jobId);
+  assert.ok(db.prepare("SELECT 1 FROM stat_entries WHERE game_id = ? AND metric_key = 'home_to_first'").get(runnerGame.id), 'published before the correction');
   saveMeasurement(db, h2fAttemptId, { start_frame: 60, end_frame: 330 }, reviewerId);   // 4.50s
 
-  const old = db.prepare('SELECT * FROM cmd_metric_results WHERE id = ?').get(priorPublished.id);
-  assert.ok(old.superseded_by, 'published result superseded, not deleted');
-  const replacement = db.prepare('SELECT * FROM cmd_metric_results WHERE id = ?').get(old.superseded_by);
-  assert.equal(replacement.status, 'draft');
-  assert.equal(Number(replacement.value.toFixed(2)), 4.5);
+  const same = db.prepare('SELECT * FROM cmd_metric_results WHERE id = ?').get(priorPublished.id);
+  assert.equal(same.superseded_by, null, 'no chain — the same result row is updated');
+  assert.equal(same.status, 'draft', 'a changed published value goes back to review');
+  assert.equal(Number(same.value.toFixed(2)), 4.5);
+  assert.equal(
+    db.prepare("SELECT COUNT(*) c FROM cmd_metric_results WHERE evidence_kind='measurement' AND evidence_id = ? AND metric_code = 'home_to_first'").get(same.evidence_id).c,
+    1, 'one result per measurement',
+  );
+  assert.equal(db.prepare("SELECT 1 FROM stat_entries WHERE game_id = ? AND metric_key = 'home_to_first'").get(runnerGame.id), undefined,
+    'the value that is no longer backed by evidence left the profile immediately');
+  assert.ok(db.prepare("SELECT 1 FROM cmd_review_actions WHERE target_table='cmd_jobs' AND target_id=? AND action='published_rollups_resynced'").get(jobId), 'resync is audited');
 
-  decideResult(db, replacement.id, { decision: 'approved' }, reviewerId);
+  decideResult(db, same.id, { decision: 'approved' }, reviewerId);
   // Derived 90-ft speed re-drafted alongside — approve it too.
   for (const r of activeResults().filter(r => r.status === 'draft')) decideResult(db, r.id, { decision: 'approved' }, reviewerId);
   releaseMetrics(db, jobId, reviewerId);
 
-  const runnerGame = db.prepare('SELECT * FROM games WHERE player_id = ? AND command_job_id = ?').get(runnerId, jobId);
   const rows = db.prepare("SELECT * FROM stat_entries WHERE game_id = ? AND metric_key = 'home_to_first'").all(runnerGame.id);
   assert.equal(rows.length, 1, 'correction updates in place — no duplicate entry');
   assert.equal(rows[0].value, 4.5);
-  assert.equal(rows[0].metric_result_id, replacement.id);
+  assert.equal(rows[0].metric_result_id, same.id);
 
   // Still exactly one paid-metric-unavailable notification (unchanged situation deduped).
   const notifs = db.prepare("SELECT COUNT(*) n FROM cmd_notifications WHERE job_id = ? AND event_key = 'paid_metric_unavailable'").get(jobId);

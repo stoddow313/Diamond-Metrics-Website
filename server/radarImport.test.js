@@ -73,16 +73,30 @@ test('classification: matched reading creates a draft radar-verified result; inv
   result = db.prepare("SELECT * FROM cmd_metric_results WHERE evidence_id=?").get(readingId);
   assert.equal(result.player_id, otherPlayerId);
 
-  // Invalidate — the draft disappears; the immutable reading row remains.
+  // Invalidate — the draft is withdrawn, never deleted; the immutable reading row remains.
   classifyReading(db, readingId, { status: 'invalid', note: 'car radar noise' }, 1);
-  assert.equal(db.prepare('SELECT COUNT(*) c FROM cmd_metric_results WHERE evidence_id=?').get(readingId).c, 0);
+  const rows = db.prepare('SELECT * FROM cmd_metric_results WHERE evidence_id=?').all(readingId);
+  assert.equal(rows.length, 1, 'one result per reading, even after invalidation');
+  assert.equal(rows[0].id, result.id, 'the same row');
+  assert.equal(rows[0].status, 'withdrawn');
+  assert.equal(rows[0].restore_status, 'draft');
   const reading = db.prepare('SELECT * FROM cmd_radar_readings WHERE id=?').get(readingId);
   assert.equal(reading.velocity, 71.2, 'source velocity untouched');
   assert.equal(reading.status, 'invalid');
 
-  // Audit trail recorded every decision.
+  // Audit trail recorded every decision — on the reading, and the withdrawal on the result with its reason.
   const audits = db.prepare("SELECT COUNT(*) c FROM cmd_review_actions WHERE target_table='cmd_radar_readings' AND target_id=?").get(readingId).c;
   assert.equal(audits, 3);
+  const withdrawn = db.prepare("SELECT note FROM cmd_review_actions WHERE target_table='cmd_metric_results' AND target_id=? AND action='withdrawn'").get(result.id);
+  assert.match(withdrawn.note, /car radar noise/);
+
+  // Restore — the same result revives; still exactly one row.
+  classifyReading(db, readingId, { player_id: otherPlayerId, status: 'matched' }, 1);
+  const revived = db.prepare('SELECT * FROM cmd_metric_results WHERE evidence_id=?').all(readingId);
+  assert.equal(revived.length, 1);
+  assert.equal(revived[0].id, result.id);
+  assert.equal(revived[0].status, 'draft');
+  assert.equal(revived[0].player_id, otherPlayerId);
 });
 
 test('guards: matched requires player; unparseable rows cannot match; exit velocity needs its module', () => {

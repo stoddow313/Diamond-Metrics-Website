@@ -283,9 +283,11 @@ export default function ReviewPage() {
         <section className="rounded-2xl border p-5 mt-5" style={cardStyle}>
           <p className="text-[11px] font-bold uppercase tracking-widest mb-2" style={{ color: '#94a3b8' }}>Correction history</p>
           {data.history.map(h => (
-            <p key={h.id} className="text-xs py-1 border-t" style={{ borderColor: '#1e3a5f', color: '#64748b' }}>
+            <p key={h.id} className="text-xs py-1 border-t" style={{ borderColor: '#1e3a5f', color: '#64748b' }} data-testid="history-row">
               #{h.id} {h.first_name} {h.last_name} · {h.metric_code.replace(/_/g, ' ')} · {h.value != null ? h.value : '—'} ·{' '}
-              {h.status === 'withdrawn' ? 'withdrawn' : `superseded by #${h.superseded_by}`}
+              {h.status === 'withdrawn'
+                ? <>withdrawn{h.restore_status ? ` (was ${h.restore_status})` : ''}{h.withdrawn_reason ? <span style={{ color: '#fbbf24' }}> — {h.withdrawn_reason}</span> : ''}{h.withdrawn_by ? ` · ${h.withdrawn_by}${h.withdrawn_at ? ` ${String(h.withdrawn_at).slice(0, 16)} UTC` : ''}` : ''}. Restoring the same reading revives this result.</>
+                : `superseded by #${h.superseded_by}`}
             </p>
           ))}
         </section>

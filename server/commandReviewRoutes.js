@@ -40,8 +40,14 @@ export function mountCommandReviewRoutes(app, { db, requireInternal }) {
         ORDER BY p.last_name, p.first_name, r.metric_code, r.id`
     ).all(job.id);
 
+    // Withdrawn results carry the reason and who acted, so the review page
+    // shows why a value left the rollups — not just that it did.
     const history = db.prepare(
-      `SELECT r.id, r.metric_code, r.player_id, r.value, r.status, r.superseded_by, p.first_name, p.last_name
+      `SELECT r.id, r.metric_code, r.player_id, r.value, r.status, r.superseded_by, r.restore_status, r.evidence_kind, r.evidence_id,
+              p.first_name, p.last_name,
+              (SELECT ra.note FROM cmd_review_actions ra WHERE ra.target_table = 'cmd_metric_results' AND ra.target_id = r.id AND ra.action = 'withdrawn' ORDER BY ra.id DESC LIMIT 1) AS withdrawn_reason,
+              (SELECT a.name FROM cmd_review_actions ra LEFT JOIN admins a ON a.id = ra.actor_id WHERE ra.target_table = 'cmd_metric_results' AND ra.target_id = r.id AND ra.action = 'withdrawn' ORDER BY ra.id DESC LIMIT 1) AS withdrawn_by,
+              (SELECT ra.created_at FROM cmd_review_actions ra WHERE ra.target_table = 'cmd_metric_results' AND ra.target_id = r.id AND ra.action = 'withdrawn' ORDER BY ra.id DESC LIMIT 1) AS withdrawn_at
          FROM cmd_metric_results r JOIN players p ON p.id = r.player_id
         WHERE r.job_id = ? AND (r.superseded_by IS NOT NULL OR r.status = 'withdrawn')
         ORDER BY r.id`
