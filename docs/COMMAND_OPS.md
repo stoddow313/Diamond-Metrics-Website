@@ -379,6 +379,34 @@ terminal. If you see `PROCESSING` with no progress text for more than the
 stall threshold, the sweep is not running — check the worker log for
 `media_worker_started`.
 
+### 3.12 Corrections: one result per reading, immediate profile sync (2026-09-01)
+
+Rule: **one raw reading or measurement has exactly one derived metric result
+per metric, for life.**
+
+- **Invalidate** (radar: mark the reading invalid/unmatched; timing: mark the
+  attempt unavailable) → that result is **withdrawn** — never deleted — with
+  the reason on the result's audit row and on the reading itself. The
+  player's profile and every rollup/average are recomputed **immediately**
+  (`published_rollups_resynced` in the job audit), not at the next release.
+- **Restore** (re-confirm the same reading to the same player; re-measure)
+  → the **same result row** is revived. A reading whose value was already
+  published returns to `published` and reappears on the profile at once. A
+  changed fact — different player, different metric, a new measured value —
+  puts that same row back to `draft` for review and pulls the stale value
+  from the profile until it is approved and released again. Derived 90-ft
+  speed never outranks the home-to-first it is computed from.
+- **Idempotent**: repeating the same confirmation changes nothing and audits
+  nothing new. A partial unique index (`idx_cmd_results_one_live_per_evidence`)
+  guards the invariant for live rows; legacy supersede chains from before
+  this change are left intact and their withdrawn head is what gets revived.
+- Approved-but-unreleased results never reach the profile through a resync;
+  only the release moves them. Synthetic jobs never write profile rows.
+
+The review page's **Correction history** lists withdrawn results with the
+reason, who withdrew them and when; the job page's audit trail now includes
+reading classifications, result withdrawals/revivals, and attempt actions.
+
 ---
 
 ## 4. Backups and restore

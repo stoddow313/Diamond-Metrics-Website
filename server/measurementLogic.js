@@ -8,6 +8,8 @@ export const UNAVAILABLE_REASONS = [
   'insufficient_frame_rate', 'no_valid_attempt', 'insufficient_capture_quality', 'other_with_note',
 ];
 
+import { resultForEvidence, applyResultState, withdrawResult, markResultUnavailable, resyncPublishedRollups } from './releaseLogic.js';
+
 const err = (message, status = 400) => Object.assign(new Error(message), { status });
 
 // Frame time = frame index ÷ effective FPS of the measured rendition.
@@ -53,49 +55,52 @@ export function createAttempt(db, jobId, { attempt_type, player_id, feed_id, bas
   return db.prepare('SELECT * FROM cmd_events WHERE id = ?').get(id);
 }
 
-// Upsert the draft/unavailable metric results mirroring an attempt's
-// measurement: the timed metric itself, plus derived 90-ft speed for valid
-// home-to-first (appendix recipe, evidence = parent measurement).
+// Keep the metric results mirroring an attempt's measurement: the timed
+// metric itself, plus derived 90-ft speed for a valid home-to-first
+// (appendix recipe, evidence = parent measurement). One measurement ↔ one
+// result per metric, forever: a re-measure updates the same rows (back to
+// draft when the value changed on a decided result), an unavailable mark
+// turns the timed result unavailable with its reason and withdraws the
+// derived one, and a later valid measurement revives them. The profile is
+// resynced immediately so nothing withdrawn lingers on a player page.
 function syncResults(db, event, measurement, actorId) {
   const payload = JSON.parse(event.payload);
   const code = METRIC_BY_ATTEMPT[payload.attempt_type];
-  // Pre-decision results are safe to replace outright; approved/published
-  // results survive as history — superseded by their replacement below
-  // (corrections after release keep the full chain).
-  const prior = db.prepare(
-    "SELECT id, metric_code FROM cmd_metric_results WHERE evidence_kind='measurement' AND evidence_id IN (SELECT id FROM cmd_measurements WHERE event_id = ?) AND status IN ('approved','published') AND superseded_by IS NULL"
-  ).all(event.id);
-  db.prepare(
-    "DELETE FROM cmd_metric_results WHERE evidence_kind='measurement' AND evidence_id IN (SELECT id FROM cmd_measurements WHERE event_id = ?) AND status IN ('draft','unavailable')"
-  ).run(event.id);
+  const wantDerived = payload.attempt_type === 'home_to_first' && requirementEnabled(db, event.job_id, 'ninety_ft_speed');
+  const insert = db.prepare(
+    `INSERT INTO cmd_metric_results (job_id, metric_code, player_id, value, unit, method, status, unavailable_reason, evidence_kind, evidence_id, calculation_version, created_by)
+     VALUES (?, ?, ?, ?, ?, 'frame_timed', ?, ?, 'measurement', ?, ?, ?)`
+  );
+  const ensure = (metricCode, unit, value, reason, reviveCap = null) => {
+    const row = resultForEvidence(db, 'measurement', measurement.id, metricCode);
+    if (!row) {
+      return insert.run(event.job_id, metricCode, event.player_id, value, unit, 'draft', '', measurement.id, MEASURE_VERSION, actorId)
+        && resultForEvidence(db, 'measurement', measurement.id, metricCode);
+    }
+    return applyResultState(db, row.id, { player_id: event.player_id, metric_code: metricCode, value, actorId, reason, reviveCap });
+  };
 
   if (measurement.validity === 'valid') {
-    db.prepare(
-      `INSERT INTO cmd_metric_results (job_id, metric_code, player_id, value, unit, method, status, evidence_kind, evidence_id, calculation_version, created_by)
-       VALUES (?, ?, ?, ?, 's', 'frame_timed', 'draft', 'measurement', ?, ?, ?)`
-    ).run(event.job_id, code, event.player_id, measurement.elapsed_s, measurement.id, MEASURE_VERSION, actorId);
-    if (payload.attempt_type === 'home_to_first' && requirementEnabled(db, event.job_id, 'ninety_ft_speed')) {
-      db.prepare(
-        `INSERT INTO cmd_metric_results (job_id, metric_code, player_id, value, unit, method, status, evidence_kind, evidence_id, calculation_version, created_by)
-         VALUES (?, 'ninety_ft_speed', ?, ?, 'mph', 'frame_timed', 'draft', 'measurement', ?, ?, ?)`
-      ).run(event.job_id, event.player_id, ninetyFtSpeedMph(measurement.elapsed_s), measurement.id, MEASURE_VERSION, actorId);
-    }
+    const why = `attempt ${event.id} measured ${measurement.elapsed_s.toFixed(3)}s (frames ${measurement.start_frame}→${measurement.end_frame})`;
+    const timed = ensure(code, 's', measurement.elapsed_s, why);
+    const derived = resultForEvidence(db, 'measurement', measurement.id, 'ninety_ft_speed');
+    // The derived speed rides its parent: it can revive, but never to a
+    // higher review status than the timed result it is computed from.
+    if (wantDerived) ensure('ninety_ft_speed', 'mph', ninetyFtSpeedMph(measurement.elapsed_s), `${why} — derived`, timed?.status || 'draft');
+    else if (derived && derived.status !== 'withdrawn') withdrawResult(db, derived.id, { reason: '90-ft speed is not on this order', actorId });
   } else {
-    db.prepare(
-      `INSERT INTO cmd_metric_results (job_id, metric_code, player_id, value, unit, method, status, unavailable_reason, evidence_kind, evidence_id, calculation_version, created_by)
-       VALUES (?, ?, ?, NULL, 's', 'frame_timed', 'unavailable', ?, 'measurement', ?, ?, ?)`
-    ).run(event.job_id, code, event.player_id, measurement.unavailable_reason, measurement.id, MEASURE_VERSION, actorId);
-  }
-  for (const old of prior) {
-    const successor = db.prepare(
-      "SELECT id FROM cmd_metric_results WHERE evidence_kind='measurement' AND evidence_id IN (SELECT id FROM cmd_measurements WHERE event_id = ?) AND metric_code = ? AND superseded_by IS NULL AND id != ?"
-    ).get(event.id, old.metric_code, old.id);
-    if (successor) {
-      db.prepare("UPDATE cmd_metric_results SET superseded_by = ?, updated_at = datetime('now') WHERE id = ?").run(successor.id, old.id);
+    const row = resultForEvidence(db, 'measurement', measurement.id, code);
+    if (!row) {
+      insert.run(event.job_id, code, event.player_id, null, 's', 'unavailable', measurement.unavailable_reason, measurement.id, MEASURE_VERSION, actorId);
     } else {
-      db.prepare("UPDATE cmd_metric_results SET status = 'withdrawn', updated_at = datetime('now') WHERE id = ?").run(old.id);
+      markResultUnavailable(db, row.id, { reason: measurement.unavailable_reason, actorId, note: `attempt ${event.id} marked unavailable — ${measurement.unavailable_reason}${measurement.note ? `: ${measurement.note}` : ''}` });
+    }
+    const derived = resultForEvidence(db, 'measurement', measurement.id, 'ninety_ft_speed');
+    if (derived && derived.status !== 'withdrawn') {
+      withdrawResult(db, derived.id, { reason: `home-to-first marked unavailable (${measurement.unavailable_reason}) — nothing to derive from`, actorId });
     }
   }
+  resyncPublishedRollups(db, event.job_id, actorId, `attempt ${event.id} ${measurement.validity === 'valid' ? 're-measured' : 'marked unavailable'}`);
 }
 
 export function saveMeasurement(db, eventId, { start_frame, end_frame, rendition_id }, actorId) {

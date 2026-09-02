@@ -771,6 +771,22 @@ addColumnIfMissing('cmd_media_jobs', 'progress_s', 'progress_s REAL');
 addColumnIfMissing('cmd_media_jobs', 'claim_token', 'claim_token TEXT');
 // Provider response for a failed customer email, so "failed" is diagnosable.
 addColumnIfMissing('cmd_notifications', 'email_error', "email_error TEXT DEFAULT ''");
+// One raw reading/measurement ↔ one derived result per metric. A withdrawn
+// result remembers the status it held so restoring the same evidence to the
+// same player revives that row (a published value returns to the profile)
+// instead of creating a second result.
+addColumnIfMissing('cmd_metric_results', 'restore_status', 'restore_status TEXT');
+// Guard the invariant at the database for live rows. Legacy supersede
+// chains (superseded_by set) and withdrawn rows are exempt; if a pre-existing
+// duplicate ever blocks the index it must not take the API down — the
+// application logic enforces the rule regardless.
+try {
+  db.exec(`CREATE UNIQUE INDEX IF NOT EXISTS idx_cmd_results_one_live_per_evidence
+             ON cmd_metric_results(evidence_kind, evidence_id, metric_code)
+             WHERE superseded_by IS NULL AND status != 'withdrawn' AND evidence_id IS NOT NULL`);
+} catch (err) {
+  console.error(JSON.stringify({ level: 'warn', event: 'results_unique_index_skipped', message: String(err?.message || err) }));
+}
 
 // ── Seed Command reference data (idempotent; active flags follow code) ──
 {

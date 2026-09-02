@@ -73,10 +73,28 @@ export function mountCommandRoutes(app, { db, requireInternal }) {
        FROM cmd_metric_requirements r JOIN cmd_metric_registry m ON m.metric_code = r.metric_code
        WHERE r.order_id = ? ORDER BY r.priority, r.metric_code`
     ).all(job.order_id);
+    // The job's audit history is everything decided under it: job status
+    // changes, plus reading classifications (with the invalid reason),
+    // result withdrawals/revivals, and measurement actions.
     const auditTrail = db.prepare(
-      `SELECT ra.*, a.name AS actor_name FROM cmd_review_actions ra LEFT JOIN admins a ON a.id = ra.actor_id
-       WHERE ra.target_table = 'cmd_jobs' AND ra.target_id = ? ORDER BY ra.id DESC`
-    ).all(id);
+      `SELECT * FROM (
+         SELECT ra.*, a.name AS actor_name, 'job' AS scope, NULL AS subject
+           FROM cmd_review_actions ra LEFT JOIN admins a ON a.id = ra.actor_id
+          WHERE ra.target_table = 'cmd_jobs' AND ra.target_id = ?
+         UNION ALL
+         SELECT ra.*, a.name AS actor_name, 'reading' AS scope, (rr.velocity || ' mph') AS subject
+           FROM cmd_review_actions ra JOIN cmd_radar_readings rr ON rr.id = ra.target_id LEFT JOIN admins a ON a.id = ra.actor_id
+          WHERE ra.target_table = 'cmd_radar_readings' AND rr.job_id = ?
+         UNION ALL
+         SELECT ra.*, a.name AS actor_name, 'result' AS scope, (r.metric_code || ' ' || COALESCE(r.value, '—')) AS subject
+           FROM cmd_review_actions ra JOIN cmd_metric_results r ON r.id = ra.target_id LEFT JOIN admins a ON a.id = ra.actor_id
+          WHERE ra.target_table = 'cmd_metric_results' AND r.job_id = ?
+         UNION ALL
+         SELECT ra.*, a.name AS actor_name, 'attempt' AS scope, e.event_type AS subject
+           FROM cmd_review_actions ra JOIN cmd_events e ON e.id = ra.target_id LEFT JOIN admins a ON a.id = ra.actor_id
+          WHERE ra.target_table = 'cmd_events' AND e.job_id = ?
+       ) ORDER BY id DESC LIMIT 300`
+    ).all(id, id, id, id);
     const notifications = db.prepare(
       'SELECT id, event_key, audience, email_status, created_at FROM cmd_notifications WHERE job_id = ? ORDER BY id DESC'
     ).all(id);

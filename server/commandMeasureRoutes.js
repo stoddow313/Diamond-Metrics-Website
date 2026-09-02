@@ -61,8 +61,10 @@ export function mountCommandMeasureRoutes(app, { db, requireInternal }) {
     // Live per-player timing rollups from current draft/unavailable results.
     const summaries = [];
     for (const code of ['home_to_first', 'steal_time']) {
+      // Withdrawn (invalidated) and superseded results never enter the preview.
       const rows = db.prepare(
-        `SELECT player_id, value, status FROM cmd_metric_results WHERE job_id = ? AND metric_code = ?`
+        `SELECT player_id, value, status FROM cmd_metric_results
+          WHERE job_id = ? AND metric_code = ? AND status != 'withdrawn' AND superseded_by IS NULL`
       ).all(job.id, code);
       const byPlayer = new Map();
       for (const r of rows) {

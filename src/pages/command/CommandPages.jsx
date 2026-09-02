@@ -736,6 +736,7 @@ export function JobDetailPage() {
             ) : job.audit.map(a => (
               <p key={a.id} className="text-xs py-1.5 border-t" style={{ borderColor: '#1e3a5f', color: '#94a3b8' }}>
                 <b style={{ color: '#cfe8ff' }}>{a.actor_name || 'system'}</b> · {a.action.replace(/_/g, ' ')}
+                {a.scope && a.scope !== 'job' ? <span style={{ color: '#64748b' }}> · {a.scope}{a.subject ? ` ${String(a.subject).replace(/_/g, ' ')}` : ''}</span> : null}
                 {a.prev_state || a.new_state ? <span> · {a.prev_state || '—'} → <b style={{ color: '#f8fafc' }}>{a.new_state || '—'}</b></span> : null}
                 {a.note ? <span> · {a.note}</span> : null}
                 <span style={{ color: '#475569' }}> · {a.created_at}</span>
