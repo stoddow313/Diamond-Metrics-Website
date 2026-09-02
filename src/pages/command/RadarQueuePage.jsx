@@ -289,8 +289,9 @@ export default function RadarQueuePage() {
                             <GhostButton
                               title={r.player_id ? `Restore to ${r.first_name} ${r.last_name} — revives the same result and rollups` : 'Restore to unmatched'}
                               onClick={() => confirmReading(r, r.player_id
-                                ? { status: 'matched', player_id: r.player_id, pitch_or_exit: r.pitch_or_exit, pitch_type: r.pitch_type }
-                                : { status: 'unmatched', player_id: null })}
+                                // The invalid reason stays in the audit trail; the live row should not keep wearing it.
+                                ? { status: 'matched', player_id: r.player_id, pitch_or_exit: r.pitch_or_exit, pitch_type: r.pitch_type, note: '' }
+                                : { status: 'unmatched', player_id: null, note: '' })}
                             >
                               Restore
                             </GhostButton>
