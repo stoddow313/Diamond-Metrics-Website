@@ -268,7 +268,7 @@ export default function RadarQueuePage() {
                       {busyId === r.id ? (
                         <span className="text-xs font-bold" style={{ color: '#38bdf8' }}>saving…</span>
                       ) : invalidating?.id === r.id ? (
-                        <span className="text-xs font-bold" style={{ color: '#fbbf24' }}>choose a reason ↓</span>
+                        <span className="text-xs font-bold" style={{ color: '#fbbf24' }}>confirm below ↓</span>
                       ) : (
                         <>
                           {r.status !== 'invalid' && r.velocity != null && (
