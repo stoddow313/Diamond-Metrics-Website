@@ -215,7 +215,7 @@ export default function RadarQueuePage() {
               <button key={f} onClick={() => setFilter(f)}
                 className="px-2.5 py-1 rounded-lg text-xs font-bold cursor-pointer"
                 style={filter === f ? { backgroundColor: '#38bdf8', color: '#06122b' } : { backgroundColor: 'rgba(30, 41, 59, 0.9)', color: '#94a3b8' }}>
-                {f} ({counts[f]})
+                {f.charAt(0).toUpperCase() + f.slice(1)} ({counts[f]})
               </button>
             ))}
           </div>
