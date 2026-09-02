@@ -79,7 +79,7 @@ export default function RadarQueuePage() {
       await load();
       revealBucket(next.status);
       setNotice(next.status === 'matched'
-        ? `${reading.velocity} mph confirmed — draft result and rollup updated.`
+        ? `${reading.velocity} mph confirmed${reading.status === 'invalid' ? ' — restored to its prior assignment; the same result and its rollups are back' : ' — result and rollup updated'}.`
         : `Reading restored to ${next.status}.`);
     } catch (err) {
       setError(`Could not update that reading: ${err.message}`);
@@ -283,7 +283,17 @@ export default function RadarQueuePage() {
                             <GhostButton onClick={() => setInvalidating({ id: r.id, note: r.note || '' })}>Invalid</GhostButton>
                           )}
                           {r.status === 'invalid' && (
-                            <GhostButton onClick={() => confirmReading(r, { status: 'unmatched', player_id: null })}>Restore</GhostButton>
+                            // A reading that still carries its player goes straight back to that
+                            // assignment and revives its one result (published values return to
+                            // the profile at once); one that never matched returns to unmatched.
+                            <GhostButton
+                              title={r.player_id ? `Restore to ${r.first_name} ${r.last_name} — revives the same result and rollups` : 'Restore to unmatched'}
+                              onClick={() => confirmReading(r, r.player_id
+                                ? { status: 'matched', player_id: r.player_id, pitch_or_exit: r.pitch_or_exit, pitch_type: r.pitch_type }
+                                : { status: 'unmatched', player_id: null })}
+                            >
+                              Restore
+                            </GhostButton>
                           )}
                         </>
                       )}
