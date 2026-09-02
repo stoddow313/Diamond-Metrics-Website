@@ -99,8 +99,7 @@ export default function RadarQueuePage() {
 
   async function submitInvalid() {
     const { id } = invalidating;
-    const note = invalidReason(invalidating);
-    if (!note) return;   // a reason is what makes the audit trail worth having
+    const note = invalidReason(invalidating);   // optional — who/when is always audited
     const reading = data.readings.find(r => r.id === id);
     setError(''); setNotice(''); setBusyId(id);
     try {
@@ -304,10 +303,11 @@ export default function RadarQueuePage() {
                       <td colSpan={6} className="px-4 pb-4 pt-1">
                         <div className="rounded-xl border p-4" style={{ borderColor: 'rgba(251, 191, 36, 0.35)', backgroundColor: 'rgba(251, 191, 36, 0.06)' }}>
                           <p className="text-sm font-bold text-white">
-                            Why is this {r.velocity != null ? `${r.velocity.toFixed(1)} mph` : ''} reading invalid?
+                            Mark this {r.velocity != null ? `${r.velocity.toFixed(1)} mph` : ''} reading invalid
+                            <span className="font-normal text-xs ml-2" style={{ color: '#94a3b8' }}>reason optional</span>
                           </p>
                           <p className="text-xs mt-0.5 mb-3" style={{ color: '#94a3b8' }}>
-                            The reading stays on the record with this reason. Its result and any published rollups are withdrawn immediately; Restore brings the same result back.
+                            The reading stays on the record. Its result and any published rollups are withdrawn immediately; Restore brings the same result back. Who marked it and when is always recorded; a reason is kept with it if you add one.
                             {r.note ? <span style={{ color: '#fbbf24' }}> Current note: “{r.note}”.</span> : ''}
                           </p>
                           <div className="flex flex-wrap gap-2 mb-3">
@@ -334,10 +334,10 @@ export default function RadarQueuePage() {
                               value={invalidating.detail}
                               onChange={e => setInvalidating(v => ({ ...v, detail: e.target.value }))}
                               onKeyDown={e => { if (e.key === 'Enter') submitInvalid(); if (e.key === 'Escape') setInvalidating(null); }}
-                              placeholder={invalidating.reason ? 'Add detail (optional) — e.g. car on the road behind the mound' : 'Or type the reason…'}
+                              placeholder={invalidating.reason ? 'Add detail — e.g. car on the road behind the mound' : 'Reason (optional)…'}
                               className="flex-1 min-w-64"
                             />
-                            <PrimaryButton onClick={submitInvalid} disabled={!invalidReason(invalidating)}>Mark invalid</PrimaryButton>
+                            <PrimaryButton onClick={submitInvalid}>Mark invalid</PrimaryButton>
                             <GhostButton onClick={() => setInvalidating(null)}>Cancel</GhostButton>
                           </div>
                         </div>
