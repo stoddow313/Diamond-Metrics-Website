@@ -119,9 +119,12 @@ export function mountCommandRadarRoutes(app, { db, requireInternal }) {
       ? db.prepare(`SELECT id, first_name, last_name, primary_position FROM players WHERE id IN (${[...rosterIds].map(() => '?').join(',')}) ORDER BY last_name`).all(...rosterIds)
       : [];
 
+    // Live rollup preview over the results that still count: withdrawn
+    // (invalidated) and superseded rows never enter it — same rule as release.
     const drafts = db.prepare(
       `SELECT player_id, metric_code, value, status FROM cmd_metric_results
-       WHERE job_id = ? AND metric_code IN ('pitch_velocity_radar', 'exit_velocity_radar')`
+       WHERE job_id = ? AND metric_code IN ('pitch_velocity_radar', 'exit_velocity_radar')
+         AND status != 'withdrawn' AND superseded_by IS NULL AND value IS NOT NULL`
     ).all(job.id);
     const byPlayer = new Map();
     for (const d of drafts) {
