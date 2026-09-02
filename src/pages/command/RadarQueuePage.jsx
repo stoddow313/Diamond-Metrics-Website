@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { api } from '../../lib/api';
 import { Field, TextInput, Select, PrimaryButton, GhostButton, ErrorNote } from '../../components/admin/ui';
@@ -11,6 +11,10 @@ import { cardStyle } from '../../components/admin/theme';
 // publish without video.
 
 const STATUS_COLORS = { unmatched: '#fbbf24', matched: '#4ade80', invalid: '#64748b' };
+
+// Quick-pick reasons for invalidating a reading. Free text can replace or
+// extend them; whichever is chosen is what the audit trail records.
+const INVALID_REASONS = ['Radar noise', 'Wrong pitcher / player', 'Duplicate reading', 'Warm-up, not game', 'Unreadable', 'Test reading'];
 
 function ReadingStatus({ value }) {
   return (
@@ -32,7 +36,7 @@ export default function RadarQueuePage() {
   const [sticky, setSticky] = useState({ player_id: '', pitch_or_exit: 'pitch', pitch_type: 'unknown' });
   const [manual, setManual] = useState({ velocity: '', context: '', note: '' });
   const [busyId, setBusyId] = useState(null);        // row with an action in flight
-  const [invalidating, setInvalidating] = useState(null);  // { id, note } — inline reason entry
+  const [invalidating, setInvalidating] = useState(null);  // { id, reason, detail } — reason panel under the row
   const [notice, setNotice] = useState('');
   const fileRef = useRef(null);
 
@@ -91,12 +95,16 @@ export default function RadarQueuePage() {
   // Invalid takes a reason inline. A native prompt() returns null whenever the
   // browser or an extension suppresses it, which silently aborted the action
   // with neither success nor error — the reported "hang".
+  const invalidReason = v => [v?.reason, v?.detail?.trim()].filter(Boolean).join(' — ');
+
   async function submitInvalid() {
-    const { id, note } = invalidating;
+    const { id } = invalidating;
+    const note = invalidReason(invalidating);
+    if (!note) return;   // a reason is what makes the audit trail worth having
     const reading = data.readings.find(r => r.id === id);
     setError(''); setNotice(''); setBusyId(id);
     try {
-      await api.commandClassifyReading(id, { status: 'invalid', note: note.trim() });
+      await api.commandClassifyReading(id, { status: 'invalid', note });
       setInvalidating(null);
       await load();
       revealBucket('invalid');
@@ -228,7 +236,8 @@ export default function RadarQueuePage() {
               </thead>
               <tbody>
                 {visible.map(r => (
-                  <tr key={r.id} className="border-t" style={{ borderColor: '#1e3a5f' }}>
+                <Fragment key={r.id}>
+                  <tr className="border-t" style={{ borderColor: '#1e3a5f' }}>
                     <td className="px-4 py-2.5 font-bold text-white whitespace-nowrap">
                       {r.velocity != null ? `${r.velocity.toFixed(1)} mph` : <span style={{ color: '#64748b' }}>unreadable</span>}
                     </td>
@@ -260,17 +269,7 @@ export default function RadarQueuePage() {
                       {busyId === r.id ? (
                         <span className="text-xs font-bold" style={{ color: '#38bdf8' }}>saving…</span>
                       ) : invalidating?.id === r.id ? (
-                        <span className="inline-flex items-center gap-1.5">
-                          <TextInput
-                            autoFocus
-                            value={invalidating.note}
-                            onChange={e => setInvalidating(v => ({ ...v, note: e.target.value }))}
-                            onKeyDown={e => { if (e.key === 'Enter') submitInvalid(); if (e.key === 'Escape') setInvalidating(null); }}
-                            placeholder="reason (car radar, warm-up…)"
-                          />
-                          <PrimaryButton onClick={submitInvalid}>Mark invalid</PrimaryButton>
-                          <GhostButton onClick={() => setInvalidating(null)}>Cancel</GhostButton>
-                        </span>
+                        <span className="text-xs font-bold" style={{ color: '#fbbf24' }}>choose a reason ↓</span>
                       ) : (
                         <>
                           {r.status !== 'invalid' && r.velocity != null && (
@@ -280,7 +279,7 @@ export default function RadarQueuePage() {
                           )}
                           <span className="inline-block w-1.5" />
                           {r.status !== 'invalid' && (
-                            <GhostButton onClick={() => setInvalidating({ id: r.id, note: r.note || '' })}>Invalid</GhostButton>
+                            <GhostButton onClick={() => setInvalidating({ id: r.id, reason: '', detail: '' })}>Invalid</GhostButton>
                           )}
                           {r.status === 'invalid' && (
                             // A reading that still carries its player goes straight back to that
@@ -300,6 +299,52 @@ export default function RadarQueuePage() {
                       )}
                     </td>
                   </tr>
+                  {invalidating?.id === r.id && busyId !== r.id && (
+                    <tr key={`${r.id}-reason`} data-testid="invalid-reason-panel">
+                      <td colSpan={6} className="px-4 pb-4 pt-1">
+                        <div className="rounded-xl border p-4" style={{ borderColor: 'rgba(251, 191, 36, 0.35)', backgroundColor: 'rgba(251, 191, 36, 0.06)' }}>
+                          <p className="text-sm font-bold text-white">
+                            Why is this {r.velocity != null ? `${r.velocity.toFixed(1)} mph` : ''} reading invalid?
+                          </p>
+                          <p className="text-xs mt-0.5 mb-3" style={{ color: '#94a3b8' }}>
+                            The reading stays on the record with this reason. Its result and any published rollups are withdrawn immediately; Restore brings the same result back.
+                            {r.note ? <span style={{ color: '#fbbf24' }}> Current note: “{r.note}”.</span> : ''}
+                          </p>
+                          <div className="flex flex-wrap gap-2 mb-3">
+                            {INVALID_REASONS.map(reason => {
+                              const active = invalidating.reason === reason;
+                              return (
+                                <button
+                                  key={reason}
+                                  type="button"
+                                  onClick={() => setInvalidating(v => ({ ...v, reason: active ? '' : reason }))}
+                                  className="text-xs font-bold px-3 py-1.5 rounded-full border cursor-pointer"
+                                  style={active
+                                    ? { borderColor: '#fbbf24', backgroundColor: 'rgba(251, 191, 36, 0.2)', color: '#fbbf24' }
+                                    : { borderColor: '#334155', color: '#cfe8ff' }}
+                                >
+                                  {reason}
+                                </button>
+                              );
+                            })}
+                          </div>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <TextInput
+                              autoFocus
+                              value={invalidating.detail}
+                              onChange={e => setInvalidating(v => ({ ...v, detail: e.target.value }))}
+                              onKeyDown={e => { if (e.key === 'Enter') submitInvalid(); if (e.key === 'Escape') setInvalidating(null); }}
+                              placeholder={invalidating.reason ? 'Add detail (optional) — e.g. car on the road behind the mound' : 'Or type the reason…'}
+                              className="flex-1 min-w-64"
+                            />
+                            <PrimaryButton onClick={submitInvalid} disabled={!invalidReason(invalidating)}>Mark invalid</PrimaryButton>
+                            <GhostButton onClick={() => setInvalidating(null)}>Cancel</GhostButton>
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
                 ))}
               </tbody>
             </table>
