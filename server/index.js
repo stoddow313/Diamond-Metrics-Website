@@ -19,6 +19,7 @@ import { mountCommandMeasureRoutes } from './commandMeasureRoutes.js';
 import { mountCommandReviewRoutes } from './commandReviewRoutes.js';
 import { startInlineWorker } from './mediaWorker.js';
 import { mountCommandOpsRoutes } from './commandOpsRoutes.js';
+import { mountLiveRoutes } from './liveRoutes.js';
 import { startBackupScheduler } from './backup.js';
 import { requestLogger, errorHandler, installProcessHandlers, log, ENV } from './observability.js';
 import {
@@ -79,6 +80,18 @@ function requireAdmin(req, res, next) {
 }
 
 // Command workspace access: any internal role (admin | analyst | reviewer).
+// Any signed-in principal, staff or player. Playback gating cares that someone
+// is signed in, not which kind — team scoping is a separate, unbuilt step.
+function currentUser(req) {
+  const header = req.headers.authorization || '';
+  const token = header.startsWith('Bearer ') ? header.slice(7) : null;
+  if (!token) return null;
+  const internal = internalFromToken(token);
+  if (internal) return { kind: 'internal', id: internal.id, role: internal.role };
+  const player = playerFromToken(token);
+  return player ? { kind: 'player', id: player.player_user_id } : null;
+}
+
 function requireInternal(req, res, next) {
   const header = req.headers.authorization || '';
   const token = header.startsWith('Bearer ') ? header.slice(7) : null;
@@ -1765,6 +1778,12 @@ mountCommandRadarRoutes(app, { db, requireInternal });
 mountCommandMeasureRoutes(app, { db, requireInternal });
 mountCommandReviewRoutes(app, { db, requireInternal });
 mountCommandOpsRoutes(app, { db, requireInternal, createJob });
+
+// Field Live (M7). Off unless DM_LIVE_ENABLED is set, so this ships dark and the
+// relay simply gets 404s until someone turns it on deliberately.
+if (process.env.DM_LIVE_ENABLED === '1') {
+  mountLiveRoutes(app, { db, requireInternal, currentUser });
+}
 // Media processing: inline worker in dev / single-service deployments;
 // DM_INLINE_WORKER=0 turns it off when the dedicated Render worker runs.
 if (process.env.DM_INLINE_WORKER !== '0') startInlineWorker(db);

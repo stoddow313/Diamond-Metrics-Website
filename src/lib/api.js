@@ -43,6 +43,11 @@ export const api = {
   // catalog
   catalog: () => request('/api/metrics/catalog', { auth: false }),
 
+  // Field Live. The viewer page needs only these two; everything that touches a
+  // stream key is staff-only and lives in Command.
+  liveStream: (id) => request(`/api/live/streams/${id}/public`),
+  livePlayback: (id) => request(`/api/live/streams/${id}/playback`),
+
   // players
   listPlayers: () => request('/api/players'),
   createPlayer: (player) => request('/api/players', { method: 'POST', body: player }),

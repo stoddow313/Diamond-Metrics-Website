@@ -388,6 +388,65 @@ for (const table of ['players', 'organizations', 'teams', 'tournaments', 'tourna
 }
 
 // ── Password hashing (scrypt, no native deps beyond node:crypto) ────────
+// ── Field Live (M7): live streams beside the existing footage pipeline ──────
+// Kept in this file with the rest of the schema. Additive only: these tables are
+// created on boot and nothing else references them, so the feature can be turned
+// off without touching data.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS cmd_live_streams (
+    id               TEXT PRIMARY KEY,
+    job_id           TEXT NOT NULL,
+    label            TEXT,
+    path             TEXT NOT NULL UNIQUE,
+    stream_key       TEXT NOT NULL,
+    status           TEXT NOT NULL DEFAULT 'created',
+    consent          TEXT NOT NULL DEFAULT 'team',
+    created_at       TEXT NOT NULL,
+    started_at       TEXT,
+    ended_at         TEXT,
+    recording_prefix TEXT
+  );
+
+  -- The relay's own timestamps. Availability and reconnect time are computed
+  -- from these, so this is evidence rather than bookkeeping.
+  CREATE TABLE IF NOT EXISTS cmd_live_events (
+    id        INTEGER PRIMARY KEY AUTOINCREMENT,
+    stream_id TEXT NOT NULL REFERENCES cmd_live_streams(id) ON DELETE CASCADE,
+    kind      TEXT NOT NULL,
+    at        TEXT NOT NULL,
+    detail    TEXT,
+    source    TEXT
+  );
+  CREATE INDEX IF NOT EXISTS idx_live_events_stream ON cmd_live_events (stream_id, id);
+
+  -- The 10-second operator overlay log from the phone.
+  CREATE TABLE IF NOT EXISTS cmd_live_samples (
+    id        INTEGER PRIMARY KEY AUTOINCREMENT,
+    stream_id TEXT NOT NULL REFERENCES cmd_live_streams(id) ON DELETE CASCADE,
+    at        TEXT NOT NULL,
+    payload   TEXT NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_live_samples_stream ON cmd_live_samples (stream_id, id);
+
+  -- The HD master, uploaded from the phone after the game by presigned part.
+  -- Distinct from the relay's live copy: two recordings of the same event.
+  CREATE TABLE IF NOT EXISTS cmd_live_masters (
+    id           TEXT PRIMARY KEY,
+    stream_id    TEXT NOT NULL REFERENCES cmd_live_streams(id) ON DELETE CASCADE,
+    filename     TEXT NOT NULL,
+    bytes        INTEGER NOT NULL,
+    part_size    INTEGER NOT NULL,
+    parts_total  INTEGER NOT NULL,
+    status       TEXT NOT NULL DEFAULT 'uploading',
+    created_at   TEXT NOT NULL,
+    completed_at TEXT,
+    storage_key  TEXT NOT NULL,
+    upload_id    TEXT,
+    expected_fps REAL
+  );
+  CREATE INDEX IF NOT EXISTS idx_live_masters_stream ON cmd_live_masters (stream_id, created_at);
+`);
+
 export function hashPassword(password) {
   const salt = randomBytes(16).toString('hex');
   const hash = scryptSync(password, salt, 64).toString('hex');

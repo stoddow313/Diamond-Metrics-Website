@@ -28,6 +28,7 @@ import AdminTournamentEditorPage from './pages/admin/AdminTournamentEditorPage';
 import AdminImportsPage from './pages/admin/AdminImportsPage';
 import PublicProfilePage from './pages/PublicProfilePage';
 import TeamDashboardPage from './pages/TeamDashboardPage';
+import LivePage from './pages/LivePage';
 import TournamentDashboardPage from './pages/TournamentDashboardPage';
 import BlogPage from './pages/BlogPage';
 import BaseballFilmingGuidePage from './pages/BaseballFilmingGuidePage';
@@ -72,6 +73,7 @@ function AppRoutes() {
       <Route path="/claim/:token" element={<ClaimPage />} />
       <Route path="/claim-staff/:token" element={<ClaimStaffPage />} />
       <Route path="/p/:slug" element={<PublicProfilePage />} />
+      <Route path="/live/:id" element={<LivePage />} />
       <Route path="/teams/:slug" element={<TeamDashboardPage />} />
       <Route path="/tournaments/:slug" element={<TournamentDashboardPage />} />
       <Route path="/me" element={<RoleRoute role="player"><PublicProfilePage portal /></RoleRoute>} />
