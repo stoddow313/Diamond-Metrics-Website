@@ -32,6 +32,33 @@ services:
       # ffmpeg/ffprobe ship as static per-platform npm dependencies and are
       # resolved automatically — do NOT set FFMPEG_PATH/FFPROBE_PATH here.
       # An override is only honoured if it is an absolute path that exists.
+      # ── Field Live (M7) ──────────────────────────────────────────────
+      # Off until deliberately turned on: unset, /api/live/* is simply not
+      # mounted and the relay gets 404s.
+      - key: DM_LIVE_ENABLED
+        sync: false # set to "1" in the dashboard when the relay is up
+      # Shared secret proving a caller is the relay. Must match DM_RELAY_TOKEN
+      # in /etc/field-live.env on the Hetzner box, in BOTH places it appears.
+      # Unset, every relay call is refused — it fails closed on purpose.
+      - key: DM_RELAY_TOKEN
+        sync: false
+      # Signs short-TTL viewer tokens. Generated, because a value that changes
+      # on restart would only break links, never leak.
+      - key: DM_LIVE_SECRET
+        generateValue: true
+      # Where the phone publishes. DNS-only in Cloudflare: SRT is UDP and
+      # cannot traverse the proxy.
+      - key: DM_RELAY_HOST
+        value: ingest.diamondmetrics.ai
+      # Where viewers watch. Proxied, so segments cache at the edge.
+      - key: DM_PLAYBACK_BASE
+        value: https://live.diamondmetrics.ai
+      # "authenticated" requires a signed-in session for a playback URL;
+      # "public" hands one to anyone with the stream id. Team scoping against
+      # per-job consent is not built yet.
+      - key: DM_LIVE_PLAYBACK_ACCESS
+        value: authenticated
+
       - key: DM_ENV
         value: production
     disk:
