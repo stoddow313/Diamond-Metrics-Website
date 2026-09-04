@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="dark light">
+<title>Field Live POC · console</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;800&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="console.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/hls.js/1.5.17/hls.min.js"></script>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="top">
+    <div class="top-row">
+      <div class="brand">
+        <span class="tag"><span class="dot" id="live-dot"></span> Field Live · POC console</span>
+        <span class="eyebrow">Diamond Metrics</span>
+        <a class="eyebrow" href="/command" style="text-decoration:none">← Command</a>
+      </div>
+      <div class="health" id="health">
+        <span class="tag"><span class="dot" id="dot-api"></span> control plane</span>
+        <span class="tag"><span class="dot" id="dot-relay"></span> relay</span>
+        <span class="tag mono" id="relay-counts">– publishing · – watching</span>
+      </div>
+    </div>
+    <h1 style="margin-top:16px">Issue a stream, publish to it, watch it come back.</h1>
+    <p class="muted" style="max-width:64ch;margin:8px 0 0">
+      The relay holds no credentials. Every publish and every viewer is authorised by this
+      control plane, and the relay's own <code>runOnAvailable</code> timestamps — not the phone's —
+      are what the acceptance table below is scored from.
+    </p>
+  </header>
+
+  <div class="grid">
+
+    <!-- ── left column ──────────────────────────────────────────────── -->
+    <div class="stack">
+      <section class="card">
+        <header><h2>Sessions</h2><span class="eyebrow" id="session-count"></span></header>
+        <div class="sessions" id="sessions"><p class="empty">No streams yet.</p></div>
+
+        <form id="new-stream">
+          <label class="field"><span>Command job</span>
+            <input name="job_id" value="job_demo_1" required autocomplete="off"></label>
+          <label class="field"><span>Label</span>
+            <input name="label" value="Field 4 · 10U Championship" autocomplete="off"></label>
+          <label class="field"><span>Consent</span>
+            <select name="consent">
+              <option value="team">Team only</option>
+              <option value="private">Private</option>
+            </select></label>
+          <div class="row"><button type="submit">Issue stream</button></div>
+        </form>
+        <div id="new-stream-error"></div>
+      </section>
+
+      <section class="card">
+        <header><h2>Latency</h2><span class="eyebrow">acceptance · glass to glass</span></header>
+        <div class="stopwatch" id="stopwatch">00:00.000</div>
+        <p class="note">
+          Point the capturing camera at this clock, then read the clock inside the player.
+          The difference is glass-to-glass latency. Target 10 s standard HLS, 5 s stretch.
+        </p>
+        <div class="row"><button class="ghost" id="mark-latency">Record a reading</button></div>
+        <div id="latency-readings" class="note"></div>
+      </section>
+    </div>
+
+    <!-- ── right column ─────────────────────────────────────────────── -->
+    <div class="stack">
+
+      <section class="card" id="stream-card" hidden>
+        <header>
+          <div>
+            <h2 id="stream-label">–</h2>
+            <span class="eyebrow mono" id="stream-sub">–</span>
+          </div>
+          <div class="row">
+            <button class="ghost" id="btn-refresh">Refresh</button>
+            <button class="danger" id="btn-end">End session</button>
+          </div>
+        </header>
+
+        <h3 style="margin-bottom:8px">Watch — hand this to anyone</h3>
+        <div class="urls" id="share"></div>
+        <p class="note" style="margin-top:6px">
+          Opens the stream while it is on and the recording afterwards. No keys, no
+          controls. Anyone on this network can open it — production gates it on team
+          membership.
+        </p>
+
+        <h3 style="margin:16px 0 8px">Ingest — hand these to the phone</h3>
+        <div class="urls" id="urls"></div>
+
+        <h3 style="margin:16px 0 8px">Publish a test stream</h3>
+        <div class="row">
+          <button id="btn-whip">Publish from this browser</button>
+          <button class="ghost" id="btn-stop-whip" hidden>Stop publishing</button>
+          <span class="muted" id="whip-state"></span>
+        </div>
+        <p class="note">Browser publishing uses WHIP and exists so the loop can be exercised without a
+          phone. It is a POC convenience, not part of the product: the field path is SRT from iOS.</p>
+        <pre id="cli" style="margin-top:10px"></pre>
+      </section>
+
+      <section class="card" id="watch-card" hidden>
+        <header><h2>Watch</h2><span class="eyebrow" id="watch-sub">signed playback · team only</span></header>
+        <div class="player" id="player">
+          <video id="video" playsinline controls muted></video>
+          <div class="placeholder" id="player-placeholder">
+            <strong>Nothing publishing yet</strong>
+            <span>The player starts on its own when the relay reports the stream available.</span>
+          </div>
+          <div class="overlay" id="player-overlay"></div>
+        </div>
+        <div class="tel" id="telemetry"></div>
+        <div id="player-error"></div>
+      </section>
+
+      <section class="card" id="timeline-card" hidden>
+        <header><h2>Session timeline</h2><span class="eyebrow">the relay's own timestamps</span></header>
+        <div class="timeline" id="timeline"></div>
+      </section>
+
+      <section class="card" id="event-card" hidden>
+        <header>
+          <h2>Event recordings</h2>
+          <span class="eyebrow">the same game, two ways</span>
+        </header>
+        <p class="note" style="margin-top:0">
+          The relay's copy exists the moment the game does and is what viewers saw.
+          The master is what the phone kept — higher resolution, higher frame rate,
+          and the only one analytics runs on. It arrives afterwards.
+        </p>
+        <div class="compare" id="compare"></div>
+      </section>
+
+      <section class="card">
+        <header><h2>Acceptance criteria</h2><span class="eyebrow">go / no-go</span></header>
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Criterion</th><th>Target</th><th>Measured here</th><th>State</th></tr></thead>
+            <tbody id="acceptance"></tbody>
+          </table>
+        </div>
+        <p class="note">
+          Rows the browser cannot honestly measure stay <span class="pill manual">off-console</span>:
+          they need a phone, a field, or the load test in <code>tools/load-test.sh</code>. The console
+          scores what it can actually observe and says so for the rest.
+        </p>
+      </section>
+
+    </div>
+  </div>
+</div>
+<script src="console.js" type="module"></script>
+</body>
+</html>

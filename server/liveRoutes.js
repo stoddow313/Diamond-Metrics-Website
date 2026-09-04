@@ -148,6 +148,53 @@ export function mountLiveRoutes(app, { db, requireInternal, currentUser }) {
     res.json({ ok: true });
   });
 
+  // ── the console ───────────────────────────────────────────────────────────
+
+  // Relay liveness comes from Caddy's /healthz, not MediaMTX's API — that stays
+  // on loopback and is not reachable from here, which is the point. What is
+  // publishing comes from our own event table, which is the honest source anyway.
+  r.get('/health', requireInternal, async (_req, res) => {
+    const streams = listStreams(db);
+    let relay = { reachable: false, error: 'not checked' };
+    const base = process.env.DM_PLAYBACK_BASE;
+    if (base) {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 4000);
+      try {
+        const probe = await fetch(`${base}/healthz`, { signal: controller.signal });
+        relay = probe.ok ? { reachable: true } : { reachable: false, error: `HTTP ${probe.status}` };
+      } catch (err) {
+        relay = { reachable: false, error: err.name === 'AbortError' ? 'timeout' : err.message };
+      } finally {
+        clearTimeout(timer);
+      }
+    } else {
+      relay = { reachable: false, error: 'DM_PLAYBACK_BASE is not set' };
+    }
+    relay.publishing = streams.filter((s) => s.status === 'live').length;
+    relay.readers = null;   // not knowable without the relay's API
+    res.json({ api: { ok: true, streams: streams.length }, relay, config: relayConfig() });
+  });
+
+  // Both recordings of one event. The relay ships its live copy straight to R2,
+  // so this lists rather than serves — the bytes never pass through here.
+  r.get('/streams/:id/event', requireInternal, async (req, res, next) => {
+    try {
+      const stream = getStream(db, req.params.id);
+      if (!stream) throw httpError(404, 'stream not found');
+      res.json({
+        stream: withUrls(stream),
+        report: sessionReport(db, stream.id),
+        // Live copies live in a separate bucket with its own retention, which
+        // this service is not configured for. Listed as unavailable rather than
+        // silently empty, so it does not read as "nothing was recorded".
+        live_copy: [],
+        live_copy_unavailable: 'Live copies are in the diamond-metrics-live bucket; listing is not wired up yet.',
+        masters: listMasters(db, stream.id),
+      });
+    } catch (err) { next(err); }
+  });
+
   // ── the phone ─────────────────────────────────────────────────────────────
 
   r.post('/streams/:id/samples', requireStreamKey, (req, res) => {
