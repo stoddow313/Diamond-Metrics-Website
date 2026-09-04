@@ -5,7 +5,7 @@
       "destination": "https://diamond-metrics-api.onrender.com/api/:path*"
     },
     {
-      "source": "/((?!api/).*)",
+      "source": "/((?!api/|_poc/).*)",
       "destination": "/index.html"
     }
   ]
