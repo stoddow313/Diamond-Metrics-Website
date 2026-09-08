@@ -1,7 +1,7 @@
 // Phase 2 scorebook routes. Everything reads back the replayed state so the
 // client never keeps its own copy of the truth.
 import { replayJob, appendEvent, appendPlateAppearance, correctEvent, voidEvent, disputeEvent, resolveEvent, rulesetFor, refreshLiveSource,
-         EVENT_TYPES, PA_RESULTS, PITCH_RESULTS, RUNNER_HOWS, SUB_KINDS, FINAL_REASONS, BATTED_BALLS, DIRECTIONS, POSITION_NUMBERS } from './scorebook.js';
+         EVENT_TYPES, PA_RESULTS, PITCH_RESULTS, RUNNER_HOWS, SUB_KINDS, FINAL_REASONS, BATTED_BALLS, DIRECTIONS, POSITION_NUMBERS, setEventClip } from './scorebook.js';
 import { commandRoster } from './commandRoster.js';
 
 export function mountScorebookRoutes(app, { db, requireInternal }) {
@@ -13,6 +13,7 @@ export function mountScorebookRoutes(app, { db, requireInternal }) {
       ruleset: rulesetFor(db, job),
       roster: commandRoster(db, job),
       source,
+      feeds: db.prepare('SELECT id, label, status, effective_fps, nominal_fps, width, height, duration_s FROM cmd_video_feeds WHERE job_id = ? ORDER BY id').all(jobId),
       vocab: { event_types: EVENT_TYPES, pa_results: PA_RESULTS, pitch_results: PITCH_RESULTS, runner_hows: RUNNER_HOWS, sub_kinds: SUB_KINDS, final_reasons: FINAL_REASONS, batted_balls: BATTED_BALLS, directions: DIRECTIONS, position_numbers: POSITION_NUMBERS },
       version: rp.version, state: rp.state, tallies: rp.tallies, issues: rp.issues, log: rp.log,
       events: rp.events.map(e => ({ id: e.id, sequence: e.sequence, event_type: e.event_type, parent_event_id: e.parent_event_id, status: e.status, payload: e.payload })),
@@ -58,4 +59,10 @@ export function mountScorebookRoutes(app, { db, requireInternal }) {
   app.post('/api/command/jobs/:id/scorebook/refresh', requireInternal, (req, res) => handle(res, () => {
     res.json(refreshLiveSource(db, Number(req.params.id), req.internal.id));
   }));
+
+  // Footage link: feed, moment and clip bounds for a tagged play.
+  app.put('/api/command/scorebook/events/:id/clip', requireInternal, (req, res) => {
+    try { res.json(setEventClip(db, Number(req.params.id), req.body || {}, req.internal.id)); }
+    catch (err) { res.status(err.status || 500).json({ error: err.message }); }
+  });
 }

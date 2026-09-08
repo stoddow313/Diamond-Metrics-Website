@@ -14,7 +14,7 @@ process.env.DM_LOG_SILENT = '1';
 
 const { db } = await import('./db.js');
 const { PACKAGES } = await import('./commandLogic.js');
-const { replay, appendEvent, appendPlateAppearance, correctEvent, voidEvent, disputeEvent, resolveEvent, replayJob, ipFromOuts, liveRecordReport } = await import('./scorebook.js');
+const { replay, appendEvent, appendPlateAppearance, correctEvent, voidEvent, disputeEvent, resolveEvent, replayJob, ipFromOuts, liveRecordReport, setEventClip } = await import('./scorebook.js');
 const { validateGameRecordSource, releaseGameRecord } = await import('./gameRecord.js');
 const { computeQaFlags } = await import('./releaseLogic.js');
 
@@ -250,6 +250,32 @@ test('an earned run awaiting the scorer\'s ruling is withheld from the live reco
   assert.equal(patRow().stats.bs_er, undefined, 'no earned runs at all now, so the zero is simply absent');
   assert.ok(!live.report.warnings.some(w => /withheld/.test(w)));
   assert.equal(replayJob(db, j3).tallies.find(t => t.player_id === P).stats.bs_er, 0);
+});
+
+test('tagging: plays carry feed, moment and a default clip; pitches carry their own moments; corrections keep the link; foreign feeds are refused; clips adjust', () => {
+  const j4 = makeJob();
+  const feed = db.prepare("INSERT INTO cmd_video_feeds (job_id, label, storage_key, original_name, status, effective_fps, nominal_fps, width, height, duration_s) VALUES (?, 'Behind home', 'k4', 'g.mp4', 'ready', 60, 60, 1920, 1080, 5400)").run(j4).lastInsertRowid;
+  const other = db.prepare("INSERT INTO cmd_video_feeds (job_id, label, storage_key, original_name, status, effective_fps, nominal_fps, width, height, duration_s) VALUES (?, 'Other job', 'k5', 'o.mp4', 'ready', 60, 60, 1920, 1080, 100)").run(job).lastInsertRowid;
+  ourLineup(j4, false); theirLineup(j4);
+  const rp = pa(j4, { pa: { result: 'single' }, pitches: [{ result: 'ball', timecode_s: 120.0 }, { result: 'in_play', timecode_s: 125.5 }], runners: [], selected_feed_id: feed });
+  const row = db.prepare('SELECT * FROM cmd_events WHERE id = ?').get(rp.event_id);
+  assert.equal(row.selected_feed_id, feed); assert.equal(row.timecode_s, 125.5, 'the play is stamped with its last pitch');
+  assert.deepEqual([row.clip_start_s, row.clip_end_s], [121.5, 133.5], 'default clip around the moment');
+  const pitchRows = db.prepare("SELECT timecode_s, payload FROM cmd_events WHERE parent_event_id = ? AND event_type = 'pitch' ORDER BY sequence").all(rp.event_id);
+  assert.deepEqual(pitchRows.map(r => r.timecode_s), [120, 125.5]);
+  assert.ok(!('timecode_s' in JSON.parse(pitchRows[0].payload)), 'the moment lives on the row, not in the payload');
+  assert.ok(rp.log.some(l => l.id === rp.event_id && l.timecode_s === 125.5 && l.feed_id === feed && l.clip[0] === 121.5), 'the log carries the link for the UI');
+  const sb = appendEvent(db, j4, { event_type: 'runner', payload: { runner_player_id: SS, from: 1, to: 2, how: 'stolen_base' }, selected_feed_id: feed, timecode_s: 190 }, admin);
+  assert.equal(sb.event.timecode_s, 190); assert.equal(sb.event.clip_start_s, 186);
+  const fixed = correctEvent(db, rp.event_id, { payload: { result: 'double', pitch_count: 2 } }, admin, 'video review');
+  const fixedRow = db.prepare('SELECT * FROM cmd_events WHERE id = ?').get(fixed.event_id);
+  assert.equal(fixedRow.timecode_s, 125.5); assert.equal(fixedRow.selected_feed_id, feed); assert.equal(fixedRow.clip_end_s, 133.5);
+  assert.throws(() => pa(j4, { pa: { result: 'flyout' }, selected_feed_id: other, timecode_s: 200 }), /attached to this job/);
+  assert.throws(() => appendEvent(db, j4, { event_type: 'runner', payload: { runner_player_id: SS, from: 2, to: 3, how: 'stolen_base' }, timecode_s: -1 }, admin), /non-negative/);
+  const adj = setEventClip(db, fixed.event_id, { clip_start_s: 124, clip_end_s: 129 }, admin);
+  assert.deepEqual([adj.event.clip_start_s, adj.event.clip_end_s, adj.event.timecode_s], [124, 129, 125.5]);
+  assert.ok(db.prepare("SELECT 1 FROM cmd_review_actions WHERE target_table='cmd_events' AND target_id=? AND action='clip_adjusted'").get(fixed.event_id));
+  assert.throws(() => setEventClip(db, fixed.event_id, { clip_start_s: 130, clip_end_s: 129 }, admin), /end after the start/);
 });
 
 test('game-over suggestion follows the ruleset run rule; scoring after final is refused', () => {

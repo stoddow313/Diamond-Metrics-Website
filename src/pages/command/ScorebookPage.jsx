@@ -1,6 +1,8 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { api } from '../../lib/api';
+import FeedPlayer from './FeedPlayer';
+import { formatTimecode } from '../../lib/timecode';
 import { Field, TextInput, Select, PrimaryButton, GhostButton, ErrorNote } from '../../components/admin/ui';
 import { cardStyle } from '../../components/admin/theme';
 
@@ -76,9 +78,35 @@ export default function ScorebookPage() {
   // log actions
   const [editing, setEditing] = useState(null);         // { event, payload, note }
   const [finalForm, setFinalForm] = useState(null);
+  // video tagging: the selected feed plays beside the scorer and every event is
+  // stamped with the feed and the moment on it (PRD §5 — automatic timecode capture)
+  const [videoFeedId, setVideoFeedId] = useState(null);
+  const [feedDetail, setFeedDetail] = useState(null);
+  const [showVideo, setShowVideo] = useState(true);
+  const [currentFrame, setCurrentFrame] = useState(0);
+  const playerRef = useRef(null);
+  const [pendingSeek, setPendingSeek] = useState(null);   // { seconds, nonce } from a play-by-play row
+  const appliedSeekRef = useRef(null);
 
   const load = useCallback(() => api.commandScorebook(jobId).then(d => { setData(d); return d; }).catch(err => setError(err.message)), [jobId]);
   useEffect(() => { load(); }, [load]);
+  // The first ready feed plays by default; the scorer can switch feeds.
+  const activeFeedId = videoFeedId ?? data?.feeds?.find(f => f.status === 'ready')?.id ?? null;
+  useEffect(() => {
+    if (!activeFeedId) return;
+    api.commandFeed(activeFeedId).then(setFeedDetail).catch(err => setError(err.message));
+  }, [activeFeedId]);
+  const proxy = feedDetail?.feed?.id === activeFeedId ? feedDetail?.renditions?.find(r => r.kind === 'proxy') : null;
+  const fps = proxy?.fps || feedDetail?.feed?.effective_fps || 30;
+  const videoOn = showVideo && !!proxy;
+  const tc = () => Number((currentFrame / fps).toFixed(3));
+  const tag = () => (videoOn ? { selected_feed_id: activeFeedId, timecode_s: tc() } : {});
+  // A jump requested while the player was hidden or loading lands once it is up.
+  useEffect(() => {
+    if (!pendingSeek || pendingSeek.nonce === appliedSeekRef.current || !proxy || !playerRef.current) return;
+    appliedSeekRef.current = pendingSeek.nonce;
+    playerRef.current.seek(pendingSeek.seconds);
+  }, [pendingSeek, proxy]);
 
   const state = data?.state;
   const { b: balls, s: strikeCount } = useMemo(() => countOf(pitches), [pitches]);
@@ -108,7 +136,7 @@ export default function ScorebookPage() {
   // ── pitch handling ────────────────────────────────────────────────────
   function addPitch(result) {
     if (!state || state.final) return;
-    const next = [...pitches, { result }];
+    const next = [...pitches, { result, timecode_s: videoOn ? tc() : undefined }];
     setPitches(next);
     const { b, s } = countOf(next);
     if (result === 'hit_by_pitch') return openResult('hit_by_pitch', next);
@@ -140,8 +168,10 @@ export default function ScorebookPage() {
         out_of_order_ok: !!batter || undefined,
         error_player_id: pa.error_player_id ? Number(pa.error_player_id) : undefined,
       },
-      pitches: pitchList.map(p => ({ result: p.result })),
+      pitches: pitchList.map(p => ({ result: p.result, timecode_s: p.timecode_s })),
       runners,
+      ...tag(),
+      ...(videoOn && pitchList.some(p => p.timecode_s != null) ? { timecode_s: [...pitchList].reverse().find(p => p.timecode_s != null).timecode_s } : {}),
     };
     const d = await run(() => api.commandScorebookPlateAppearance(jobId, body), `${LABELS[pa.result] || pa.result} recorded`);
     if (d) { setPitches([]); setResultPanel(null); setBatterOverride(''); }
@@ -211,7 +241,7 @@ export default function ScorebookPage() {
       const already = state.lineups[s.side]?.slots.some(x => (payload.player_in_id && x.current?.player_id === payload.player_in_id) || (!payload.player_in_id && x.current?.label === payload.player_in_label));
       if (!already) payload.slot = Number(s.slot);
     }
-    const d = await run(() => api.commandScorebookEvent(jobId, { event_type: 'substitution', payload }), `${s.kind.replace(/_/g, ' ')} recorded`);
+    const d = await run(() => api.commandScorebookEvent(jobId, { event_type: 'substitution', ...tag(), payload }), `${s.kind.replace(/_/g, ' ')} recorded`);
     if (d) setSub(null);
   }
 
@@ -219,7 +249,7 @@ export default function ScorebookPage() {
   async function runnerPlay(base, how, to, out = false) {
     const r = state.bases[base];
     if (!r) return;
-    await run(() => api.commandScorebookEvent(jobId, { event_type: 'runner', payload: { runner_player_id: r.ref.player_id || undefined, runner_label: r.ref.label || undefined, from: base, to: out ? base : to, how, out } }), `${refName(r.ref)}: ${how.replace(/_/g, ' ')}`);
+    await run(() => api.commandScorebookEvent(jobId, { event_type: 'runner', ...tag(), payload: { runner_player_id: r.ref.player_id || undefined, runner_label: r.ref.label || undefined, from: base, to: out ? base : to, how, out } }), `${refName(r.ref)}: ${how.replace(/_/g, ' ')}`);
   }
   // One wild pitch, passed ball or balk moves every runner up a base. The
   // events share a group id so the engine charges the pitcher (or catcher) once.
@@ -231,7 +261,7 @@ export default function ScorebookPage() {
       let d = null;
       for (const b of occupied) {
         const r = state.bases[b];
-        d = await api.commandScorebookEvent(jobId, { event_type: 'runner', payload: { runner_player_id: r.ref.player_id || undefined, runner_label: r.ref.label || undefined, from: b, to: b + 1, how, group } });
+        d = await api.commandScorebookEvent(jobId, { event_type: 'runner', ...tag(), payload: { runner_player_id: r.ref.player_id || undefined, runner_label: r.ref.label || undefined, from: b, to: b + 1, how, group } });
       }
       return d;
     }, `${how.replace(/_/g, ' ')}: ${occupied.length} runner${occupied.length === 1 ? '' : 's'} moved up`);
@@ -312,7 +342,7 @@ export default function ScorebookPage() {
               </Select>
             </Field>
             <Field label="Note"><TextInput value={finalForm.note} onChange={e => setFinalForm(f => ({ ...f, note: e.target.value }))} placeholder="1:45 time limit" /></Field>
-            <PrimaryButton disabled={busy} onClick={async () => { const d = await run(() => api.commandScorebookEvent(jobId, { event_type: 'game_final', payload: finalForm }), 'Game marked final — validate the game record from the job page'); if (d) setFinalForm(null); }}>Mark final</PrimaryButton>
+            <PrimaryButton disabled={busy} onClick={async () => { const d = await run(() => api.commandScorebookEvent(jobId, { event_type: 'game_final', ...tag(), payload: finalForm }), 'Game marked final — validate the game record from the job page'); if (d) setFinalForm(null); }}>Mark final</PrimaryButton>
             <GhostButton onClick={() => setFinalForm(null)}>Cancel</GhostButton>
           </div>
         )}
@@ -341,6 +371,26 @@ export default function ScorebookPage() {
           </div>
         )}
       </section>
+
+      {data.feeds?.some(f => f.status === 'ready') && (
+        <section className="rounded-2xl border p-4 mb-4" style={cardStyle} data-testid="video-panel">
+          <div className="flex items-center justify-between gap-3 flex-wrap mb-2">
+            <div className="flex items-center gap-3">
+              <p className="text-[11px] font-bold uppercase tracking-widest" style={{ color: '#94a3b8' }}>Footage</p>
+              <Select value={activeFeedId || ''} onChange={e => setVideoFeedId(Number(e.target.value))}>
+                {data.feeds.filter(f => f.status === 'ready').map(f => <option key={f.id} value={f.id}>{f.label}{f.effective_fps ? ` · ${Number(f.effective_fps.toFixed?.(0) ?? f.effective_fps)} fps` : ''}</option>)}
+              </Select>
+              {videoOn && <span className="text-xs" style={{ color: '#64748b' }}>every play is stamped at <b style={{ color: '#cfe8ff' }}>{formatTimecode(currentFrame / fps)}</b> as you score it</span>}
+            </div>
+            <GhostButton onClick={() => setShowVideo(v => !v)}>{showVideo ? 'Hide video' : 'Show video'}</GhostButton>
+          </div>
+          {showVideo && proxy && (
+            <FeedPlayer ref={playerRef} src={proxy.url} fps={fps} onFrame={setCurrentFrame} captureKeys={!resultPanel && !sub && !finalForm && !editing}
+              markers={data.log.filter(l => l.timecode_s != null && !l.child && l.feed_id === activeFeedId).map(l => ({ id: l.id, t: l.timecode_s, label: l.text, kind: l.type }))} />
+          )}
+          {showVideo && !proxy && <p className="text-xs" style={{ color: '#94a3b8' }}>Loading the review proxy…</p>}
+        </section>
+      )}
 
       {tab === 'score' && !lineupsReady && (
         <section className="rounded-2xl border p-5" style={cardStyle} data-testid="lineup-setup">
@@ -647,6 +697,10 @@ export default function ScorebookPage() {
                     <td className="px-4 py-2 tabular-nums" style={{ color: '#64748b' }}>{l.sequence}</td>
                     <td className="px-4 py-2 text-xs" style={{ color: '#94a3b8' }}>{l.half ? `${l.half === 'top' ? 'T' : 'B'}${l.inning}` : '—'}</td>
                     <td className="px-4 py-2" style={{ color: '#cfe8ff' }}>
+                      {l.timecode_s != null && (
+                        <button onClick={() => { if (l.feed_id && l.feed_id !== activeFeedId) setVideoFeedId(l.feed_id); setShowVideo(true); setPendingSeek({ seconds: l.timecode_s, nonce: Date.now() }); }}
+                          className="mr-2 text-xs tabular-nums cursor-pointer hover:underline" style={{ color: '#38bdf8' }} title="Jump to this moment in the footage" data-testid={`jump-${l.id}`}>▶ {formatTimecode(l.timecode_s)}</button>
+                      )}
                       {l.text}{disputed ? <span className="ml-2 text-xs font-bold" style={{ color: '#fbbf24' }}>under review</span> : null}
                       {editing?.event?.id === l.id && (
                         <CorrectionEditor editing={editing} setEditing={setEditing} vocab={data.vocab} busy={busy}

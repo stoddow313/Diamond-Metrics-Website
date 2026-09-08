@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useCallback } from 'react';
+import { useEffect, useRef, useState, useCallback, forwardRef, useImperativeHandle } from 'react';
 import { formatTimecode, parseSeek } from '../../lib/timecode';
 
 // Shared frame-accurate player (Command). Proxies are constant-frame-rate;
@@ -10,8 +10,13 @@ import { formatTimecode, parseSeek } from '../../lib/timecode';
 // Navigation is built for a 1–2 hour game, not a clip: a scrubber, coarse
 // ±1s/±10s/±1min jumps, and direct timecode/frame entry. Stepping one frame
 // at a time through 400,000 frames is not a workflow.
+//
+// Hosts that own the keyboard (the scorebook in its result panel) pass
+// captureKeys={false}; ref.seek(seconds) jumps the player from outside (a
+// play-by-play row); markers [{t, label, kind}] draw tagged events above the
+// scrubber and seek when clicked.
 
-export default function FeedPlayer({ src, fps, onFrame }) {
+const FeedPlayer = forwardRef(function FeedPlayer({ src, fps, onFrame, captureKeys = true, markers = [] }, ref) {
   const videoRef = useRef(null);
   const rvfcRef = useRef(0);
   const frameRef = useRef(0);
@@ -71,7 +76,11 @@ export default function FeedPlayer({ src, fps, onFrame }) {
 
   const stepFrames = useCallback(delta => seekToFrame(frameRef.current + delta), [seekToFrame]);
 
+  // External jumps (a tagged play in the log).
+  useImperativeHandle(ref, () => ({ seek: seconds => seekToFrame(Math.max(0, Math.round(seconds * fps))) }), [seekToFrame, fps]);
+
   useEffect(() => {
+    if (!captureKeys) return undefined;
     const onKey = e => {
       const tag = e.target.tagName;
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
@@ -87,7 +96,7 @@ export default function FeedPlayer({ src, fps, onFrame }) {
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [stepFrames, fps]);
+  }, [stepFrames, fps, captureKeys]);
 
   function submitJump(e) {
     e?.preventDefault();
@@ -130,6 +139,14 @@ export default function FeedPlayer({ src, fps, onFrame }) {
 
       {/* Scrubber — the only practical way across a two-hour game. */}
       <div className="mt-3">
+        {markers.length > 0 && duration > 0 && (
+          <div className="relative h-4 mb-0.5" data-testid="markers" aria-label="Tagged plays">
+            {markers.filter(m => m.t != null && m.t <= duration).map((m, i) => (
+              <button key={m.id ?? i} onClick={() => seekToFrame(Math.round(m.t * fps))} title={`${m.label} · ${formatTimecode(m.t)}`}
+                className="absolute top-0 w-1.5 h-4 rounded-sm cursor-pointer" style={{ left: `calc(${(m.t / duration) * 100}% - 3px)`, backgroundColor: m.kind === 'runner' ? '#fbbf24' : m.kind === 'substitution' ? '#c4b5fd' : m.kind === 'game_final' ? '#4ade80' : '#38bdf8' }} aria-label={`${m.label} at ${formatTimecode(m.t)}`} />
+            ))}
+          </div>
+        )}
         <input
           type="range"
           min={0}
@@ -194,4 +211,6 @@ export default function FeedPlayer({ src, fps, onFrame }) {
       </p>
     </div>
   );
-}
+});
+
+export default FeedPlayer;

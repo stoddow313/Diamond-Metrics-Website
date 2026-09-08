@@ -315,7 +315,8 @@ export function replay(events, { ruleset = {}, disputed = new Set() } = {}) {
   for (const e of events) {
     const p = e.payload || {};
     const dis = isDisputed(e);
-    const entry = { id: e.id, sequence: e.sequence, type: e.event_type, inning: state.inning, half: state.half, outs_before: state.outs, disputed: dis, text: '' };
+    const entry = { id: e.id, sequence: e.sequence, type: e.event_type, inning: state.inning, half: state.half, outs_before: state.outs, disputed: dis, text: '',
+      timecode_s: e.timecode_s ?? null, feed_id: e.selected_feed_id ?? null, clip: e.clip_start_s != null ? [e.clip_start_s, e.clip_end_s] : null };
     switch (e.event_type) {
       case 'lineup': {
         const slots = (p.slots || []).map(s => {
@@ -696,19 +697,36 @@ function describeForAudit(type, p) {
 // Append one event, auto-open the first half inning and auto-advance halves
 // on the third out, keep the live source fresh. Returns the new event plus
 // the replayed state.
-export function appendEvent(db, jobId, { event_type, parent_event_id = null, payload = {}, selected_feed_id = null, timecode_s = null }, actorId) {
+// Video tagging (PRD §5: the event record captures the timecode and selected
+// feed automatically; approved events get a default surrounding clip the
+// analyst can adjust). The feed must belong to the job; the clip defaults to
+// a few seconds before the moment and a few after.
+const DEFAULT_CLIP = { before_s: 4, after_s: 8 };
+function tagFor(db, jobId, { selected_feed_id = null, timecode_s = null, clip_start_s = null, clip_end_s = null } = {}) {
+  const feed = selected_feed_id == null || selected_feed_id === '' ? null : Number(selected_feed_id);
+  if (feed != null && (!Number.isInteger(feed) || !db.prepare('SELECT 1 FROM cmd_video_feeds WHERE id = ? AND job_id = ?').get(feed, jobId))) throw err('selected_feed_id must be a feed attached to this job');
+  const t = timecode_s == null || timecode_s === '' ? null : Number(timecode_s);
+  if (t != null && !(Number.isFinite(t) && t >= 0)) throw err('timecode_s must be a non-negative number of seconds');
+  let c0 = clip_start_s == null || clip_start_s === '' ? null : Number(clip_start_s);
+  let c1 = clip_end_s == null || clip_end_s === '' ? null : Number(clip_end_s);
+  if ((c0 != null || c1 != null) && !(Number.isFinite(c0) && Number.isFinite(c1) && c0 >= 0 && c1 > c0)) throw err('clip_start_s and clip_end_s must be seconds with the end after the start');
+  if (t != null && c0 == null) { c0 = Math.max(0, t - DEFAULT_CLIP.before_s); c1 = t + DEFAULT_CLIP.after_s; }
+  return { feed, t, c0, c1 };
+}
+const INSERT_EVENT = `INSERT INTO cmd_events (job_id, sequence, event_type, parent_event_id, player_id, payload, selected_feed_id, timecode_s, clip_start_s, clip_end_s, created_by)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
+
+export function appendEvent(db, jobId, { event_type, parent_event_id = null, payload = {}, selected_feed_id = null, timecode_s = null, clip_start_s = null, clip_end_s = null }, actorId) {
   if (!EVENT_TYPES.includes(event_type)) throw err(`event_type must be one of ${EVENT_TYPES.join(', ')}`);
   validatePayload(event_type, payload);
   const job = db.prepare('SELECT * FROM cmd_jobs WHERE id = ?').get(jobId);
   if (!job) throw err('Job not found', 404);
   const before = replayJob(db, jobId);
   if (before.state.final && event_type !== 'game_final') throw err('Game is final — void the final event to keep scoring', 409);
+  const tag = tagFor(db, jobId, { selected_feed_id, timecode_s, clip_start_s, clip_end_s });
 
   const run = db.transaction(() => {
-    const ins = db.prepare(
-      `INSERT INTO cmd_events (job_id, sequence, event_type, parent_event_id, player_id, payload, selected_feed_id, timecode_s, created_by)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
-    );
+    const ins = db.prepare(INSERT_EVENT);
     let parent = parent_event_id;
     // A plate appearance or between-batter runner event needs an open half inning.
     if (['plate_appearance', 'runner'].includes(event_type) && !parent) {
@@ -717,7 +735,7 @@ export function appendEvent(db, jobId, { event_type, parent_event_id = null, pay
       if (!half || before.state.half_complete) {
         if (before.state.us_is_home == null) throw err('Enter our lineup (with home/away) before scoring a plate appearance');
         const nextHalf = half ? (before.state.half === 'top' ? { inning: before.state.inning, half: 'bottom' } : { inning: before.state.inning + 1, half: 'top' }) : { inning: 1, half: 'top' };
-        const hid = ins.run(jobId, nextSequence(db, jobId), 'half_inning', null, null, JSON.stringify({ ...nextHalf, auto: true }), null, null, actorId).lastInsertRowid;
+        const hid = ins.run(jobId, nextSequence(db, jobId), 'half_inning', null, null, JSON.stringify({ ...nextHalf, auto: true }), null, null, null, null, actorId).lastInsertRowid;
         audit(db, 'cmd_events', hid, actorId, 'created', `${nextHalf.half} ${nextHalf.inning} (auto)`);
         half = { id: hid };
       }
@@ -725,13 +743,13 @@ export function appendEvent(db, jobId, { event_type, parent_event_id = null, pay
     }
     if (event_type === 'pitch' && !parent) throw err('A pitch needs its plate appearance (parent_event_id)');
     const playerId = payload.batter_player_id || payload.runner_player_id || payload.player_in_id || null;
-    const id = ins.run(jobId, nextSequence(db, jobId), event_type, parent, playerId, JSON.stringify(payload), selected_feed_id, timecode_s, actorId).lastInsertRowid;
+    const id = ins.run(jobId, nextSequence(db, jobId), event_type, parent, playerId, JSON.stringify(payload), tag.feed, tag.t, tag.c0, tag.c1, actorId).lastInsertRowid;
     audit(db, 'cmd_events', id, actorId, 'created', describeForAudit(event_type, payload));
     // Third out → next half, automatically, so the scorer never has to.
     const after = replayJob(db, jobId);
     if (after.state.half_complete && !after.state.final && !after.state.game_over_suggested) {
       const nextHalf = after.state.half === 'top' ? { inning: after.state.inning, half: 'bottom' } : { inning: after.state.inning + 1, half: 'top' };
-      const hid = ins.run(jobId, nextSequence(db, jobId), 'half_inning', null, null, JSON.stringify({ ...nextHalf, auto: true }), null, null, actorId).lastInsertRowid;
+      const hid = ins.run(jobId, nextSequence(db, jobId), 'half_inning', null, null, JSON.stringify({ ...nextHalf, auto: true }), null, null, null, null, actorId).lastInsertRowid;
       audit(db, 'cmd_events', hid, actorId, 'created', `${nextHalf.half} ${nextHalf.inning} (auto)`);
     }
     refreshLiveSource(db, jobId, actorId);
@@ -746,40 +764,46 @@ export function appendEvent(db, jobId, { event_type, parent_event_id = null, pay
 // the PA row first, then children parented to it (lead runner first so a
 // batter never lands on an occupied base), then the half auto-advances if the
 // play made the third out. This is what the scorer's "save" button calls.
-export function appendPlateAppearance(db, jobId, { pa, pitches = [], runners = [], selected_feed_id = null, timecode_s = null }, actorId) {
+export function appendPlateAppearance(db, jobId, { pa, pitches = [], runners = [], selected_feed_id = null, timecode_s = null, clip_start_s = null, clip_end_s = null }, actorId) {
   validatePayload('plate_appearance', pa || {});
   for (const r of runners) validatePayload('runner', r);
-  for (const x of pitches) validatePayload('pitch', x);
+  for (const x of pitches) {
+    validatePayload('pitch', x);
+    if (x.timecode_s != null && !(Number.isFinite(Number(x.timecode_s)) && Number(x.timecode_s) >= 0)) throw err('pitch timecode_s must be a non-negative number of seconds');
+  }
   const job = db.prepare('SELECT * FROM cmd_jobs WHERE id = ?').get(jobId);
   if (!job) throw err('Job not found', 404);
   const before = replayJob(db, jobId);
   if (before.state.final) throw err('Game is final — void the final event to keep scoring', 409);
   if (before.state.us_is_home == null) throw err('Enter our lineup (with home/away) before scoring a plate appearance');
+  // The play's moment defaults to its last pitch; the runner plays share it.
+  const lastPitchT = [...pitches].reverse().find(x => x.timecode_s != null)?.timecode_s ?? null;
+  const tag = tagFor(db, jobId, { selected_feed_id, timecode_s: timecode_s ?? lastPitchT, clip_start_s, clip_end_s });
 
   const run = db.transaction(() => {
-    const ins = db.prepare(
-      `INSERT INTO cmd_events (job_id, sequence, event_type, parent_event_id, player_id, payload, selected_feed_id, timecode_s, created_by)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
-    );
+    const ins = db.prepare(INSERT_EVENT);
     let half = before.events.filter(e => e.event_type === 'half_inning').at(-1) || null;
     if (!half || before.state.half_complete) {
       const nextHalf = half ? (before.state.half === 'top' ? { inning: before.state.inning, half: 'bottom' } : { inning: before.state.inning + 1, half: 'top' }) : { inning: 1, half: 'top' };
-      const hid = ins.run(jobId, nextSequence(db, jobId), 'half_inning', null, null, JSON.stringify({ ...nextHalf, auto: true }), null, null, actorId).lastInsertRowid;
+      const hid = ins.run(jobId, nextSequence(db, jobId), 'half_inning', null, null, JSON.stringify({ ...nextHalf, auto: true }), null, null, null, null, actorId).lastInsertRowid;
       audit(db, 'cmd_events', hid, actorId, 'created', `${nextHalf.half} ${nextHalf.inning} (auto)`);
       half = { id: hid };
     }
     const paPayload = { ...pa, pitch_count: pitches.length || pa.pitch_count || 0 };
-    const paId = ins.run(jobId, nextSequence(db, jobId), 'plate_appearance', half.id, pa.batter_player_id || null, JSON.stringify(paPayload), selected_feed_id, timecode_s, actorId).lastInsertRowid;
+    const paId = ins.run(jobId, nextSequence(db, jobId), 'plate_appearance', half.id, pa.batter_player_id || null, JSON.stringify(paPayload), tag.feed, tag.t, tag.c0, tag.c1, actorId).lastInsertRowid;
     audit(db, 'cmd_events', paId, actorId, 'created', describeForAudit('plate_appearance', paPayload));
-    for (const x of pitches) ins.run(jobId, nextSequence(db, jobId), 'pitch', paId, null, JSON.stringify(x), null, null, actorId);
+    for (const x of pitches) {
+      const { timecode_s: pt, ...payload } = x;
+      ins.run(jobId, nextSequence(db, jobId), 'pitch', paId, null, JSON.stringify(payload), tag.feed, pt == null ? null : Number(pt), null, null, actorId);
+    }
     for (const r of [...runners].sort((a, b) => b.from - a.from)) {
-      const rid = ins.run(jobId, nextSequence(db, jobId), 'runner', paId, r.runner_player_id || null, JSON.stringify(r), null, null, actorId).lastInsertRowid;
+      const rid = ins.run(jobId, nextSequence(db, jobId), 'runner', paId, r.runner_player_id || null, JSON.stringify(r), tag.feed, tag.t, tag.c0, tag.c1, actorId).lastInsertRowid;
       audit(db, 'cmd_events', rid, actorId, 'created', describeForAudit('runner', r));
     }
     const after = replayJob(db, jobId);
     if (after.state.half_complete && !after.state.final && !after.state.game_over_suggested) {
       const nextHalf = after.state.half === 'top' ? { inning: after.state.inning, half: 'bottom' } : { inning: after.state.inning + 1, half: 'top' };
-      const hid = ins.run(jobId, nextSequence(db, jobId), 'half_inning', null, null, JSON.stringify({ ...nextHalf, auto: true }), null, null, actorId).lastInsertRowid;
+      const hid = ins.run(jobId, nextSequence(db, jobId), 'half_inning', null, null, JSON.stringify({ ...nextHalf, auto: true }), null, null, null, null, actorId).lastInsertRowid;
       audit(db, 'cmd_events', hid, actorId, 'created', `${nextHalf.half} ${nextHalf.inning} (auto)`);
     }
     refreshLiveSource(db, jobId, actorId);
@@ -796,10 +820,7 @@ export function correctEvent(db, eventId, { payload }, actorId, note = '') {
   if (!old) throw err('Event not found or already superseded', 404);
   validatePayload(old.event_type, payload);
   const run = db.transaction(() => {
-    const id = db.prepare(
-      `INSERT INTO cmd_events (job_id, sequence, event_type, parent_event_id, player_id, payload, selected_feed_id, timecode_s, created_by)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
-    ).run(old.job_id, old.sequence, old.event_type, old.parent_event_id, payload.batter_player_id || payload.runner_player_id || payload.player_in_id || old.player_id, JSON.stringify(payload), old.selected_feed_id, old.timecode_s, actorId).lastInsertRowid;
+    const id = db.prepare(INSERT_EVENT).run(old.job_id, old.sequence, old.event_type, old.parent_event_id, payload.batter_player_id || payload.runner_player_id || payload.player_in_id || old.player_id, JSON.stringify(payload), old.selected_feed_id, old.timecode_s, old.clip_start_s, old.clip_end_s, actorId).lastInsertRowid;
     db.prepare("UPDATE cmd_events SET status = 'superseded', superseded_by = ? WHERE id = ?").run(id, old.id);
     db.prepare('UPDATE cmd_events SET parent_event_id = ? WHERE parent_event_id = ?').run(id, old.id);
     audit(db, 'cmd_events', id, actorId, 'corrected', note || `${describeForAudit(old.event_type, safeJson(old.payload))} → ${describeForAudit(old.event_type, payload)}`, String(old.payload).slice(0, 600), JSON.stringify(payload).slice(0, 600));
@@ -808,6 +829,23 @@ export function correctEvent(db, eventId, { payload }, actorId, note = '') {
   });
   const id = run();
   return { event_id: id, superseded_id: old.id, ...replayJob(db, old.job_id) };
+}
+
+// Re-point an event at the footage: feed, moment, clip bounds. Stats do not
+// change, so no re-release; the change is audited.
+export function setEventClip(db, eventId, { selected_feed_id, timecode_s, clip_start_s, clip_end_s } = {}, actorId) {
+  const ev = db.prepare("SELECT * FROM cmd_events WHERE id = ? AND status IN ('active','needs_review')").get(eventId);
+  if (!ev) throw err('Event not found or already superseded', 404);
+  const tag = tagFor(db, ev.job_id, {
+    selected_feed_id: selected_feed_id === undefined ? ev.selected_feed_id : selected_feed_id,
+    timecode_s: timecode_s === undefined ? ev.timecode_s : timecode_s,
+    clip_start_s, clip_end_s,
+  });
+  db.prepare('UPDATE cmd_events SET selected_feed_id = ?, timecode_s = ?, clip_start_s = ?, clip_end_s = ? WHERE id = ?').run(tag.feed, tag.t, tag.c0, tag.c1, eventId);
+  audit(db, 'cmd_events', eventId, actorId, 'clip_adjusted',
+    `${describeForAudit(ev.event_type, safeJson(ev.payload))} — feed ${tag.feed ?? '—'} at ${tag.t ?? '—'}s, clip ${tag.c0 ?? '—'}–${tag.c1 ?? '—'}s`,
+    JSON.stringify({ feed: ev.selected_feed_id, t: ev.timecode_s, clip: [ev.clip_start_s, ev.clip_end_s] }), JSON.stringify({ feed: tag.feed, t: tag.t, clip: [tag.c0, tag.c1] }));
+  return { event: db.prepare('SELECT * FROM cmd_events WHERE id = ?').get(eventId), ...replayJob(db, ev.job_id) };
 }
 
 // Void: supersede with no replacement (children too). History stays.

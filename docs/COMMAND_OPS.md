@@ -486,6 +486,16 @@ and surfaced as a QA flag until resolved. If the game record was already
 released, a correction re-releases it immediately so the profile never shows
 a superseded value.
 
+Tagging from footage: when the job has a ready feed, the review proxy plays
+above the scorer (the same frame-accurate player as the running queue: ←/→
+frames, J/L seconds, space to play). Every event the scorer saves — each
+pitch, the play, its runner plays, substitutions, the final — is stamped with
+the selected feed and the moment on it, and gets a default clip around it
+(4 s before, 8 s after; `PUT /api/command/scorebook/events/:id/clip` to
+adjust, audited as `clip_adjusted`). Tagged plays show as markers above the
+scrubber and as ▶ timecodes in the play-by-play; clicking either seeks the
+player. Corrections keep the footage link. A feed must belong to the job.
+
 Publishing: the scorebook is the job's `live_internal` game-record source.
 It validates once the game is final with no blocking issues, and releases
 through the same **Game record → validated → released** path as an import.
