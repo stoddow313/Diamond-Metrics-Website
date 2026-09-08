@@ -7,9 +7,15 @@
 // Event types (payload shapes validated in validatePayload):
 //   lineup            { side: 'us'|'them', us_is_home?, dh?, slots: [{ slot, player_id?, label?, position? }] }
 //   half_inning       { inning, half: 'top'|'bottom', auto? }
-//   plate_appearance  { batter_player_id?, batter_label?, pitcher_player_id?, pitcher_label?, result, rbi?, batted_ball?, direction?, error_player_id?, error_label?, out_of_order_ok?, pitch_count?, note? }
-//   pitch             { result: ball|called_strike|swinging_strike|foul|in_play|hit_by_pitch|intentional_ball, pitch_type?, radar_reading_id? }
-//   runner            { runner_player_id?, runner_label?, from: 1|2|3, to: 1|2|3|4, how, out?, unearned?, error_player_id?, error_label?, note? }
+//   plate_appearance  { batter_player_id?, batter_label?, pitcher_player_id?, pitcher_label?, result, rbi?, batted_ball?, direction?, fielders?: [6,3], error_player_id?, error_label?, error_position?, unearned?, out_of_order_ok?, pitch_count?, note? }
+//   pitch             { result: ball|called_strike|swinging_strike|foul|foul_tip|foul_bunt|check_swing_strike|in_play|hit_by_pitch|intentional_ball, pitch_type?, radar_reading_id? }
+//   runner            { runner_player_id?, runner_label?, from: 1|2|3, to: 1|2|3|4, how, out?, fielders?, unearned?, group?, error_player_id?, error_label?, error_position?, note? }
+//
+// The calculation contract is the Metric Recipe Appendix, "V1 Scorekeeping and
+// Derived Box-Score Rules": pitch accounting (foul-strike rule, foul bunt and
+// foul tip on strike three), the stored batting / pitching / fielding /
+// baserunning fields, rate formulas that return null on a zero denominator,
+// and scorer judgment for earned runs (uncertain → needs review, never a guess).
 //   substitution      { kind, side, slot?, base?, player_in_id?, player_in_label?, player_out_id?, player_out_label?, position? }
 //   game_final        { reason: regulation|run_rule|time_limit|forfeit|darkness|other, note? }
 import { commandRoster } from './commandRoster.js';
@@ -21,8 +27,19 @@ export const PA_RESULTS = [
   'walk', 'intentional_walk', 'hit_by_pitch', 'catcher_interference',
   'strikeout', 'strikeout_looking', 'groundout', 'flyout', 'lineout', 'popout',
   'sacrifice_fly', 'sacrifice_bunt', 'fielders_choice', 'reach_on_error', 'double_play', 'triple_play',
+  'strikeout_reached',   // dropped third strike: a strikeout for batter and pitcher, but the batter is on first
 ];
-export const PITCH_RESULTS = ['ball', 'called_strike', 'swinging_strike', 'foul', 'in_play', 'hit_by_pitch', 'intentional_ball'];
+export const PITCH_RESULTS = ['ball', 'called_strike', 'swinging_strike', 'foul', 'foul_tip', 'foul_bunt', 'check_swing_strike', 'in_play', 'hit_by_pitch', 'intentional_ball'];
+export const POSITION_NUMBERS = { P: 1, C: 2, '1B': 3, '2B': 4, '3B': 5, SS: 6, LF: 7, CF: 8, RF: 9 };
+// Pitch classes for pitch totals and swing/contact accounting (appendix):
+// strikes thrown include fouls and balls in play; a check swing called a
+// strike is a swing and a miss; fouls, foul tips and balls in play are contact.
+const STRIKE_PITCHES = new Set(['called_strike', 'swinging_strike', 'foul', 'foul_tip', 'foul_bunt', 'check_swing_strike', 'in_play']);
+const BALL_PITCHES = new Set(['ball', 'intentional_ball', 'hit_by_pitch']);
+const SWING_PITCHES = new Set(['swinging_strike', 'check_swing_strike', 'foul', 'foul_tip', 'foul_bunt', 'in_play']);
+const WHIFF_PITCHES = new Set(['swinging_strike', 'check_swing_strike']);
+const STRIKEOUTS = new Set(['strikeout', 'strikeout_looking', 'strikeout_reached']);
+const IN_PLAY_RESULTS = new Set(['single', 'double', 'triple', 'home_run', 'groundout', 'flyout', 'lineout', 'popout', 'sacrifice_fly', 'sacrifice_bunt', 'fielders_choice', 'reach_on_error', 'double_play', 'triple_play']);
 export const RUNNER_HOWS = ['advance', 'stolen_base', 'caught_stealing', 'pickoff', 'wild_pitch', 'passed_ball', 'balk', 'error', 'out', 'scored_on_play', 'defensive_indifference'];
 export const SUB_KINDS = ['pinch_hitter', 'pinch_runner', 'courtesy_runner', 'defensive', 'pitching_change', 're_entry'];
 export const FINAL_REASONS = ['regulation', 'run_rule', 'time_limit', 'forfeit', 'darkness', 'other'];
@@ -33,7 +50,47 @@ const err = (message, status = 400) => Object.assign(new Error(message), { statu
 const HIT = new Set(['single', 'double', 'triple', 'home_run']);
 const NO_AB = new Set(['walk', 'intentional_walk', 'hit_by_pitch', 'catcher_interference', 'sacrifice_fly', 'sacrifice_bunt']);
 const OUT_RESULTS = new Set(['strikeout', 'strikeout_looking', 'groundout', 'flyout', 'lineout', 'popout', 'sacrifice_fly', 'sacrifice_bunt', 'double_play', 'triple_play']);
-const ON_BASE = { single: 1, double: 2, triple: 3, home_run: 4, walk: 1, intentional_walk: 1, hit_by_pitch: 1, catcher_interference: 1, fielders_choice: 1, reach_on_error: 1 };
+const ON_BASE = { single: 1, double: 2, triple: 3, home_run: 4, walk: 1, intentional_walk: 1, hit_by_pitch: 1, catcher_interference: 1, fielders_choice: 1, reach_on_error: 1, strikeout_reached: 1 };
+
+// The count after a sequence of pitches, and how the at-bat ended if the
+// pitches decided it. Fouls add a strike only before two strikes; a foul bunt
+// or a foul tip is a strike even on two (strike three); balls in play and a
+// hit batter change neither count. Pitches after the at-bat ended are
+// returned so the replay can flag them.
+export function countAfter(pitches) {
+  let balls = 0, strikes = 0, ended = null;
+  const overflow = [];
+  for (const p of pitches) {
+    const r = p.result;
+    if (ended) { overflow.push(r); continue; }
+    if (r === 'ball' || r === 'intentional_ball') balls += 1;
+    else if (r === 'foul') { if (strikes < 2) strikes += 1; }
+    else if (r === 'called_strike' || r === 'swinging_strike' || r === 'check_swing_strike' || r === 'foul_tip' || r === 'foul_bunt') strikes += 1;
+    else if (r === 'in_play') ended = 'in_play';
+    else if (r === 'hit_by_pitch') ended = 'hit_by_pitch';
+    if (!ended && balls >= 4) ended = 'walk';
+    if (!ended && strikes >= 3) ended = r === 'called_strike' ? 'strikeout_looking' : 'strikeout';
+  }
+  return { balls: Math.min(balls, 4), strikes: Math.min(strikes, 3), ended, overflow };
+}
+
+// Rate stats per the appendix; null (not zero) when the denominator is zero.
+const ratio = (num, den, digits = 3) => (den > 0 ? Number((num / den).toFixed(digits)) : null);
+export function ratesFor(s, outsPitched = 0) {
+  const ip = outsPitched / 3;
+  const avg = ratio(s.bs_h, s.bs_ab);
+  const obp = ratio(s.bs_h + s.bs_bb + s.bs_hbp, s.bs_ab + s.bs_bb + s.bs_hbp + s.bs_sf);
+  const slg = ratio(s.bs_tb, s.bs_ab);
+  const per9 = n => (ip > 0 ? Number((9 * n / ip).toFixed(2)) : null);
+  return {
+    avg, obp, slg, ops: obp != null && slg != null ? Number((obp + slg).toFixed(3)) : null,
+    k_pct: ratio(s.bs_k, s.bs_pa), bb_pct: ratio(s.bs_bb, s.bs_pa),
+    era: per9(s.bs_er), whip: ip > 0 ? Number(((s.bs_bba + s.bs_ha) / ip).toFixed(2)) : null,
+    k_per_9: per9(s.bs_kp), bb_per_9: per9(s.bs_bba), k_bb: ratio(s.bs_kp, s.bs_bba, 2),
+    strike_pct: ratio(s.bs_strikes, s.bs_pitches), whiff_pct: ratio(s.bs_whiffs_a, s.bs_swings_a), csw_pct: ratio(s.bs_cstr + s.bs_whiffs_a, s.bs_pitches),
+    fpct: ratio(s.bs_po + s.bs_a, s.bs_po + s.bs_a + s.bs_e), sb_pct: ratio(s.bs_sb, s.bs_sb + s.bs_cs),
+  };
+}
 
 // ── Player references ──────────────────────────────────────────────────────
 // Our players are rows; opponents are labels. Either way a ref has a stable key.
@@ -41,8 +98,21 @@ export const refKey = r => (r?.player_id ? `p:${r.player_id}` : `l:${r?.side || 
 const mkRef = (side, player_id, label) => ({ side, player_id: player_id ?? null, label: label || (player_id ? '' : 'unknown') });
 
 // ── Payload validation ─────────────────────────────────────────────────────
+// "6-3", "63" or [6, 3] → [6, 3]; positions must be 1–9.
+export function normalizeFielders(v) {
+  if (v == null || v === '') return undefined;
+  const nums = Array.isArray(v) ? v.map(Number) : String(v).replace(/[^1-9]/g, '').split('').map(Number);
+  if (!nums.length || nums.some(n => !Number.isInteger(n) || n < 1 || n > 9)) throw err('fielders must be position numbers 1–9, e.g. "6-3"');
+  return nums;
+}
+
 export function validatePayload(type, p = {}) {
   const need = (cond, msg) => { if (!cond) throw err(msg); };
+  if (type === 'plate_appearance' || type === 'runner') {
+    if ('fielders' in p) { const f = normalizeFielders(p.fielders); if (f) p.fielders = f; else delete p.fielders; }
+    if (p.error_position != null) need(Number.isInteger(p.error_position) && p.error_position >= 1 && p.error_position <= 9, 'error_position must be 1–9');
+    if (p.unearned != null) need(typeof p.unearned === 'boolean', 'unearned must be true or false');
+  }
   switch (type) {
     case 'lineup':
       need(['us', 'them'].includes(p.side), "lineup.side must be 'us' or 'them'");
@@ -86,9 +156,21 @@ export function validatePayload(type, p = {}) {
 }
 
 // ── Replay ─────────────────────────────────────────────────────────────────
+// One row per player, every stored field of the appendix's batting, pitching,
+// fielding and baserunning box scores. Innings pitched live as outs.
 function emptyTally() {
-  return { bs_pa: 0, bs_ab: 0, bs_r: 0, bs_h: 0, bs_2b: 0, bs_3b: 0, bs_hr: 0, bs_rbi: 0, bs_bb: 0, bs_k: 0, bs_hbp: 0, bs_sb: 0,
-           bs_bf: 0, bs_ha: 0, bs_ra: 0, bs_er: 0, bs_bba: 0, bs_kp: 0, bs_hra: 0, bs_pitches: 0, outs_pitched: 0, bs_e: 0 };
+  return {
+    // batting
+    bs_g: 0, bs_pa: 0, bs_ab: 0, bs_r: 0, bs_h: 0, bs_1b: 0, bs_2b: 0, bs_3b: 0, bs_hr: 0, bs_tb: 0, bs_rbi: 0, bs_bb: 0, bs_ibb: 0, bs_k: 0, bs_hbp: 0,
+    bs_sh: 0, bs_sf: 0, bs_roe: 0, bs_fc: 0, bs_lob: 0, bs_swings: 0, bs_whiffs: 0,
+    // baserunning
+    bs_sb: 0, bs_cs: 0, bs_pk: 0,
+    // pitching
+    bs_gs: 0, bs_bf: 0, bs_pitches: 0, bs_strikes: 0, bs_balls: 0, bs_cstr: 0, bs_swings_a: 0, bs_whiffs_a: 0,
+    bs_ha: 0, bs_ra: 0, bs_er: 0, bs_bba: 0, bs_ibba: 0, bs_hbpa: 0, bs_kp: 0, bs_hra: 0, bs_wp: 0, bs_bk: 0, bs_ir: 0, bs_irs: 0, outs_pitched: 0,
+    // fielding
+    bs_po: 0, bs_a: 0, bs_e: 0, bs_dp: 0, bs_pb: 0,
+  };
 }
 
 export function ipFromOuts(outs) {
@@ -111,9 +193,15 @@ export function replay(events, { ruleset = {}, disputed = new Set() } = {}) {
     starters: { us: new Set(), them: new Set() },
     reentered: { us: new Set(), them: new Set() },
     open_pa: null, half_complete: false, final: null, game_over_suggested: null, innings_completed: 0,
+    line_score: { us: [], them: [] },                                   // runs per inning, per side
+    team: { us: { r: 0, h: 0, e: 0, lob: 0 }, them: { r: 0, h: 0, e: 0, lob: 0 } },
+    half_misplay: null,                                                 // first error / passed ball by the defense this half
+    pitching_started: { us: false, them: false },                       // GS bookkeeping
   };
   const tallies = new Map();
   const names = new Map();
+  const erUncertain = new Set();   // pitchers with a run whose earned status awaits scorer judgment
+  const chargedPlays = new Set();  // one WP / PB / BK per play, however many runners moved
   const issues = [];
   const log = [];
   const tally = ref => {
@@ -138,18 +226,70 @@ export function replay(events, { ruleset = {}, disputed = new Set() } = {}) {
   }
   const isDisputed = e => disputed.has(e.id) || (e.parent_event_id && disputed.has(e.parent_event_id));
 
+  // Who is playing position n (1–9) for a side right now: the lineup's
+  // position labels, with the pitcher of record as the fallback for 1.
+  const fielderAt = (side, n) => {
+    const lu = state.lineups[side];
+    const slot = lu?.slots.find(x => POSITION_NUMBERS[(x.position || '').toUpperCase()] === n);
+    if (slot) return slot.current;
+    return n === 1 ? state.pitcher[side] : null;
+  };
+  // Scoring notation "6-4-3": every fielder but the last threw (assist), the
+  // last `outs` fielders recorded a putout, and everyone on a double / triple
+  // play shares DP participation. Unknown positions are skipped, never guessed.
+  const creditFielders = (positions, { outs = 1, dp = false } = {}) => {
+    let list = [];
+    try { list = normalizeFielders(positions) || []; } catch { list = []; }
+    const refs = list.map(n => fielderAt(fieldingSide(), n)).filter(Boolean);
+    if (!refs.length) return;
+    refs.slice(0, -1).forEach(r => { tally(r).bs_a += 1; });
+    refs.slice(-Math.min(outs, refs.length)).forEach(r => { tally(r).bs_po += 1; });
+    if (dp) for (const k of new Set(refs.map(refKey))) tally(refs.find(r => refKey(r) === k)).bs_dp += 1;
+  };
+  const errorBy = (side, pl) => (pl.error_player_id || pl.error_label ? mkRef(side, pl.error_player_id, pl.error_label) : (pl.error_position ? fielderAt(side, pl.error_position) : null));
+  const noteMisplay = (kind, e) => { if (!state.half_misplay) state.half_misplay = { sequence: e.sequence, kind }; };
+  // WP / BK go to the pitcher of record, PB to the catcher — once per play.
+  const chargeMisplay = (how, e) => {
+    const parent = e.parent_event_id ? byId.get(e.parent_event_id) : null;
+    const key = `${how}:${e.payload?.group ? `g:${e.payload.group}` : parent?.event_type === 'plate_appearance' ? `pa:${parent.id}` : `ev:${e.id}`}`;
+    if (chargedPlays.has(key) || isDisputed(e)) return;
+    chargedPlays.add(key);
+    if (how === 'passed_ball') { const c = fielderAt(fieldingSide(), 2); if (c) tally(c).bs_pb += 1; noteMisplay('a passed ball', e); }
+    else { const pit = state.pitcher[fieldingSide()]; if (pit) tally(pit)[how === 'balk' ? 'bs_bk' : 'bs_wp'] += 1; }
+  };
+  const runnersOn = () => [1, 2, 3].filter(b => state.bases[b]).length;
+
+  // A run: team score and line score always; per-player credit unless the
+  // play is disputed. The run is charged to the pitcher responsible for the
+  // runner; if someone else is on the mound it is also an inherited runner
+  // scored. Earned unless the runner reached or advanced on a misplay, the
+  // scorer said unearned, or — when a misplay happened earlier this half and
+  // the scorer has not ruled — it is flagged for judgment and the pitcher's ER
+  // is withheld from publication until they do.
   const scoreRun = (runner, batterRef, how, e) => {
     state.score[state.batting] += 1;
+    state.team[state.batting].r += 1;
+    const ls = state.line_score[state.batting];
+    while (ls.length < state.inning) ls.push(0);
+    ls[state.inning - 1] += 1;
     if (isDisputed(e)) return;
     tally(runner.ref).bs_r += 1;
     if (runner.responsible) {
       const t = tally(runner.responsible);
       t.bs_ra += 1;
-      const unearned = runner.unearned || ['error', 'passed_ball'].includes(how) || e.payload?.unearned;
+      const cur = state.pitcher[fieldingSide()];
+      if (cur && refKey(cur) !== refKey(runner.responsible)) tally(cur).bs_irs += 1;
+      const ruled = typeof e.payload?.unearned === 'boolean' ? e.payload.unearned : undefined;
+      const unearned = ruled ?? (runner.unearned || ['error', 'passed_ball'].includes(how));
       if (!unearned) t.bs_er += 1;
+      if (ruled === undefined && !unearned && state.half_misplay && state.half_misplay.sequence <= e.sequence) {
+        issue('er_needs_judgment', 'warning', e, `${runner.ref.label || 'runner'} scored after ${state.half_misplay.kind} this half — rule the run earned or unearned`);
+        erUncertain.add(refKey(runner.responsible));
+      }
     }
   };
   const recordOut = (e) => {
+    if (state.outs >= 3) { issue('too_many_outs', 'warning', e, 'A fourth out was recorded in this half — check the play before it'); return; }
     state.outs += 1;
     const p = state.pitcher[fieldingSide()];
     if (p && !isDisputed(e)) tally(p).outs_pitched += 1;
@@ -157,6 +297,7 @@ export function replay(events, { ruleset = {}, disputed = new Set() } = {}) {
   const endHalfIfDone = () => {
     if (state.outs >= 3) {
       state.half_complete = true;
+      state.team[state.batting].lob += runnersOn();
       state.bases = { 1: null, 2: null, 3: null };
       if (state.half === 'bottom') state.innings_completed = state.inning;
       // game-over suggestions from the ruleset
@@ -182,7 +323,7 @@ export function replay(events, { ruleset = {}, disputed = new Set() } = {}) {
           return { slot: s.slot, position: s.position || '', starter: ref, current: ref };
         });
         state.lineups[p.side] = { slots, dh: !!p.dh };
-        for (const s of slots) { state.starters[p.side].add(refKey(s.starter)); state.used[p.side].add(refKey(s.starter)); names.set(refKey(s.starter), s.starter); }
+        for (const s of slots) { state.starters[p.side].add(refKey(s.starter)); state.used[p.side].add(refKey(s.starter)); names.set(refKey(s.starter), s.starter); tally(s.starter).bs_g = 1; }
         if (p.side === 'us') state.us_is_home = !!p.us_is_home;
         if (p.pitcher_player_id || p.pitcher_label) state.pitcher[p.side] = mkRef(p.side, p.pitcher_player_id, p.pitcher_label);
         else { const pit = slots.find(s => (s.position || '').toUpperCase() === 'P'); if (pit) state.pitcher[p.side] = pit.starter; }
@@ -193,7 +334,7 @@ export function replay(events, { ruleset = {}, disputed = new Set() } = {}) {
         if (state.half && !state.half_complete && state.outs < 3) issue('half_inning_short', 'warning', e, `${state.half} ${state.inning} ended with ${state.outs} out${state.outs === 1 ? '' : 's'}`);
         if (state.us_is_home == null) issue('lineup_missing', 'blocking', e, 'Our lineup (with home/away) must be entered before play');
         state.inning = p.inning; state.half = p.half; state.outs = 0; state.balls = 0; state.strikes = 0;
-        state.bases = { 1: null, 2: null, 3: null }; state.half_complete = false; state.open_pa = null;
+        state.bases = { 1: null, 2: null, 3: null }; state.half_complete = false; state.open_pa = null; state.half_misplay = null;
         const awaySide = state.us_is_home ? 'them' : 'us';
         state.batting = p.half === 'top' ? awaySide : (awaySide === 'us' ? 'them' : 'us');
         if (!state.lineups[state.batting]) issue('lineup_missing', 'blocking', e, `${state.batting === 'us' ? 'Our' : 'Their'} lineup is missing`);
@@ -225,7 +366,7 @@ export function replay(events, { ruleset = {}, disputed = new Set() } = {}) {
         } else if (state.used[side].has(inKey) && !state.starters[side].has(inKey) && p.kind !== 'pitching_change' && p.kind !== 'courtesy_runner') {
           issue('player_reused', 'warning', e, `${inRef.label || 'player'} already left the game`);
         }
-        if (p.kind !== 'courtesy_runner') state.used[side].add(inKey);   // a courtesy runner has not entered the game
+        if (p.kind !== 'courtesy_runner') { state.used[side].add(inKey); tally(inRef).bs_g = 1; }   // a courtesy runner has not entered the game
         names.set(inKey, inRef);
         if (['pinch_hitter', 'defensive', 're_entry'].includes(p.kind)) {
           const s = lu.slots.find(x => x.slot === p.slot);
@@ -237,6 +378,10 @@ export function replay(events, { ruleset = {}, disputed = new Set() } = {}) {
           else state.bases[p.base] = { ...r, ref: inRef, courtesy: p.kind === 'courtesy_runner', replaced: r.ref };
           if (p.kind === 'courtesy_runner' && ruleset.courtesy_runner === 'none') issue('courtesy_not_allowed', 'warning', e, 'Ruleset does not allow courtesy runners');
         } else if (p.kind === 'pitching_change') {
+          // Runners on base when a reliever enters are inherited: they stay
+          // charged to the pitcher who put them on, and count against the
+          // reliever as inherited runners (scored when they come home).
+          if (state.batting && state.batting !== side && state.half && !state.half_complete && !dis) tally(inRef).bs_ir += runnersOn();
           state.pitcher[side] = inRef;   // inherited runners keep their responsible pitcher
           if (p.slot) { const s = lu.slots.find(x => x.slot === p.slot); if (s) { s.current = inRef; s.position = 'P'; } }
           // position labels follow the ball: whoever is pitching shows P, the previous pitcher no longer does
@@ -262,9 +407,30 @@ export function replay(events, { ruleset = {}, disputed = new Set() } = {}) {
         const bt = dis ? emptyTally() : tally(batter);
         const pt = pitcher && !dis ? tally(pitcher) : emptyTally();
         state.balls = 0; state.strikes = 0;
-        // pitches
+        bt.bs_g = 1;
+        if (pitcher) { pt.bs_g = 1; if (!state.pitching_started[fieldingSide()]) { state.pitching_started[fieldingSide()] = true; tally(pitcher).bs_gs = 1; } }
+        // pitches: totals, strikes/balls thrown, swings and misses, and the count they build
         const pitchCount = pitches.length || p.pitch_count || 0;
         pt.bs_pitches += pitchCount;
+        for (const k of pitches) {
+          const r = k.payload?.result;
+          if (STRIKE_PITCHES.has(r)) pt.bs_strikes += 1; else if (BALL_PITCHES.has(r)) pt.bs_balls += 1;
+          if (r === 'called_strike') pt.bs_cstr += 1;
+          if (SWING_PITCHES.has(r)) { bt.bs_swings += 1; pt.bs_swings_a += 1; }
+          if (WHIFF_PITCHES.has(r)) { bt.bs_whiffs += 1; pt.bs_whiffs_a += 1; }
+        }
+        if (pitches.length) {
+          const cnt = countAfter(pitches.map(k => ({ result: k.payload?.result })));
+          const res0 = p.result;
+          const mismatch = msg => issue('count_mismatch', 'warning', e, msg);
+          if (cnt.overflow.length) mismatch(`${cnt.overflow.length} pitch${cnt.overflow.length === 1 ? '' : 'es'} recorded after the at-bat had ended`);
+          if (cnt.ended === 'walk' && !['walk', 'intentional_walk'].includes(res0)) mismatch(`four balls recorded but the result is ${res0.replace(/_/g, ' ')}`);
+          if ((res0 === 'walk' || res0 === 'intentional_walk') && cnt.ended !== 'walk') mismatch(`walk recorded on a ${cnt.balls}-${cnt.strikes} count`);
+          if (cnt.ended && cnt.ended.startsWith('strikeout') && !STRIKEOUTS.has(res0)) mismatch(`strike three recorded but the result is ${res0.replace(/_/g, ' ')}`);
+          if (STRIKEOUTS.has(res0) && !(cnt.ended && cnt.ended.startsWith('strikeout'))) mismatch(`strikeout recorded on a ${cnt.balls}-${cnt.strikes} count`);
+          if (IN_PLAY_RESULTS.has(res0) && cnt.ended !== 'in_play') mismatch(`${res0.replace(/_/g, ' ')} recorded without an in-play pitch`);
+          if (res0 === 'hit_by_pitch' && cnt.ended !== 'hit_by_pitch') mismatch('hit by pitch recorded without a hit-by-pitch pitch');
+        }
         // runner events first (existing runners), then the batter
         let rbi = 0;
         for (const r of runners) {
@@ -275,27 +441,63 @@ export function replay(events, { ruleset = {}, disputed = new Set() } = {}) {
           if (rp.out || rp.how === 'out' || rp.how === 'caught_stealing' || rp.how === 'pickoff') { recordOut(r); continue; }
           if (rp.to === 4) { scoreRun(runner, batter, rp.how, r); if (rp.how === 'scored_on_play' || rp.how === 'advance') rbi += 1; }
           else state.bases[rp.to] = { ...runner, unearned: runner.unearned || rp.how === 'error' };
-          if (rp.how === 'stolen_base' && !isDisputed(r)) tally(runner.ref).bs_sb += 1;
-          if (rp.how === 'error' && (rp.error_player_id || rp.error_label) && !isDisputed(r)) tally(mkRef(fieldingSide(), rp.error_player_id, rp.error_label)).bs_e += 1;
+          if (!isDisputed(r)) {
+            if (rp.how === 'stolen_base') tally(runner.ref).bs_sb += 1;
+            if (rp.how === 'caught_stealing') tally(runner.ref).bs_cs += 1;
+            if (rp.how === 'pickoff') tally(runner.ref).bs_pk += 1;
+            if (rp.out || rp.how === 'out' || rp.how === 'caught_stealing' || rp.how === 'pickoff') creditFielders(rp.fielders);
+            if (rp.how === 'error') { const f = errorBy(fieldingSide(), rp); if (f) tally(f).bs_e += 1; state.team[fieldingSide()].e += 1; noteMisplay('an error', r); }
+            if (['wild_pitch', 'passed_ball', 'balk'].includes(rp.how)) chargeMisplay(rp.how, r);
+          }
         }
         // the batter
         const res = p.result;
         bt.bs_pa += 1; pt.bs_bf += 1;
         if (!NO_AB.has(res)) bt.bs_ab += 1;
-        if (HIT.has(res)) { bt.bs_h += 1; pt.bs_ha += 1; if (res === 'double') bt.bs_2b += 1; if (res === 'triple') bt.bs_3b += 1; if (res === 'home_run') { bt.bs_hr += 1; pt.bs_hra += 1; } }
+        if (HIT.has(res)) {
+          bt.bs_h += 1; pt.bs_ha += 1; if (!dis) state.team[side].h += 1;
+          if (res === 'single') bt.bs_1b += 1; if (res === 'double') bt.bs_2b += 1; if (res === 'triple') bt.bs_3b += 1; if (res === 'home_run') { bt.bs_hr += 1; pt.bs_hra += 1; }
+        }
         if (res === 'walk' || res === 'intentional_walk') { bt.bs_bb += 1; pt.bs_bba += 1; }
-        if (res === 'hit_by_pitch') bt.bs_hbp += 1;
-        if (res === 'strikeout' || res === 'strikeout_looking') { bt.bs_k += 1; pt.bs_kp += 1; }
-        if (res === 'reach_on_error' && (p.error_player_id || p.error_label) && !dis) tally(mkRef(fieldingSide(), p.error_player_id, p.error_label)).bs_e += 1;
+        if (res === 'intentional_walk') { bt.bs_ibb += 1; pt.bs_ibba += 1; }
+        if (res === 'hit_by_pitch') { bt.bs_hbp += 1; pt.bs_hbpa += 1; }
+        if (STRIKEOUTS.has(res)) { bt.bs_k += 1; pt.bs_kp += 1; }
+        if (res === 'sacrifice_bunt') bt.bs_sh += 1;
+        if (res === 'sacrifice_fly') bt.bs_sf += 1;
+        if (res === 'fielders_choice') bt.bs_fc += 1;
+        if (res === 'reach_on_error') {
+          bt.bs_roe += 1;
+          if (!dis) { const f = errorBy(fieldingSide(), p); if (f) tally(f).bs_e += 1; state.team[fieldingSide()].e += 1; noteMisplay('an error', e); }
+        }
+        // fielding credit: the scorer's chain ("6-3") when given; a strikeout is the catcher's putout
+        if (!dis) {
+          if (OUT_RESULTS.has(res) && p.fielders?.length) creditFielders(p.fielders, { outs: res === 'triple_play' ? 3 : res === 'double_play' ? 2 : 1, dp: res === 'double_play' || res === 'triple_play' });
+          else if (res === 'strikeout' || res === 'strikeout_looking') { const c = fielderAt(fieldingSide(), 2); if (c) tally(c).bs_po += 1; }
+        }
         if (res === 'home_run') {
           for (const b of [3, 2, 1]) { const r = state.bases[b]; if (r) { scoreRun(r, batter, 'scored_on_play', e); rbi += 1; state.bases[b] = null; } }
           scoreRun({ ref: batter, responsible: pitcher, unearned: false }, batter, 'scored_on_play', e); rbi += 1;
         } else if (ON_BASE[res]) {
           const base = ON_BASE[res];
-          if (state.bases[base]) issue('base_occupied', 'warning', e, `${base}B was still occupied when the batter reached — record the runner's advance first`);
+          if (state.bases[base]) {
+            // The batter's base is taken, so the runner there had to move. On a
+            // walk, hit batter or catcher's interference that is the rule (and a
+            // forced run is an RBI); on anything else it is the likeliest
+            // outcome, applied with a warning so the scorer confirms or corrects.
+            const byRule = ['walk', 'intentional_walk', 'hit_by_pitch', 'catcher_interference'].includes(res);
+            if (!byRule) issue('base_occupied', 'warning', e, `${base}B was still occupied when the batter reached — the runner was moved up one base; correct the runner's advance if it went differently`);
+            const push = b => {
+              const r = state.bases[b];
+              if (!r) return;
+              state.bases[b] = null;
+              if (b === 3) { scoreRun(r, batter, 'advance', e); if (byRule) rbi += 1; }
+              else { push(b + 1); state.bases[b + 1] = r; }
+            };
+            push(base);
+          }
           state.bases[base] = { ref: batter, responsible: pitcher, unearned: res === 'reach_on_error', reached: res };
         }
-        if (OUT_RESULTS.has(res)) recordOut(e);
+        if (OUT_RESULTS.has(res)) { recordOut(e); bt.bs_lob += runnersOn(); }
         if (res === 'double_play') { if (!runners.some(r => r.payload?.out)) issue('double_play_missing_runner_out', 'warning', e, 'Double play recorded without a runner out — add the runner event'); }
         if (res === 'triple_play') { if (runners.filter(r => r.payload?.out).length < 2) issue('triple_play_missing_runner_outs', 'warning', e, 'Triple play needs two runner outs'); }
         bt.bs_rbi += p.rbi != null ? p.rbi : rbi;
@@ -319,10 +521,18 @@ export function replay(events, { ruleset = {}, disputed = new Set() } = {}) {
           const runner = state.bases[rp.from];
           if (!runner) { issue('runner_not_on_base', 'warning', e, `No runner on ${rp.from}B`); break; }
           state.bases[rp.from] = null;
-          if (rp.out || ['out', 'caught_stealing', 'pickoff'].includes(rp.how)) { recordOut(e); endHalfIfDone(e); }
+          const out = rp.out || ['out', 'caught_stealing', 'pickoff'].includes(rp.how);
+          if (!dis) {
+            if (rp.how === 'stolen_base') tally(runner.ref).bs_sb += 1;
+            if (rp.how === 'caught_stealing') tally(runner.ref).bs_cs += 1;
+            if (rp.how === 'pickoff') tally(runner.ref).bs_pk += 1;
+            if (out) creditFielders(rp.fielders);
+            if (rp.how === 'error') { const f = errorBy(fieldingSide(), rp); if (f) tally(f).bs_e += 1; state.team[fieldingSide()].e += 1; noteMisplay('an error', e); }
+            if (['wild_pitch', 'passed_ball', 'balk'].includes(rp.how)) chargeMisplay(rp.how, e);
+          }
+          if (out) { recordOut(e); endHalfIfDone(e); }
           else if (rp.to === 4) scoreRun(runner, null, rp.how, e);
           else state.bases[rp.to] = { ...runner, unearned: runner.unearned || rp.how === 'error' };
-          if (rp.how === 'stolen_base' && !dis) tally(runner.ref).bs_sb += 1;
           entry.text = `${runner.ref.label || runner.ref.player_id}: ${rp.how.replace(/_/g, ' ')} ${rp.from}B → ${rp.to === 4 ? 'home' : `${rp.to}B`}${rp.out ? ' (out)' : ''}`;
         } else {
           entry.text = e.event_type === 'pitch' ? `pitch: ${p.result.replace(/_/g, ' ')}` : `runner: ${p.how}`;
@@ -356,9 +566,18 @@ export function replay(events, { ruleset = {}, disputed = new Set() } = {}) {
     return state.half === 'top' ? { inning: state.inning, half: 'bottom', batting: homeSide } : { inning: state.inning + 1, half: 'top', batting: awaySide };
   })();
   // serialise state
+  const homeSide = state.us_is_home ? 'us' : 'them';
+  const awaySide = homeSide === 'us' ? 'them' : 'us';
   const out = {
     ...state,
     upcoming,
+    pitching_started: undefined,
+    result: state.final ? { us: state.score.us, them: state.score.them, winner: state.score.us === state.score.them ? 'tie' : (state.score.us > state.score.them ? 'us' : 'them') } : null,
+    line_score: {
+      innings: Math.max(state.line_score.us.length, state.line_score.them.length, state.inning || 0),
+      away: { side: awaySide, runs: state.line_score[awaySide], ...state.team[awaySide] },
+      home: { side: homeSide, runs: state.line_score[homeSide], ...state.team[homeSide] },
+    },
     used: undefined, starters: undefined, reentered: undefined,
     lineups: {
       us: state.lineups.us ? { dh: state.lineups.us.dh, slots: state.lineups.us.slots.map(s => ({ slot: s.slot, position: s.position, current: s.current, starter: s.starter })) } : null,
@@ -369,7 +588,9 @@ export function replay(events, { ruleset = {}, disputed = new Set() } = {}) {
   const tallyList = [...tallies.entries()].map(([k, t]) => {
     const ref = names.get(k) || {};
     const { outs_pitched, ...rest } = t;
-    return { key: k, player_id: ref.player_id ?? null, label: ref.label || '', side: ref.side || null, stats: { ...rest, bs_ip: ipFromOuts(outs_pitched) }, outs_pitched };
+    rest.bs_tb = rest.bs_1b + 2 * rest.bs_2b + 3 * rest.bs_3b + 4 * rest.bs_hr;
+    const stats = { ...rest, bs_ip: ipFromOuts(outs_pitched) };
+    return { key: k, player_id: ref.player_id ?? null, label: ref.label || '', side: ref.side || null, stats, outs_pitched, rates: ratesFor(stats, outs_pitched), er_uncertain: erUncertain.has(k) };
   });
   return { version: SCOREBOOK_VERSION, state: out, tallies: tallyList, issues, log };
 }
@@ -430,12 +651,16 @@ export function liveRecordReport(db, jobId) {
   const roster = commandRoster(db, rp.job);
   const rosterById = new Map(roster.map(p => [p.id, p]));
   const rows = rp.tallies.filter(t => t.player_id).map(t => {
-    const stats = Object.fromEntries(Object.entries(t.stats).filter(([k, v]) => k.startsWith('bs_') && v !== 0 || k === 'bs_pa'));
+    // Publish what the log supports: non-zero box-score fields (PA always), and
+    // never an earned-run figure the scorer has not ruled on yet.
+    const stats = Object.fromEntries(Object.entries(t.stats).filter(([k, v]) => (k.startsWith('bs_') && v !== 0 || k === 'bs_pa') && !(k === 'bs_er' && t.er_uncertain)));
     return { key: `live:${t.player_id}`, group: 'scorebook', row: null, jersey: rosterById.get(t.player_id)?.jersey || '', name: t.name || t.label, stats, player_id: t.player_id, player_name: t.name || t.label, resolved_by: 'scorebook', skipped: false };
   });
   const blocking = rp.issues.filter(i => i.level === 'blocking');
   const status = rp.state.final && blocking.length === 0 ? 'validated' : 'validating';
   const warnings = rp.issues.map(i => i.message);
+  const heldEr = rp.tallies.filter(t => t.player_id && t.er_uncertain).map(t => t.name || t.label);
+  if (heldEr.length) warnings.push(`Earned runs withheld until ruled: ${heldEr.join(', ')}`);
   if (!rp.state.final) warnings.unshift('Game is not final yet — mark it final to validate the record');
   return {
     status,

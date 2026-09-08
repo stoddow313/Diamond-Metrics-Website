@@ -230,6 +230,28 @@ test('the live scorebook validates only when final and publishes our players thr
   assert.equal(db.prepare("SELECT COUNT(*) c FROM stat_entries s JOIN games g ON g.id=s.game_id WHERE g.command_job_id=? AND g.player_id=? AND s.metric_key='bs_pa'").get(job, SS).c, 1, 'no duplicate entries after re-release');
 });
 
+test('an earned run awaiting the scorer\'s ruling is withheld from the live record until ruled', () => {
+  const j3 = makeJob();
+  ourLineup(j3, true);    // we are home: they bat first, Pat pitches
+  theirLineup(j3);
+  pa(j3, { pa: { batter_label: 'Opp #1', result: 'single' } });
+  pa(j3, { pa: { batter_label: 'Opp #2', result: 'reach_on_error', error_player_id: SS } });               // Opp #1 forced to second
+  const dbl = pa(j3, { pa: { batter_label: 'Opp #3', result: 'double' }, runners: [{ from: 2, to: 4, how: 'scored_on_play' }, { from: 1, to: 3, how: 'advance' }] });
+  assert.ok(dbl.issues.some(i => i.code === 'er_needs_judgment'));
+  let live = liveRecordReport(db, j3);
+  const patRow = () => live.report.rows.find(r => r.player_id === P);
+  assert.equal(patRow().stats.bs_er, undefined, 'ER is not published while the ruling is open');
+  assert.equal(patRow().stats.bs_ra, 1, 'the run itself is');
+  assert.ok(live.report.warnings.some(w => /Earned runs withheld until ruled: Pat Pitcher/.test(w)));
+  // The scorer rules it unearned on the runner event.
+  const runEvent = dbl.events.find(e => e.event_type === 'runner' && e.parent_event_id === dbl.event_id && e.payload.to === 4);
+  correctEvent(db, runEvent.id, { payload: { ...runEvent.payload, unearned: true } }, admin, 'inning reconstruction: would have been the third out');
+  live = liveRecordReport(db, j3);
+  assert.equal(patRow().stats.bs_er, undefined, 'no earned runs at all now, so the zero is simply absent');
+  assert.ok(!live.report.warnings.some(w => /withheld/.test(w)));
+  assert.equal(replayJob(db, j3).tallies.find(t => t.player_id === P).stats.bs_er, 0);
+});
+
 test('game-over suggestion follows the ruleset run rule; scoring after final is refused', () => {
   const j2 = makeJob();
   ourLineup(j2, true);   // we are home
