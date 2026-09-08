@@ -38,7 +38,24 @@ export default function RadarQueuePage() {
   const [busyId, setBusyId] = useState(null);        // row with an action in flight
   const [invalidating, setInvalidating] = useState(null);  // { id, reason, detail } — reason panel under the row
   const [notice, setNotice] = useState('');
+  const [guest, setGuest] = useState(null);   // { first_name, last_name, jersey } — inline guest placeholder form
   const fileRef = useRef(null);
+
+  const rosterLabel = p => `${p.jersey ? `#${p.jersey} ` : ''}${p.first_name} ${p.last_name}${p.is_guest ? ' · guest' : p.primary_position ? ` (${p.primary_position})` : ''}`;
+
+  async function addGuest(e) {
+    e?.preventDefault();
+    setError(''); setNotice('');
+    try {
+      const { player } = await api.commandAddGuest(jobId, guest);
+      setGuest(null);
+      await load();
+      setSticky(s => ({ ...s, player_id: String(player.id) }));
+      setNotice(`${player.first_name} ${player.last_name} added as a guest placeholder — reassign to the identified player later; no public profile is created.`);
+    } catch (err) {
+      setError(`Could not add the guest: ${err.message}`);
+    }
+  }
 
   const load = () => api.commandRadarQueue(jobId).then(setData).catch(err => setError(err.message));
 
@@ -183,8 +200,12 @@ export default function RadarQueuePage() {
           <Field label="Active player (carries forward)">
             <Select value={sticky.player_id} onChange={e => setSticky(s => ({ ...s, player_id: e.target.value }))}>
               <option value="">— none —</option>
-              {data.roster.map(p => <option key={p.id} value={p.id}>{p.first_name} {p.last_name}{p.primary_position ? ` (${p.primary_position})` : ''}</option>)}
+              {data.roster.map(p => <option key={p.id} value={p.id}>{rosterLabel(p)}</option>)}
             </Select>
+            <button type="button" onClick={() => setGuest(g => (g ? null : { first_name: '', last_name: '', jersey: '' }))}
+              className="text-[11px] font-bold mt-1 cursor-pointer hover:underline" style={{ color: '#fbbf24' }} data-testid="add-guest-toggle">
+              {guest ? 'cancel guest' : '+ guest / unknown player'}
+            </button>
           </Field>
           <Field label="Reading type">
             <Select value={sticky.pitch_or_exit} onChange={e => setSticky(s => ({ ...s, pitch_or_exit: e.target.value }))}>
@@ -206,6 +227,15 @@ export default function RadarQueuePage() {
           </Field>
           <PrimaryButton onClick={addManual} disabled={!manual.velocity}>+ Add manual reading</PrimaryButton>
         </div>
+        {guest && (
+          <form onSubmit={addGuest} className="flex items-end gap-2 flex-wrap mt-3 pt-3 border-t" style={{ borderColor: '#1e3a5f' }} data-testid="guest-form">
+            <Field label="Jersey"><TextInput value={guest.jersey} onChange={e => setGuest(g => ({ ...g, jersey: e.target.value }))} placeholder="12" /></Field>
+            <Field label="First name (optional)"><TextInput value={guest.first_name} onChange={e => setGuest(g => ({ ...g, first_name: e.target.value }))} placeholder="Unknown" /></Field>
+            <Field label="Last name (optional)"><TextInput value={guest.last_name} onChange={e => setGuest(g => ({ ...g, last_name: e.target.value }))} placeholder="Guest" /></Field>
+            <PrimaryButton type="submit" disabled={!guest.jersey && !guest.first_name && !guest.last_name}>Add guest placeholder</PrimaryButton>
+            <span className="text-xs" style={{ color: '#64748b' }}>Not on any roster? Attribute to a placeholder now and reassign after the game.</span>
+          </form>
+        )}
       </section>
 
       <div className="grid lg:grid-cols-[minmax(0,1fr)_260px] gap-5 items-start">
@@ -258,7 +288,13 @@ export default function RadarQueuePage() {
                       {r.note ? <span style={{ color: '#fbbf24' }}> · {r.note}</span> : ''}
                     </td>
                     <td className="px-4 py-2.5" style={{ color: '#cfe8ff' }}>
-                      {r.player_id ? `${r.first_name} ${r.last_name}` : <span style={{ color: '#475569' }}>—</span>}
+                      {r.player_id ? `${r.first_name} ${r.last_name}` : r.suggestion ? (
+                        <span className="text-xs" data-testid="reading-suggestion">
+                          <span style={{ color: '#94a3b8' }}>suggested </span>
+                          <b style={{ color: '#fbbf24' }}>{r.suggestion.first_name} {r.suggestion.last_name}</b>
+                          <span className="block" style={{ color: '#64748b' }}>{r.suggestion.reason}</span>
+                        </span>
+                      ) : <span style={{ color: '#475569' }}>—</span>}
                     </td>
                     <td className="px-4 py-2.5 text-xs" style={{ color: '#94a3b8' }}>
                       {r.pitch_or_exit}{r.pitch_type !== 'unknown' ? ` · ${r.pitch_type}` : ''}
@@ -271,10 +307,23 @@ export default function RadarQueuePage() {
                         <span className="text-xs font-bold" style={{ color: '#fbbf24' }}>confirm below ↓</span>
                       ) : (
                         <>
+                          {r.status === 'unmatched' && r.suggestion && r.velocity != null && (
+                            <>
+                              <PrimaryButton
+                                onClick={() => confirmReading(r, { status: 'matched', player_id: r.suggestion.player_id, pitch_or_exit: r.suggestion.pitch_or_exit })}
+                                title={`Confirm to ${r.suggestion.first_name} ${r.suggestion.last_name} — ${r.suggestion.reason}`}
+                                data-testid="confirm-suggestion"
+                              >
+                                Confirm suggestion
+                              </PrimaryButton>
+                              <span className="inline-block w-1.5" />
+                            </>
+                          )}
                           {r.status !== 'invalid' && r.velocity != null && (
-                            <PrimaryButton onClick={() => confirmReading(r)} disabled={!sticky.player_id}>
-                              {r.status === 'matched' ? 'Reassign' : 'Confirm'}
-                            </PrimaryButton>
+                            <GhostButton onClick={() => confirmReading(r)} disabled={!sticky.player_id}
+                              title={sticky.player_id ? 'Confirm to the active player above' : 'Pick an active player above first'}>
+                              {r.status === 'matched' ? 'Reassign' : r.suggestion ? 'Confirm to active' : 'Confirm'}
+                            </GhostButton>
                           )}
                           <span className="inline-block w-1.5" />
                           {r.status !== 'invalid' && (

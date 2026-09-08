@@ -2,9 +2,9 @@
 // readings (owner directive field set), classification queue, and live
 // per-player rollup previews via the TDR §5a mapping.
 import { createHash } from 'node:crypto';
-import { parseRadarCsv, classifyReading, PITCH_TYPES } from './radarImport.js';
+import { parseRadarCsv, classifyReading, PITCH_TYPES, suggestMatches } from './radarImport.js';
 import { velocityRollup } from './metricRelease.js';
-import { membershipCoversDate } from './rosterLogic.js';
+import { commandRoster } from './commandRoster.js';
 
 export function mountCommandRadarRoutes(app, { db, requireInternal }) {
   const audit = (jobId, actorId, action, note) =>
@@ -105,22 +105,12 @@ export function mountCommandRadarRoutes(app, { db, requireInternal }) {
         WHERE i.job_id = ? ORDER BY i.id`
     ).all(job.id);
 
-    const memberships = db.prepare('SELECT * FROM roster_memberships WHERE team_id = ?').all(job.team_id);
-    const rosterIds = new Set(memberships.filter(m => membershipCoversDate(m, job.game_date)).map(m => m.player_id));
-    if (job.tournament_game_id) {
-      const eventRows = db.prepare(
-        `SELECT er.player_id FROM event_rosters er
-         JOIN tournament_entries te ON te.id = er.entry_id
-         WHERE te.team_id = ? AND te.tournament_id = ?`
-      ).all(job.team_id, job.tournament_id);
-      for (const r of eventRows) rosterIds.add(r.player_id);
-    }
-    const roster = rosterIds.size
-      ? db.prepare(`SELECT id, first_name, last_name, primary_position FROM players WHERE id IN (${[...rosterIds].map(() => '?').join(',')}) ORDER BY last_name`).all(...rosterIds)
-      : [];
+    // Roster = dated team roster + event roster (incl. guests) + job guests.
+    const roster = commandRoster(db, job);
+    // Suggested matches ride each unmatched reading; confirming one is an
+    // ordinary classification, so nothing here can publish by itself.
+    const suggestions = suggestMatches(readings);
 
-    // Live rollup preview over the results that still count: withdrawn
-    // (invalidated) and superseded rows never enter it — same rule as release.
     const drafts = db.prepare(
       `SELECT player_id, metric_code, value, status FROM cmd_metric_results
        WHERE job_id = ? AND metric_code IN ('pitch_velocity_radar', 'exit_velocity_radar')
@@ -140,6 +130,9 @@ export function mountCommandRadarRoutes(app, { db, requireInternal }) {
       return { player_id: Number(playerId), name: `${p.first_name} ${p.last_name}`, metric_code: code, ...rollup.sample };
     });
 
-    res.json({ readings, imports, roster, summaries, pitch_types: PITCH_TYPES });
+    res.json({
+      readings: readings.map(r => ({ ...r, suggestion: suggestions.get(r.id) || null })),
+      imports, roster, summaries, pitch_types: PITCH_TYPES,
+    });
   });
 }

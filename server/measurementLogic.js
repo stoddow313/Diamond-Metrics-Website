@@ -145,6 +145,42 @@ export function saveMeasurement(db, eventId, { start_frame, end_frame, rendition
   return apply();
 }
 
+// Post-game reassignment (roadmap §4.2): the runner on an attempt turns out
+// to be someone else — a courtesy runner, a guest identified afterwards, a
+// misread jersey. The attempt keeps its evidence; its results follow the new
+// player on the same rows (decided results go back to review) and the
+// profile is resynced at once.
+export function reassignAttempt(db, eventId, { player_id }, actorId) {
+  const event = db.prepare("SELECT * FROM cmd_events WHERE id = ? AND event_type = 'running_attempt' AND status = 'active'").get(eventId);
+  if (!event) throw err('Attempt not found', 404);
+  const playerId = Number(player_id);
+  if (!db.prepare('SELECT 1 FROM players WHERE id = ?').get(playerId)) throw err('Unknown player');
+  if (event.player_id === playerId) return event;
+  const apply = db.transaction(() => {
+    db.prepare('UPDATE cmd_events SET player_id = ? WHERE id = ?').run(playerId, eventId);
+    const measurement = db.prepare('SELECT * FROM cmd_measurements WHERE event_id = ?').get(eventId);
+    if (measurement) {
+      const rows = db.prepare(
+        "SELECT * FROM cmd_metric_results WHERE evidence_kind = 'measurement' AND evidence_id = ? AND superseded_by IS NULL"
+      ).all(measurement.id);
+      for (const r of rows) {
+        if (r.status === 'withdrawn' || r.status === 'unavailable') {
+          // Nothing releasable to re-review; the row simply follows the runner.
+          db.prepare("UPDATE cmd_metric_results SET player_id = ?, updated_at = datetime('now') WHERE id = ?").run(playerId, r.id);
+        } else {
+          applyResultState(db, r.id, { player_id: playerId, metric_code: r.metric_code, value: r.value, actorId, reason: `attempt ${eventId} reassigned from player ${event.player_id} to ${playerId}` });
+        }
+      }
+    }
+    db.prepare(
+      "INSERT INTO cmd_review_actions (target_table, target_id, actor_id, action, note, prev_state, new_state) VALUES ('cmd_events', ?, ?, 'reassigned', ?, ?, ?)"
+    ).run(eventId, actorId, 'runner reassigned', String(event.player_id), String(playerId));
+    resyncPublishedRollups(db, event.job_id, actorId, `attempt ${eventId} reassigned`);
+  });
+  apply();
+  return db.prepare('SELECT * FROM cmd_events WHERE id = ?').get(eventId);
+}
+
 export function markUnavailable(db, eventId, { reason, note = '' }, actorId) {
   const event = db.prepare("SELECT * FROM cmd_events WHERE id = ? AND event_type = 'running_attempt' AND status = 'active'").get(eventId);
   if (!event) throw err('Attempt not found', 404);

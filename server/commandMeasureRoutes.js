@@ -1,7 +1,7 @@
 // Command M4 routes: running-attempt queues + the measurement drawer.
-import { createAttempt, saveMeasurement, markUnavailable, UNAVAILABLE_REASONS, ATTEMPT_TYPES } from './measurementLogic.js';
+import { createAttempt, saveMeasurement, markUnavailable, reassignAttempt, UNAVAILABLE_REASONS, ATTEMPT_TYPES } from './measurementLogic.js';
 import { timingRollup } from './metricRelease.js';
-import { membershipCoversDate } from './rosterLogic.js';
+import { commandRoster } from './commandRoster.js';
 
 export function mountCommandMeasureRoutes(app, { db, requireInternal }) {
   app.post('/api/command/jobs/:id/attempts', requireInternal, (req, res) => {
@@ -16,6 +16,15 @@ export function mountCommandMeasureRoutes(app, { db, requireInternal }) {
   app.post('/api/command/attempts/:id/measure', requireInternal, (req, res) => {
     try {
       res.json({ measurement: saveMeasurement(db, Number(req.params.id), req.body || {}, req.internal.id) });
+    } catch (err) {
+      res.status(err.status || 500).json({ error: err.message });
+    }
+  });
+
+  // Post-game reassignment of the runner; results follow on the same rows.
+  app.put('/api/command/attempts/:id', requireInternal, (req, res) => {
+    try {
+      res.json({ attempt: reassignAttempt(db, Number(req.params.id), req.body || {}, req.internal.id) });
     } catch (err) {
       res.status(err.status || 500).json({ error: err.message });
     }
@@ -43,11 +52,8 @@ export function mountCommandMeasureRoutes(app, { db, requireInternal }) {
        ORDER BY e.sequence`
     ).all(job.id).map(a => ({ ...a, payload: JSON.parse(a.payload) }));
 
-    const memberships = db.prepare('SELECT * FROM roster_memberships WHERE team_id = ?').all(job.team_id);
-    const rosterIds = new Set(memberships.filter(m => membershipCoversDate(m, job.game_date)).map(m => m.player_id));
-    const roster = rosterIds.size
-      ? db.prepare(`SELECT id, first_name, last_name, primary_position FROM players WHERE id IN (${[...rosterIds].map(() => '?').join(',')}) ORDER BY last_name`).all(...rosterIds)
-      : [];
+    // Roster = dated team roster + event roster (incl. guests) + job guests.
+    const roster = commandRoster(db, job);
 
     const feeds = db.prepare(
       `SELECT f.id, f.label, f.original_name, f.width, f.height, f.status, f.effective_fps, f.vfr, r.id AS proxy_rendition_id, r.fps AS proxy_fps

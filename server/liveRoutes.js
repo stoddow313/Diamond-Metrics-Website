@@ -18,7 +18,7 @@ import {
 import {
   createStream, getStream, listStreams, endStream, withUrls, playbackUrl,
   authorize, recordRelayState, addEvent, listEvents, sessionReport,
-  relayTokenValid, httpError, MASTER_PART_SIZE, newId,
+  relayTokenValid, relayConfig, httpError, MASTER_PART_SIZE, newId,
 } from './liveLogic.js';
 
 // Who may fetch a playback URL. Defaults to requiring a session: an open
