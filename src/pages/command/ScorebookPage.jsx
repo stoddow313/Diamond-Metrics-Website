@@ -89,6 +89,8 @@ export default function ScorebookPage() {
   const [fixState, setFixState] = useState(null);        // { outs, us, them, bases: {1,2,3}, next_slot, note }
   const [disputing, setDisputing] = useState(null);      // event id awaiting a reason
   const [clipEdit, setClipEdit] = useState(null);        // { id, start, end, t }
+  const [pitchType, setPitchType] = useState('');        // carries forward pitch to pitch until changed
+  const [timeSteals, setTimeSteals] = useState(true);    // queue a steal timing attempt with each SB/CS when the video is on
   const [pendingSeek, setPendingSeek] = useState(null);   // { seconds, nonce } from a play-by-play row
   const appliedSeekRef = useRef(null);
 
@@ -140,7 +142,7 @@ export default function ScorebookPage() {
   // ── pitch handling ────────────────────────────────────────────────────
   function addPitch(result) {
     if (!state || state.final) return;
-    const next = [...pitches, { result, timecode_s: videoOn ? tc() : undefined }];
+    const next = [...pitches, { result, timecode_s: videoOn ? tc() : undefined, pitch_type: pitchType || undefined }];
     setPitches(next);
     const { b, s } = countOf(next);
     if (result === 'hit_by_pitch') return openResult('hit_by_pitch', next);
@@ -150,7 +152,7 @@ export default function ScorebookPage() {
   }
 
   function openResult(result, pitchList = pitches) {
-    setResultPanel({ result, rbi: null, batted_ball: '', direction: '', fielders: '', error_position: '', error_label: '', error_player_id: '', advances: result ? defaultAdvances(result, state.bases) : {}, pitchList });
+    setResultPanel({ result, rbi: null, batted_ball: '', direction: '', fielders: '', error_position: '', error_label: '', error_player_id: '', time_home_to_first: false, advances: result ? defaultAdvances(result, state.bases) : {}, pitchList });
   }
   function chooseResult(result) {
     setResultPanel(rp => ({ ...rp, result, advances: defaultAdvances(result, state.bases) }));
@@ -172,7 +174,7 @@ export default function ScorebookPage() {
         out_of_order_ok: !!batter || undefined,
         error_player_id: pa.error_player_id ? Number(pa.error_player_id) : undefined,
       },
-      pitches: pitchList.map(p => ({ result: p.result, timecode_s: p.timecode_s })),
+      pitches: pitchList.map(p => ({ result: p.result, timecode_s: p.timecode_s, pitch_type: p.pitch_type || undefined, radar_reading_id: p.radar_reading_id || undefined })),
       runners,
       ...tag(),
       ...(videoOn && pitchList.some(p => p.timecode_s != null) ? { timecode_s: [...pitchList].reverse().find(p => p.timecode_s != null).timecode_s } : {}),
@@ -191,6 +193,7 @@ export default function ScorebookPage() {
       fielders: FIELDED_RESULTS.has(rp.result) && rp.fielders ? rp.fielders : undefined,
       error_position: rp.result === 'reach_on_error' && rp.error_position ? Number(rp.error_position) : undefined,
       error_label: rp.error_label || undefined, error_player_id: rp.error_player_id || undefined,
+      time_home_to_first: rp.time_home_to_first && videoOn && data.modules?.home_to_first ? true : undefined,
     }, rp.pitchList, adv);
   }
 
@@ -253,7 +256,8 @@ export default function ScorebookPage() {
   async function runnerPlay(base, how, to, out = false) {
     const r = state.bases[base];
     if (!r) return;
-    await run(() => api.commandScorebookEvent(jobId, { event_type: 'runner', ...tag(), payload: { runner_player_id: r.ref.player_id || undefined, runner_label: r.ref.label || undefined, from: base, to: out ? base : to, how, out } }), `${refName(r.ref)}: ${how.replace(/_/g, ' ')}`);
+    const timed = timeSteals && videoOn && data.modules?.steal && r.ref.player_id && (how === 'stolen_base' || how === 'caught_stealing');
+    await run(() => api.commandScorebookEvent(jobId, { event_type: 'runner', ...tag(), payload: { runner_player_id: r.ref.player_id || undefined, runner_label: r.ref.label || undefined, from: base, to: out ? base : to, how, out, time_steal: timed ? true : undefined } }), `${refName(r.ref)}: ${how.replace(/_/g, ' ')}${timed ? ' — steal timing queued' : ''}`);
   }
   // One wild pitch, passed ball or balk moves every runner up a base. The
   // events share a group id so the engine charges the pitcher (or catcher) once.
@@ -519,6 +523,26 @@ export default function ScorebookPage() {
                     {pitches.length > 0 && <button onClick={() => setPitches([])} className="text-xs cursor-pointer hover:underline" style={{ color: '#64748b' }}>clear (Esc)</button>}
                   </div>
                 </div>
+                {!resultPanel && (data.modules?.radar || data.pitch_types) && (
+                  <div className="flex items-end gap-2 flex-wrap mb-3" data-testid="pitch-detail">
+                    <Field label="Pitch type (carries forward)">
+                      <Select value={pitchType} onChange={e => { const v = e.target.value; setPitchType(v); setPitches(list => list.length ? list.map((p, i) => (i === list.length - 1 ? { ...p, pitch_type: v || undefined } : p)) : list); }}>
+                        <option value="">—</option>{(data.pitch_types || []).map(t => <option key={t} value={t}>{t}</option>)}
+                      </Select>
+                    </Field>
+                    {data.modules?.radar && pitches.length > 0 && battingSide === 'them' && (
+                      <Field label={`Radar reading for the last pitch (${pitches[pitches.length - 1].result.replace(/_/g, ' ')})`}>
+                        <Select value={pitches[pitches.length - 1].radar_reading_id || ''} onChange={e => { const id = e.target.value ? Number(e.target.value) : undefined; setPitches(list => list.map((p, i) => (i === list.length - 1 ? { ...p, radar_reading_id: id } : p))); }}>
+                          <option value="">no reading</option>
+                          {(data.radar_readings || []).filter(r => r.status === 'unmatched' || r.player_id === state.pitcher.us?.player_id).map(r => (
+                            <option key={r.id} value={r.id}>{r.velocity} {r.unit || 'mph'}{r.source_timestamp ? ` · ${r.source_timestamp}` : r.row_index != null ? ` · row ${r.row_index}` : ''}{r.status === 'matched' ? ' · matched' : ''}</option>
+                          ))}
+                        </Select>
+                      </Field>
+                    )}
+                    {data.modules?.radar && battingSide === 'us' && pitches.length > 0 && <span className="text-xs pb-2" style={{ color: '#64748b' }}>Radar readings attach to our pitchers only</span>}
+                  </div>
+                )}
                 {!resultPanel && (
                   <>
                     <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
@@ -591,6 +615,12 @@ export default function ScorebookPage() {
                         )}
                       </div>
                     )}
+                    {resultPanel.result && videoOn && data.modules?.home_to_first && battingSide === 'us' && !['walk', 'intentional_walk', 'hit_by_pitch', 'catcher_interference', 'strikeout', 'strikeout_looking'].includes(resultPanel.result) && (
+                      <label className="flex items-center gap-2 text-xs mb-3 cursor-pointer" style={{ color: '#cfe8ff' }} data-testid="time-home-to-first">
+                        <input type="checkbox" checked={!!resultPanel.time_home_to_first} onChange={e => setResultPanel(rp => ({ ...rp, time_home_to_first: e.target.checked }))} />
+                        Queue home-to-first timing for the batter at this moment ({formatTimecode(tc())})
+                      </label>
+                    )}
                     {resultPanel.result && [3, 2, 1].some(b => state.bases[b]) && (
                       <div className="mb-3">
                         <p className="text-[11px] font-bold uppercase tracking-widest mb-1.5" style={{ color: '#94a3b8' }}>Runners on this play</p>
@@ -635,7 +665,14 @@ export default function ScorebookPage() {
                 {/* between-batter runner plays */}
                 {!resultPanel && [3, 2, 1].some(b => state.bases[b]) && (
                   <div className="mt-4 pt-3 border-t" style={{ borderColor: '#1e3a5f' }}>
-                    <p className="text-[11px] font-bold uppercase tracking-widest mb-1.5" style={{ color: '#94a3b8' }}>Runner plays before the next pitch</p>
+                    <div className="flex items-center justify-between gap-2 mb-1.5">
+                      <p className="text-[11px] font-bold uppercase tracking-widest" style={{ color: '#94a3b8' }}>Runner plays before the next pitch</p>
+                      {videoOn && data.modules?.steal && battingSide === 'us' && (
+                        <label className="flex items-center gap-1.5 text-xs cursor-pointer" style={{ color: '#cfe8ff' }} data-testid="time-steals">
+                          <input type="checkbox" checked={timeSteals} onChange={e => setTimeSteals(e.target.checked)} /> queue steal timing with each SB / CS
+                        </label>
+                      )}
+                    </div>
                     {[3, 2, 1].filter(b => state.bases[b]).map(b => (
                       <div key={b} className="flex items-center gap-1.5 py-1 flex-wrap text-xs">
                         <span className="w-40 truncate" style={{ color: '#cfe8ff' }}>{b}B · {refName(state.bases[b].ref)}</span>
@@ -742,6 +779,12 @@ export default function ScorebookPage() {
                           className="mr-2 text-xs tabular-nums cursor-pointer hover:underline" style={{ color: '#38bdf8' }} title="Jump to this moment in the footage" data-testid={`jump-${l.id}`}>▶ {formatTimecode(l.timecode_s)}</button>
                       )}
                       {l.text}{disputed ? <span className="ml-2 text-xs font-bold" style={{ color: '#fbbf24' }}>under review</span> : null}
+                      {l.pitches?.some(x => x.velocity != null || x.pitch_type) && (
+                        <span className="ml-2 inline-flex gap-1 flex-wrap align-middle">
+                          {l.pitches.map((x, i) => <span key={i} className="px-1.5 py-0.5 rounded text-[10px]" style={{ backgroundColor: 'rgba(30, 41, 59, 0.9)', color: x.velocity != null ? '#cfe8ff' : '#64748b' }} title={x.result.replace(/_/g, ' ')}>{x.velocity != null ? `${x.velocity} ` : ''}{x.pitch_type ? x.pitch_type.slice(0, 2).toUpperCase() : x.result === 'ball' ? 'B' : 'S'}</span>)}
+                        </span>
+                      )}
+                      {l.attempt_id && <Link to={`/command/jobs/${jobId}/running`} className="ml-2 text-[10px] font-bold uppercase tracking-wider hover:underline" style={{ color: '#4ade80' }}>timing queued →</Link>}
                       {clipEdit?.id === l.id && (
                         <div className="mt-2 p-2 rounded-xl border flex items-center gap-2 flex-wrap text-xs" style={{ borderColor: 'rgba(56, 189, 248, 0.4)' }} data-testid="clip-editor">
                           <span style={{ color: '#94a3b8' }}>moment <b style={{ color: '#cfe8ff' }}>{formatTimecode(clipEdit.t)}</b> · clip <b style={{ color: '#cfe8ff' }}>{formatTimecode(clipEdit.start)}</b> → <b style={{ color: '#cfe8ff' }}>{formatTimecode(clipEdit.end)}</b></span>

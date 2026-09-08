@@ -289,6 +289,44 @@ test('a state adjustment needs a half inning in progress and is audited like any
   assert.ok(db.prepare("SELECT 1 FROM cmd_review_actions WHERE target_table='cmd_events' AND target_id=? AND action='created'").get(rp.event.id));
 });
 
+test('internal metrics on plays: a linked radar reading is matched to our pitcher once; steals and hits can queue timing attempts at the tagged moment', () => {
+  const j6 = makeJob();
+  const feed = db.prepare("INSERT INTO cmd_video_feeds (job_id, label, storage_key, original_name, status, effective_fps, nominal_fps, width, height, duration_s) VALUES (?, 'Behind home', 'k6', 'g6.mp4', 'ready', 60, 60, 1920, 1080, 5400)").run(j6).lastInsertRowid;
+  ourLineup(j6, true);    // we are home: they bat first against Pat
+  theirLineup(j6);
+  const reading = db.prepare("INSERT INTO cmd_radar_readings (job_id, source, velocity, status, created_by) VALUES (?, 'manual', 71, 'unmatched', ?)").run(j6, admin).lastInsertRowid;
+  const foreign = db.prepare("INSERT INTO cmd_radar_readings (job_id, source, velocity, status, created_by) VALUES (?, 'manual', 99, 'unmatched', ?)").run(job, admin).lastInsertRowid;
+  // Their leadoff hitter strikes out; the second pitch carried the radar reading.
+  const rp = pa(j6, { pa: { batter_label: 'Opp #1', result: 'strikeout' }, pitches: [{ result: 'called_strike', pitch_type: 'fastball' }, { result: 'swinging_strike', pitch_type: 'fastball', radar_reading_id: reading }, { result: 'swinging_strike' }], selected_feed_id: feed, timecode_s: 40 });
+  const r = db.prepare('SELECT * FROM cmd_radar_readings WHERE id = ?').get(reading);
+  assert.equal(r.status, 'matched'); assert.equal(r.player_id, P); assert.equal(r.pitch_type, 'fastball'); assert.equal(r.pitch_or_exit, 'pitch');
+  const result = db.prepare("SELECT * FROM cmd_metric_results WHERE evidence_kind='radar_reading' AND evidence_id=? AND superseded_by IS NULL").all(reading);
+  assert.equal(result.length, 1, 'one derived result, through the radar lifecycle'); assert.equal(result[0].value, 71); assert.equal(result[0].player_id, P);
+  const entry = rp.log.find(l => l.id === rp.event_id);
+  assert.equal(entry.pitches.length, 3); assert.equal(entry.pitches[1].velocity, 71); assert.equal(entry.pitches[1].pitch_type, 'fastball');
+  assert.match(entry.text, /71 mph/);
+  // Linking the same reading again to the same pitcher is a no-op; another job's reading is refused.
+  assert.throws(() => pa(j6, { pa: { batter_label: 'Opp #2', result: 'walk' }, pitches: [{ result: 'ball', radar_reading_id: foreign }, { result: 'ball' }, { result: 'ball' }, { result: 'ball' }] }), /reading on this job/);
+  assert.equal(db.prepare("SELECT COUNT(*) c FROM cmd_metric_results WHERE evidence_kind='radar_reading' AND evidence_id=? AND superseded_by IS NULL").get(reading).c, 1);
+  // Bottom 1: we bat. A single with home-to-first timing queued for the batter; then a steal timed for the runner.
+  pa(j6, { pa: { batter_label: 'Opp #2', result: 'groundout' } }); pa(j6, { pa: { batter_label: 'Opp #3', result: 'flyout' } });
+  const hit = pa(j6, { pa: { result: 'single', time_home_to_first: true }, pitches: [{ result: 'in_play', timecode_s: 300.25 }], selected_feed_id: feed });
+  const paRow = db.prepare('SELECT * FROM cmd_events WHERE id = ?').get(hit.event_id);
+  const attemptId = JSON.parse(paRow.payload).attempt_id;
+  assert.ok(attemptId, 'the play remembers its timing attempt');
+  const attempt = db.prepare('SELECT * FROM cmd_events WHERE id = ?').get(attemptId);
+  assert.equal(attempt.event_type, 'running_attempt'); assert.equal(attempt.player_id, SS, 'queued for the batter'); assert.equal(attempt.selected_feed_id, feed); assert.equal(attempt.timecode_s, 300.25);
+  assert.equal(JSON.parse(attempt.payload).attempt_type, 'home_to_first');
+  assert.ok(!('time_home_to_first' in JSON.parse(paRow.payload)), 'the request flag is not stored');
+  const sb = appendEvent(db, j6, { event_type: 'runner', payload: { runner_player_id: SS, from: 1, to: 2, how: 'stolen_base', time_steal: true }, selected_feed_id: feed, timecode_s: 333 }, admin);
+  const stealAttempt = db.prepare('SELECT * FROM cmd_events WHERE id = ?').get(sb.event.payload.attempt_id);
+  assert.equal(JSON.parse(stealAttempt.payload).attempt_type, 'steal'); assert.equal(stealAttempt.player_id, SS); assert.equal(stealAttempt.timecode_s, 333);
+  assert.match(sb.log.find(l => l.id === sb.event.id).text, /timing queued/);
+  // Timing needs footage and one of our players.
+  assert.throws(() => appendEvent(db, j6, { event_type: 'runner', payload: { runner_player_id: SS, from: 2, to: 3, how: 'stolen_base', time_steal: true } }, admin), /needs the footage selected/);
+  assert.throws(() => appendEvent(db, j6, { event_type: 'runner', payload: { runner_player_id: SS, from: 2, to: 3, how: 'stolen_base', attempt_id: 999999 } }, admin), /running attempt on this job/);
+});
+
 test('game-over suggestion follows the ruleset run rule; scoring after final is refused', () => {
   const j2 = makeJob();
   ourLineup(j2, true);   // we are home

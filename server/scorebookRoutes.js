@@ -2,6 +2,8 @@
 // client never keeps its own copy of the truth.
 import { replayJob, appendEvent, appendPlateAppearance, correctEvent, voidEvent, disputeEvent, resolveEvent, rulesetFor, refreshLiveSource,
          EVENT_TYPES, PA_RESULTS, PITCH_RESULTS, RUNNER_HOWS, SUB_KINDS, FINAL_REASONS, BATTED_BALLS, DIRECTIONS, POSITION_NUMBERS, setEventClip } from './scorebook.js';
+import { PITCH_TYPES } from './radarImport.js';
+import { requirementEnabled, METRIC_BY_ATTEMPT } from './measurementLogic.js';
 import { commandRoster } from './commandRoster.js';
 
 export function mountScorebookRoutes(app, { db, requireInternal }) {
@@ -14,6 +16,11 @@ export function mountScorebookRoutes(app, { db, requireInternal }) {
       roster: commandRoster(db, job),
       source,
       feeds: db.prepare('SELECT id, label, status, effective_fps, nominal_fps, width, height, duration_s FROM cmd_video_feeds WHERE job_id = ? ORDER BY id').all(jobId),
+      // Internal metrics the scorer can attach to plays (PRD §5.1 "when known"): radar readings to pitches,
+      // timing attempts to runners/batters — only for modules this order activated.
+      radar_readings: db.prepare("SELECT id, velocity, unit, source_timestamp, row_index, status, player_id, pitch_type, pitch_or_exit FROM cmd_radar_readings WHERE job_id = ? AND status != 'invalid' ORDER BY row_index, id").all(jobId),
+      pitch_types: PITCH_TYPES,
+      modules: { radar: requirementEnabled(db, jobId, 'pitch_velocity_radar'), home_to_first: requirementEnabled(db, jobId, METRIC_BY_ATTEMPT.home_to_first), steal: requirementEnabled(db, jobId, METRIC_BY_ATTEMPT.steal) },
       vocab: { event_types: EVENT_TYPES, pa_results: PA_RESULTS, pitch_results: PITCH_RESULTS, runner_hows: RUNNER_HOWS, sub_kinds: SUB_KINDS, final_reasons: FINAL_REASONS, batted_balls: BATTED_BALLS, directions: DIRECTIONS, position_numbers: POSITION_NUMBERS },
       version: rp.version, state: rp.state, tallies: rp.tallies, issues: rp.issues, log: rp.log,
       events: rp.events.map(e => ({ id: e.id, sequence: e.sequence, event_type: e.event_type, parent_event_id: e.parent_event_id, status: e.status, payload: e.payload })),

@@ -27,9 +27,9 @@ export function ninetyFtSpeedMph(seconds) {
   return (90 / seconds) * 0.681818;
 }
 
-const METRIC_BY_ATTEMPT = { home_to_first: 'home_to_first', steal: 'steal_time' };
+export const METRIC_BY_ATTEMPT = { home_to_first: 'home_to_first', steal: 'steal_time' };
 
-function requirementEnabled(db, jobId, metricCode) {
+export function requirementEnabled(db, jobId, metricCode) {
   return !!db.prepare(
     `SELECT 1 FROM cmd_metric_requirements r JOIN cmd_jobs j ON j.order_id = r.order_id
      WHERE j.id = ? AND r.metric_code = ? AND r.enabled = 1`
