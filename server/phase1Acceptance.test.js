@@ -19,6 +19,7 @@ const { createAttempt, saveMeasurement, reassignAttempt } = await import('./meas
 const { decideResult, releaseMetrics, computeQaFlags, releasePlan, resultForEvidence } = await import('./releaseLogic.js');
 const { assessCapture, unavailableReasonFor, CAPTURE_SPECS } = await import('./captureSpec.js');
 const { commandRoster, addJobGuest } = await import('./commandRoster.js');
+const { validateGameRecordSource, releaseGameRecord } = await import('./gameRecord.js');
 
 let admin, org, team, baseball, pitcher, runner, other;
 
@@ -276,4 +277,26 @@ test('9a. two releases (metric half): metrics publish while the game record is s
   assert.equal(db.prepare('SELECT game_record_status FROM cmd_jobs WHERE id = ?').get(job).game_record_status, 'pending', 'independent track');
   assert.equal(db.prepare("SELECT COUNT(*) c FROM stat_entries s JOIN games g ON g.id = s.game_id WHERE g.command_job_id = ? AND s.metric_key LIKE 'bs_%'").get(job).c, 0, 'no box score yet');
 });
-test.todo('9b. two releases (game-record half) — validated GameChanger/manual record releases box-score statistics: feat/game-record-release');
+test('9b. two releases (game-record half): a validated GameChanger record later publishes box-score statistics, labelled scorebook-derived, on its own track', () => {
+  const job = makeJob();
+  addFeed(job);
+  const r = addReading(job, 80);
+  classifyReading(db, r, { player_id: pitcher, pitch_or_exit: 'pitch', status: 'matched' }, admin);
+  approveAll(job);
+  releaseMetrics(db, job, admin);
+  assert.equal(entry(job, pitcher, 'max_velo').value, 80, 'metrics first');
+
+  const csv = 'Number,Last,First,PA,AB,H,R,RBI,BB,SO\n7,Pitcher,Pat,4,3,2,1,1,1,0\n21,Runner,Rae,3,3,1,0,0,0,2\n,Totals,,7,6,3,1,1,1,2\n';
+  const sourceId = db.prepare(
+    "INSERT INTO cmd_game_record_sources (job_id, source_kind, label, raw_import, created_by) VALUES (?, 'gamechanger_export', 'GC export', ?, ?)"
+  ).run(job, csv, admin).lastInsertRowid;
+  const v = validateGameRecordSource(db, sourceId, {}, admin);
+  assert.equal(v.status, 'validated');
+  const out = releaseGameRecord(db, job, admin);
+  assert.equal(out.players, 2);
+  assert.equal(entry(job, pitcher, 'bs_pa').value, 4);
+  assert.equal(entry(job, pitcher, 'bs_pa').method, 'scorebook_derived');
+  assert.equal(entry(job, runner, 'bs_k').value, 2);
+  assert.equal(entry(job, pitcher, 'max_velo').method, 'radar_verified', 'measured and scorebook-derived stay distinguishable');
+  assert.equal(db.prepare("SELECT COUNT(*) c FROM cmd_review_actions WHERE target_table='cmd_jobs' AND target_id=? AND action='game_record_released'").get(job).c, 1);
+});

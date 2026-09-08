@@ -422,12 +422,38 @@ test, in the roadmap's order. Status on 2026-09-08:
 | 6 | Full-game correction | Phase 2 | needs scorebook events; recalculation mechanism proven for metrics (§3.12) |
 | 7 | Roster complexity | passes (Phase 1 half) | courtesy runners, guest/unknown placeholders, post-game reassignment; substitutions and inherited runners are Phase 2 |
 | 8 | Tournament batch | passes | bulk jobs unique per game and team; footage triage flags missing/failed media |
-| 9 | Two releases | metric half passes | game-record half ships with the GameChanger release (`feat/game-record-release`) |
+| 9 | Two releases | passes | metric release first; a validated GameChanger/manual record later releases box-score statistics (§3.14) |
 
 Guest placeholders (`cmd_job_guests`) are real player rows with
 `is_public = 0`; they never get a public profile. Reassigning an attempt
 moves its results on the same rows (reviewed values return to draft) and
 resyncs the profile immediately.
+
+### 3.14 Game-record release (GameChanger and manual box scores)
+
+The second release track. On the job page, **Game record sources** →
+**+ Attach GameChanger export or box score**: choose the kind, pick the CSV
+(or paste it), attach. The raw content is stored verbatim. **Validate**
+parses the file — GameChanger's batting, pitching and fielding tables in
+one export are all understood; `Totals` rows and derived columns (AVG, OBP,
+ERA…) are ignored; anything else unplaced is reported — and resolves each
+row to the job roster by jersey first, then exact name, then a unique last
+name. Rows it cannot place are listed with a player picker or **Skip**;
+**Apply and re-validate** records your decisions. A source with every row
+resolved or skipped is `validated`.
+
+Then move the record: **Game record → in progress → validated** (needs a
+validated source) **→ released**. Release writes `bs_*` entries into the
+same games/stat_entries the profile reads with `method = 'scorebook_derived'`
+and a `game_record_source_id`, removes stale scorebook keys on a re-release,
+never touches measured metrics, and emits `full_review_complete`. Until
+then the customer profile shows **Box score pending full review**. Synthetic
+jobs run the whole workflow and write nothing.
+
+Compatibility: the parser was built against GameChanger's published column
+labels; the first real export from a tournament is the compatibility check,
+exactly as with the Pocket Radar CSV. If a column is reported as unplaced,
+send the header row and it is a one-line alias addition.
 
 ---
 

@@ -487,13 +487,16 @@ function TeamsAndEvents({ data }) {
 function GameSummaryTab({ data }) {
   const { metrics, games, catalog } = data;
   const boxMetrics = catalog.metrics.filter(m => m.category === 'box' && metrics[m.key]).map(m => metrics[m.key]);
+  const pendingGames = games.filter(g => g.box_score_pending);
 
   if (boxMetrics.length === 0) {
     return (
       <EmptyPanel
         icon={ClipboardList}
-        title="No box scores logged yet"
-        note="Game-by-game counting stats (plate appearances, hits, RBIs, innings pitched…) will appear here once logged."
+        title={pendingGames.length ? 'Box score pending full review' : 'No box scores logged yet'}
+        note={pendingGames.length
+          ? `Verified metrics for ${pendingGames.length} game${pendingGames.length === 1 ? '' : 's'} are already on this profile; the box score publishes when the game record is validated.`
+          : 'Game-by-game counting stats (plate appearances, hits, RBIs, innings pitched…) will appear here once logged.'}
       />
     );
   }
@@ -510,6 +513,7 @@ function GameSummaryTab({ data }) {
       <div>
         <p className="text-[11px] font-bold uppercase tracking-widest mb-2" style={{ color: text.secondary }}>
           Season Totals · {rows.length} game{rows.length === 1 ? '' : 's'}
+          {pendingGames.length > 0 && <span className="normal-case tracking-normal font-normal" style={{ color: text.faint }}> · {pendingGames.length} more pending full review</span>}
         </p>
         <div className="grid gap-3 grid-cols-3 sm:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8">
           {boxMetrics.map(m => (
