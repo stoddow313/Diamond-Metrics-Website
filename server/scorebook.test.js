@@ -350,6 +350,10 @@ test('the game result publishes with the record from the live scorebook, follows
   correctEvent(db, hr.id, { payload: { result: 'double', pitch_count: 0 } }, admin, 'video review: ball bounced over the fence');
   row = db.prepare('SELECT * FROM cmd_game_results WHERE job_id = ?').get(j7);
   assert.deepEqual([row.us_runs, row.them_runs, row.winner], [0, 0, 'tie']);
+  // A stale stored report (an engine upgrade since the last event) is refreshed by the release itself.
+  db.prepare("UPDATE cmd_game_record_sources SET parsed_report = ? WHERE job_id = ? AND source_kind = 'live_internal'").run(JSON.stringify({ blocks: [], warnings: [], rows: [], unresolved: [], roster: [] }), j7);
+  releaseGameRecord(db, j7, admin);
+  assert.ok(db.prepare("SELECT 1 FROM stat_entries s JOIN games g ON g.id = s.game_id WHERE g.command_job_id = ? AND s.metric_key = 'bs_tb'").get(j7), 'the release published the current replay, not the stale snapshot');
   // A record built only from an import carries no result.
   const j8 = makeJob();
   const imp = db.prepare("INSERT INTO cmd_game_record_sources (job_id, source_kind, label, raw_import, created_by) VALUES (?, 'manual', 'Manual box', ?, ?)").run(j8, 'Number,Last,First,PA,AB,H\n6,Short,Sam,4,4,2\n', admin).lastInsertRowid;

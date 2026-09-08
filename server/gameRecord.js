@@ -13,7 +13,7 @@
 // could not place instead of guessing.
 import { resyncPublishedRollups } from './releaseLogic.js';
 import { commandRoster } from './commandRoster.js';
-import { liveRecordReport, setGameRecordReleaseHook, replayJob } from './scorebook.js';
+import { liveRecordReport, setGameRecordReleaseHook, replayJob, refreshLiveSource } from './scorebook.js';
 
 const norm = s => String(s ?? '').trim();
 const key = s => norm(s).toLowerCase().replace(/[^a-z0-9#%/+-]+/g, '');
@@ -262,6 +262,11 @@ export function gameRecordPlan(db, jobId) {
 export function releaseGameRecord(db, jobId, actorId = null) {
   const job = db.prepare('SELECT * FROM cmd_jobs WHERE id = ?').get(jobId);
   if (!job) throw Object.assign(new Error('Job not found'), { status: 404 });
+  // A live scorebook's stored report is a snapshot taken at the last event or
+  // validation. A release must publish the replay as it is now — including
+  // fields the engine learned since — so refresh it first. (A reopened game
+  // drops back to validating and simply stops being a source.)
+  if (db.prepare("SELECT 1 FROM cmd_game_record_sources WHERE job_id = ? AND source_kind = 'live_internal'").get(jobId)) refreshLiveSource(db, jobId, actorId);
   const { sources, players } = gameRecordPlan(db, jobId);
   if (sources.length === 0) throw Object.assign(new Error('No validated game-record source on this job — validate a GameChanger export or manual box score first'), { status: 400 });
   const synthetic = !!db.prepare('SELECT synthetic FROM cmd_orders WHERE id = ?').get(job.order_id)?.synthetic;
