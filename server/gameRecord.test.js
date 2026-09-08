@@ -90,6 +90,23 @@ test('resolver: jersey first, then exact name; a nickname with no jersey on file
   assert.equal(res.unresolved.length, 0);
 });
 
+test('resolver: two players wearing the same number resolve by name agreement, and a jersey that contradicts the name never wins', () => {
+  // A second #7 on the roster (an event guest), plus a stale jersey for Glove.
+  const twin = db.prepare("INSERT INTO players (first_name, last_name, slug) VALUES ('Tia', 'Twin', 'tia-twin')").run().lastInsertRowid;
+  db.prepare("INSERT INTO cmd_job_guests (job_id, player_id, jersey, label) VALUES (?, ?, '7', 'event guest')").run(jobId, twin);
+  const parsed = parseBoxScoreCsv('Number,Last,First,PA,AB,H\n7,Arm,Ace,4,4,1\n7,Twin,Tia,2,2,0\n7,Nobody,Ned,1,1,0\n3,Bat,Sammy,3,3,1\n');
+  const res = resolveBoxScoreRows(db, jobId, parsed);
+  const by = Object.fromEntries(res.rows.map(r => [r.name, r]));
+  assert.equal(by['Ace Arm'].player_id, ace);
+  assert.equal(by['Ace Arm'].resolved_by, 'jersey+name');
+  assert.equal(by['Tia Twin'].player_id, twin);
+  assert.equal(by['Ned Nobody'].player_id, null, 'two #7s and neither name matches: left for the analyst');
+  // Sammy Bat listed as #3, but #3 on file is Gil Glove: the jersey contradicts the name, so the name decides.
+  assert.equal(by['Sammy Bat'].player_id, slugger);
+  assert.equal(by['Sammy Bat'].resolved_by, 'last_name');
+  db.prepare('DELETE FROM cmd_job_guests WHERE player_id = ?').run(twin);
+});
+
 test('validation: an unresolvable row keeps the source in validating until the analyst resolves or skips it; everything is audited', () => {
   const csv = GC_CSV + '\nNumber,Last,First,PA,AB,H,R\n99,Mystery,Max,1,1,0,0\n';
   const sourceId = db.prepare(

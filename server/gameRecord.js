@@ -139,12 +139,22 @@ function parseStat(v) {
 // Unresolved rows are reported, never guessed.
 export function resolveBoxScoreRows(db, jobId, parsed, resolutions = {}) {
   const roster = commandRoster(db, jobId);
-  const byJersey = new Map();
-  for (const p of roster) if (p.jersey) byJersey.set(String(p.jersey).replace(/^#/, ''), p);
   const nameKey = s => norm(s).toLowerCase().replace(/[^a-z]/g, '');
+  // Jerseys are not unique on a roster that spans seasons or event guests
+  // (two #21s is normal), so a jersey match must be the only candidate AND
+  // agree with the name when the row carries one. Never guess between two.
+  const byJersey = new Map();
+  for (const p of roster) {
+    if (!p.jersey) continue;
+    const j = String(p.jersey).replace(/^#/, '');
+    if (!byJersey.has(j)) byJersey.set(j, []);
+    byJersey.get(j).push(p);
+  }
   const byName = new Map(roster.map(p => [nameKey(`${p.first_name}${p.last_name}`), p]));
   const byLast = new Map();
   for (const p of roster) { const k = nameKey(p.last_name); byLast.set(k, byLast.has(k) ? null : p); }   // null = ambiguous
+  const rowLast = row => nameKey(row.last_name || row.name.replace(/^(.*),.*$/, '$1').split(' ').pop());
+  const agrees = (p, row) => !rowLast(row) || nameKey(p.last_name) === rowLast(row);
 
   const resolved = [];
   for (const block of parsed.blocks) {
@@ -156,11 +166,16 @@ export function resolveBoxScoreRows(db, jobId, parsed, resolutions = {}) {
         player = pid == null ? null : roster.find(p => p.id === Number(pid)) || null;
         how = pid == null ? 'skipped' : (player ? 'analyst' : null);
       } else {
-        if (row.jersey && byJersey.has(row.jersey)) { player = byJersey.get(row.jersey); how = 'jersey'; }
+        const candidates = row.jersey ? (byJersey.get(row.jersey) || []) : [];
+        const agreeing = candidates.filter(p => agrees(p, row));
+        if (agreeing.length === 1 && (candidates.length === 1 || rowLast(row))) {
+          player = agreeing[0];
+          how = candidates.length === 1 ? 'jersey' : 'jersey+name';
+        }
         if (!player && row.name) {
           const full = nameKey(row.first_name ? `${row.first_name}${row.last_name}` : row.name.replace(/^(.*),\s*(.*)$/, '$2$1'));
           if (byName.has(full)) { player = byName.get(full); how = 'name'; }
-          else if (row.last_name && byLast.get(nameKey(row.last_name))) { player = byLast.get(nameKey(row.last_name)); how = 'last_name'; }
+          else if (rowLast(row) && byLast.get(rowLast(row))) { player = byLast.get(rowLast(row)); how = 'last_name'; }
         }
       }
       resolved.push({ key: rowKey, group: block.group, row: row.row, jersey: row.jersey, name: row.name, stats: row.stats, player_id: player?.id ?? null, player_name: player ? `${player.first_name} ${player.last_name}` : null, resolved_by: how, skipped: how === 'skipped' });
