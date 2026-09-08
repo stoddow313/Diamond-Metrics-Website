@@ -3,6 +3,7 @@
 // cmd_review_actions row; creation flows are transactional.
 import { PACKAGES, buildRequirements, canTransition, roleCanTransition, METRIC_RELEASE_STATES, GAME_RECORD_STATES, orderablePackages, SHARING_SCOPES_V1, assertRequirementToggle } from './commandLogic.js';
 import { addJobGuest } from './commandRoster.js';
+import { validateGameRecordSource, releaseGameRecord, gameRecordPlan } from './gameRecord.js';
 import { emitJobEvent } from './notifications.js';
 import { computeQaFlags, releaseMetrics } from './releaseLogic.js';
 
@@ -102,7 +103,12 @@ export function mountCommandRoutes(app, { db, requireInternal }) {
     const gameRecordSources = db.prepare(
       `SELECT g.*, a.name AS created_by_name FROM cmd_game_record_sources g LEFT JOIN admins a ON a.id = g.created_by
        WHERE g.job_id = ? ORDER BY g.id DESC`
-    ).all(id);
+    ).all(id).map(g => {
+      let report = null;
+      try { report = g.parsed_report ? JSON.parse(g.parsed_report) : null; } catch { report = null; }
+      const { parsed_report: _pr, resolutions: _rs, ...rest } = g;
+      return { ...rest, report, has_content: !!(g.raw_import && String(g.raw_import).trim()) };
+    });
     return { ...job, requirements, audit: auditTrail, notifications, game_record_sources: gameRecordSources };
   }
 
@@ -247,9 +253,19 @@ export function mountCommandRoutes(app, { db, requireInternal }) {
     }
     // The release adapter runs inside the released transition — approved
     // rollups publish to games/stat_entries before the customer is notified.
+    // Game-record track: 'validated' needs a validated source; 'released'
+    // publishes box-score statistics through the game-record adapter.
+    if (kind === 'game_record' && to === 'validated') {
+      const validated = db.prepare("SELECT 1 FROM cmd_game_record_sources WHERE job_id = ? AND validation_status = 'validated'").get(job.id);
+      if (!validated) return res.status(400).json({ error: 'Validate a game-record source (GameChanger export or manual box score) before marking the record validated' });
+    }
     let release = null;
     if (kind === 'metric_release' && to === 'released') {
       release = releaseMetrics(db, job.id, req.internal.id);
+    }
+    if (kind === 'game_record' && to === 'released') {
+      try { release = releaseGameRecord(db, job.id, req.internal.id); }
+      catch (err) { return res.status(err.status || 500).json({ error: err.message }); }
     }
     db.prepare(`UPDATE cmd_jobs SET ${col} = ?, updated_at = datetime('now') WHERE id = ?`).run(to, job.id);
     audit('cmd_jobs', job.id, req.internal.id, 'status_changed', { note: `${kind}${note ? ` — ${note}` : ''}`, prev: from, next: to });
@@ -337,6 +353,32 @@ export function mountCommandRoutes(app, { db, requireInternal }) {
         ready: rows.filter(r => r.ready > 0).length,
         unassigned: rows.filter(r => !r.assigned_to).length,
       },
+    });
+  });
+
+  // Validate a game-record source: parse, resolve rows to the roster, apply
+  // the analyst's resolutions { "batting:12": playerId | null }, report gaps.
+  app.post('/api/command/game-record-sources/:id/validate', requireInternal, (req, res) => {
+    try {
+      const out = validateGameRecordSource(db, Number(req.params.id), { resolutions: req.body?.resolutions || {} }, req.internal.id);
+      const source = db.prepare('SELECT job_id FROM cmd_game_record_sources WHERE id = ?').get(req.params.id);
+      res.json({ ...out, job: jobDetail(source.job_id) });
+    } catch (err) {
+      res.status(err.status || 500).json({ error: err.message });
+    }
+  });
+
+  // What the game-record release would publish right now.
+  app.get('/api/command/jobs/:id/game-record', requireInternal, (req, res) => {
+    const job = db.prepare('SELECT id FROM cmd_jobs WHERE id = ?').get(req.params.id);
+    if (!job) return res.status(404).json({ error: 'Job not found' });
+    const plan = gameRecordPlan(db, job.id);
+    const names = plan.players.length
+      ? new Map(db.prepare(`SELECT id, first_name, last_name FROM players WHERE id IN (${plan.players.map(() => '?').join(',')})`).all(...plan.players.map(p => p.player_id)).map(p => [p.id, `${p.first_name} ${p.last_name}`]))
+      : new Map();
+    res.json({
+      sources: plan.sources.map(s => ({ id: s.id, source_kind: s.source_kind, label: s.label, validation_status: s.validation_status, validated_at: s.validated_at })),
+      players: plan.players.map(p => ({ ...p, name: names.get(p.player_id) || `player ${p.player_id}` })),
     });
   });
 

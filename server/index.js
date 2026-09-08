@@ -470,8 +470,14 @@ const PUBLIC_PLAYER_COLS = `
 // Shared by the public route (by slug, public profiles only) and the player
 // portal (own profile, regardless of visibility).
 function buildProfilePayload(player) {
+  // box_score_pending: a Command job published metrics for this game but its
+  // game record (box score) has not been released yet — the customer sees
+  // "pending" rather than an empty box score (roadmap §6.2).
   const games = db.prepare(
-    'SELECT id, game_date, game_type, opponent, location, notes FROM games WHERE player_id = ? ORDER BY game_date ASC, id ASC'
+    `SELECT g.id, g.game_date, g.game_type, g.opponent, g.location, g.notes,
+            CASE WHEN g.command_job_id IS NOT NULL AND j.game_record_status NOT IN ('released', 'not_ordered') THEN 1 ELSE 0 END AS box_score_pending
+       FROM games g LEFT JOIN cmd_jobs j ON j.id = g.command_job_id
+      WHERE g.player_id = ? ORDER BY g.game_date ASC, g.id ASC`
   ).all(player.id);
   const entries = db.prepare(
     `SELECT s.metric_key, s.value, g.game_date, g.id AS game_id FROM stat_entries s
