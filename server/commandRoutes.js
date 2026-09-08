@@ -5,7 +5,7 @@ import { PACKAGES, buildRequirements, canTransition, roleCanTransition, METRIC_R
 import { addJobGuest } from './commandRoster.js';
 import { validateGameRecordSource, releaseGameRecord, gameRecordPlan } from './gameRecord.js';
 import { emitJobEvent } from './notifications.js';
-import { computeQaFlags, releaseMetrics } from './releaseLogic.js';
+import { computeQaFlags, releaseMetrics, resyncPublishedRollups } from './releaseLogic.js';
 
 export function mountCommandRoutes(app, { db, requireInternal }) {
   const audit = (targetTable, targetId, actorId, action, { note = '', prev = '', next = '' } = {}) =>
@@ -148,6 +148,9 @@ export function mountCommandRoutes(app, { db, requireInternal }) {
         db.prepare('UPDATE cmd_orders SET synthetic = ? WHERE id = ?').run(next, job.order_id);
         audit('cmd_jobs', job.id, req.internal.id, next ? 'marked_synthetic' : 'unmarked_synthetic',
           { prev: String(prev), next: String(next) });
+        // Profiles follow the flag at once: a job flagged synthetic after it
+        // released loses its published values; unflagging republishes them.
+        if (next !== prev) resyncPublishedRollups(db, job.id, req.internal.id, next ? 'marked synthetic' : 'unmarked synthetic');
       }
     });
     apply();

@@ -306,19 +306,56 @@ function writeRollups(db, job, { metrics, plan }) {
 // unreleased results never leak through here; only the release moves them.
 export function resyncPublishedRollups(db, jobId, actorId = null, reason = '') {
   const job = db.prepare('SELECT * FROM cmd_jobs WHERE id = ?').get(jobId);
-  if (!job) return { changes: [] };
-  if (db.prepare('SELECT synthetic FROM cmd_orders WHERE id = ?').get(job.order_id)?.synthetic) return { changes: [], synthetic: true };
+  if (!job) return { changes: [], gamesRemoved: 0 };
+  const synthetic = !!db.prepare('SELECT synthetic FROM cmd_orders WHERE id = ?').get(job.order_id)?.synthetic;
   const touched = db.prepare("SELECT 1 FROM cmd_metric_results WHERE job_id = ? AND status = 'published' LIMIT 1").get(jobId)
     || db.prepare('SELECT 1 FROM games WHERE command_job_id = ? LIMIT 1').get(jobId);
-  if (!touched) return { changes: [] };
-  const { changes } = writeRollups(db, job, releasePlan(db, jobId, { publishedOnly: true }));
-  if (changes.length) {
-    const summary = changes.map(c => `${c.metric_key} ${c.from ?? '—'}→${c.to ?? 'removed'} (player ${c.player_id})`).join(', ');
+  if (!touched) return { changes: [], gamesRemoved: 0, synthetic };
+  // A synthetic (pipeline-test) job publishes nothing, so its published-only
+  // plan is empty: every adapter-owned entry it ever wrote — including values
+  // released before the job was flagged — is cleared from the profile. A
+  // normal job re-derives exactly what its published results say.
+  const view = releasePlan(db, jobId, { publishedOnly: true });
+  const { changes } = writeRollups(db, job, synthetic ? { metrics: view.metrics, plan: [] } : view);
+  // A test job must not show up as "recent activity" on a real profile either:
+  // adapter-created game rows left with no entries at all are removed.
+  // Manually entered stats (method NULL) keep their game row.
+  let gamesRemoved = 0;
+  if (synthetic) {
+    gamesRemoved = db.prepare(
+      'DELETE FROM games WHERE command_job_id = ? AND NOT EXISTS (SELECT 1 FROM stat_entries s WHERE s.game_id = games.id)'
+    ).run(jobId).changes;
+  }
+  if (changes.length || gamesRemoved) {
+    const summary = [
+      ...changes.map(c => `${c.metric_key} ${c.from ?? '—'}→${c.to ?? 'removed'} (player ${c.player_id})`),
+      ...(gamesRemoved ? [`${gamesRemoved} empty synthetic game row${gamesRemoved === 1 ? '' : 's'} removed`] : []),
+    ].join(', ');
     db.prepare(
       "INSERT INTO cmd_review_actions (target_table, target_id, actor_id, action, note, prev_state, new_state) VALUES ('cmd_jobs', ?, ?, 'published_rollups_resynced', ?, '', ?)"
     ).run(jobId, actorId ?? null, `${reason ? `${reason} — ` : ''}${summary}`.slice(0, 600), RELEASE_VERSION);
   }
-  return { changes };
+  return { changes, gamesRemoved, synthetic };
+}
+
+// Boot-time reconciliation: every job that has ever touched a profile is
+// re-derived from its published results. Idempotent — a job whose rollups
+// already match produces no changes and no audit row. This is what clears
+// values that were released before a job was flagged synthetic, or that were
+// withdrawn by code older than the immediate resync.
+export function backfillPublishedRollups(db, actorId = null) {
+  const jobIds = new Set([
+    ...db.prepare('SELECT DISTINCT command_job_id AS id FROM games WHERE command_job_id IS NOT NULL').all().map(r => r.id),
+    ...db.prepare("SELECT DISTINCT job_id AS id FROM cmd_metric_results WHERE status = 'published'").all().map(r => r.id),
+  ]);
+  const summary = { jobs: jobIds.size, jobs_changed: 0, entries_changed: 0, games_removed: 0 };
+  for (const jobId of jobIds) {
+    const r = resyncPublishedRollups(db, jobId, actorId, 'boot reconciliation');
+    if (r.changes.length || r.gamesRemoved) summary.jobs_changed += 1;
+    summary.entries_changed += r.changes.length;
+    summary.games_removed += r.gamesRemoved || 0;
+  }
+  return summary;
 }
 
 // ---------------------------------------------------------------------------
