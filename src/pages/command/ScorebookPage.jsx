@@ -38,6 +38,7 @@ function countOf(list) {
 const fmtRate = (v, digits = 3) => (v == null ? '—' : digits === 3 ? v.toFixed(3).replace(/^0\./, '.') : v.toFixed(digits));
 
 const refName = r => (r ? (r.name || r.label || (r.player_id ? `#${r.player_id}` : '—')) : '—');
+const refKeyOf = r => (r?.player_id ? `p:${r.player_id}` : `l:${r?.label || ''}`);
 
 // Conventional advancement for a result: what a scorer usually confirms.
 function defaultAdvances(result, bases) {
@@ -85,6 +86,9 @@ export default function ScorebookPage() {
   const [showVideo, setShowVideo] = useState(true);
   const [currentFrame, setCurrentFrame] = useState(0);
   const playerRef = useRef(null);
+  const [fixState, setFixState] = useState(null);        // { outs, us, them, bases: {1,2,3}, next_slot, note }
+  const [disputing, setDisputing] = useState(null);      // event id awaiting a reason
+  const [clipEdit, setClipEdit] = useState(null);        // { id, start, end, t }
   const [pendingSeek, setPendingSeek] = useState(null);   // { seconds, nonce } from a play-by-play row
   const appliedSeekRef = useRef(null);
 
@@ -326,6 +330,9 @@ export default function ScorebookPage() {
             </div>
           </div>
           <div className="flex items-center gap-2">
+            {!state.final && lineupsReady && state.half && !state.half_complete && (
+              <GhostButton title="Edit outs, score, bases or who is due up when the derived state is wrong — with a reason" onClick={() => setFixState({ outs: state.outs, us: state.score.us, them: state.score.them, bases: { 1: state.bases[1]?.ref ? refKeyOf(state.bases[1].ref) : '', 2: state.bases[2]?.ref ? refKeyOf(state.bases[2].ref) : '', 3: state.bases[3]?.ref ? refKeyOf(state.bases[3].ref) : '' }, next_slot: state.expected_batter?.slot || 1, note: '' })}>Fix state</GhostButton>
+            )}
             {!state.final && lineupsReady && (
               <GhostButton onClick={() => setFinalForm({ reason: state.game_over_suggested?.reason || 'regulation', note: '' })}>Mark final</GhostButton>
             )}
@@ -344,6 +351,39 @@ export default function ScorebookPage() {
             <Field label="Note"><TextInput value={finalForm.note} onChange={e => setFinalForm(f => ({ ...f, note: e.target.value }))} placeholder="1:45 time limit" /></Field>
             <PrimaryButton disabled={busy} onClick={async () => { const d = await run(() => api.commandScorebookEvent(jobId, { event_type: 'game_final', ...tag(), payload: finalForm }), 'Game marked final — validate the game record from the job page'); if (d) setFinalForm(null); }}>Mark final</PrimaryButton>
             <GhostButton onClick={() => setFinalForm(null)}>Cancel</GhostButton>
+          </div>
+        )}
+        {fixState && (
+          <div className="mt-3 pt-3 border-t" style={{ borderColor: '#1e3a5f' }} data-testid="fix-state">
+            <p className="text-xs mb-2" style={{ color: '#fbbf24' }}>Only when the derived state is wrong. The adjustment is logged at this point in the game with your reason and shown to reviewers.</p>
+            <div className="flex items-end gap-2 flex-wrap">
+              <Field label="Outs"><Select value={fixState.outs} onChange={e => setFixState(f => ({ ...f, outs: Number(e.target.value) }))}>{[0, 1, 2, 3].map(n => <option key={n} value={n}>{n}</option>)}</Select></Field>
+              <Field label="Us"><TextInput type="number" min="0" value={fixState.us} onChange={e => setFixState(f => ({ ...f, us: e.target.value }))} /></Field>
+              <Field label={data.job.opponent_label || 'Them'}><TextInput type="number" min="0" value={fixState.them} onChange={e => setFixState(f => ({ ...f, them: e.target.value }))} /></Field>
+              {[1, 2, 3].map(b => (
+                <Field key={b} label={`${b}B`}>
+                  <Select value={fixState.bases[b]} onChange={e => setFixState(f => ({ ...f, bases: { ...f.bases, [b]: e.target.value } }))}>
+                    <option value="">empty</option>
+                    {battingRoster.map(p => <option key={p.slot} value={refKeyOf(p)}>{refName(p)}</option>)}
+                  </Select>
+                </Field>
+              ))}
+              <Field label="Due up (slot)"><Select value={fixState.next_slot} onChange={e => setFixState(f => ({ ...f, next_slot: Number(e.target.value) }))}>{battingRoster.map(p => <option key={p.slot} value={p.slot}>{p.slot}. {refName(p)}</option>)}</Select></Field>
+              <Field label="Reason (required)"><TextInput value={fixState.note} onChange={e => setFixState(f => ({ ...f, note: e.target.value }))} placeholder="camera was down for the play" /></Field>
+              <PrimaryButton disabled={busy || fixState.note.trim().length < 3} onClick={async () => {
+                const payload = { note: fixState.note.trim() };
+                if (Number(fixState.outs) !== state.outs) payload.outs = Number(fixState.outs);
+                const score = {}; if (Number(fixState.us) !== state.score.us) score.us = Number(fixState.us); if (Number(fixState.them) !== state.score.them) score.them = Number(fixState.them); if (Object.keys(score).length) payload.score = score;
+                const bases = {};
+                for (const b of [1, 2, 3]) { const cur = state.bases[b]?.ref ? refKeyOf(state.bases[b].ref) : ''; if (fixState.bases[b] !== cur) { const p = battingRoster.find(x => refKeyOf(x) === fixState.bases[b]); bases[b] = fixState.bases[b] ? { player_id: p?.player_id || undefined, label: p?.label || undefined } : null; } }
+                if (Object.keys(bases).length) payload.bases = bases;
+                if (Number(fixState.next_slot) !== (state.expected_batter?.slot || 1)) payload.next_slot = { [battingSide]: Number(fixState.next_slot) };
+                if (!['outs', 'score', 'bases', 'next_slot'].some(k => k in payload)) return setError('Nothing changed');
+                const d = await run(() => api.commandScorebookEvent(jobId, { event_type: 'state_adjustment', ...tag(), payload }), 'State adjusted — logged with your reason');
+                if (d) setFixState(null);
+              }}>Apply</PrimaryButton>
+              <GhostButton onClick={() => setFixState(null)}>Cancel</GhostButton>
+            </div>
           </div>
         )}
         {state.line_score?.innings > 0 && (
@@ -365,7 +405,7 @@ export default function ScorebookPage() {
         {data.issues.length > 0 && (
           <div className="mt-3 pt-3 border-t text-xs" style={{ borderColor: '#1e3a5f' }} data-testid="scorebook-issues">
             {data.issues.slice(0, 6).map((i, n) => (
-              <p key={n} style={{ color: i.level === 'blocking' ? '#f87171' : '#fbbf24' }}>{i.level === 'blocking' ? '⛔' : '⚠'} {i.message}{i.sequence ? <span style={{ color: '#475569' }}> · #{i.sequence}</span> : null}</p>
+              <p key={n} style={{ color: i.level === 'blocking' ? '#f87171' : i.level === 'info' ? '#94a3b8' : '#fbbf24' }}>{i.level === 'blocking' ? '⛔' : i.level === 'info' ? 'ℹ' : '⚠'} {i.message}{i.sequence ? <span style={{ color: '#475569' }}> · #{i.sequence}</span> : null}</p>
             ))}
             {data.issues.length > 6 && <p style={{ color: '#64748b' }}>… {data.issues.length - 6} more in the play-by-play</p>}
           </div>
@@ -702,13 +742,23 @@ export default function ScorebookPage() {
                           className="mr-2 text-xs tabular-nums cursor-pointer hover:underline" style={{ color: '#38bdf8' }} title="Jump to this moment in the footage" data-testid={`jump-${l.id}`}>▶ {formatTimecode(l.timecode_s)}</button>
                       )}
                       {l.text}{disputed ? <span className="ml-2 text-xs font-bold" style={{ color: '#fbbf24' }}>under review</span> : null}
+                      {clipEdit?.id === l.id && (
+                        <div className="mt-2 p-2 rounded-xl border flex items-center gap-2 flex-wrap text-xs" style={{ borderColor: 'rgba(56, 189, 248, 0.4)' }} data-testid="clip-editor">
+                          <span style={{ color: '#94a3b8' }}>moment <b style={{ color: '#cfe8ff' }}>{formatTimecode(clipEdit.t)}</b> · clip <b style={{ color: '#cfe8ff' }}>{formatTimecode(clipEdit.start)}</b> → <b style={{ color: '#cfe8ff' }}>{formatTimecode(clipEdit.end)}</b></span>
+                          <GhostButton onClick={() => setClipEdit(c => ({ ...c, t: tc() }))}>moment = here</GhostButton>
+                          <GhostButton onClick={() => setClipEdit(c => ({ ...c, start: tc() }))}>start = here</GhostButton>
+                          <GhostButton onClick={() => setClipEdit(c => ({ ...c, end: tc() }))}>end = here</GhostButton>
+                          <PrimaryButton disabled={busy || !(clipEdit.end > clipEdit.start)} onClick={async () => { const d = await run(() => api.commandScorebookClip(clipEdit.id, { timecode_s: clipEdit.t, clip_start_s: clipEdit.start, clip_end_s: clipEdit.end }), 'Clip saved'); if (d) setClipEdit(null); }}>Save clip</PrimaryButton>
+                          <GhostButton onClick={() => setClipEdit(null)}>Cancel</GhostButton>
+                        </div>
+                      )}
                       {editing?.event?.id === l.id && (
                         <CorrectionEditor editing={editing} setEditing={setEditing} vocab={data.vocab} busy={busy}
                           onSave={async () => { const d = await run(() => api.commandScorebookCorrect(editing.event.id, editing.payload, editing.note), 'Corrected — every dependent total recalculated'); if (d) setEditing(null); }} />
                       )}
                     </td>
                     <td className="px-4 py-2 text-right whitespace-nowrap">
-                      {ev && ['plate_appearance', 'runner', 'substitution', 'game_final'].includes(ev.event_type) && !editing && (
+                      {ev && ['plate_appearance', 'runner', 'substitution', 'game_final', 'state_adjustment'].includes(ev.event_type) && !editing && (
                         <>
                           {['plate_appearance', 'runner'].includes(ev.event_type) && <GhostButton onClick={() => setEditing({ event: ev, payload: { ...ev.payload }, note: '' })}>Correct</GhostButton>}
                           <span className="inline-block w-1" />
@@ -716,7 +766,21 @@ export default function ScorebookPage() {
                           <span className="inline-block w-1" />
                           {disputed
                             ? <GhostButton onClick={() => run(() => api.commandScorebookResolve(ev.id, ''), 'Resolved — back in the totals')}>Resolve</GhostButton>
-                            : <GhostButton onClick={() => run(() => api.commandScorebookDispute(ev.id, 'flagged by scorer'), 'Under review — excluded from totals until resolved')}>Dispute</GhostButton>}
+                            : disputing === ev.id
+                              ? <span className="inline-flex items-center gap-1 flex-wrap" data-testid="dispute-reasons">
+                                  {['unclear footage', 'scorer judgment', 'possible misidentification', 'needs video review'].map(reason => (
+                                    <button key={reason} onClick={async () => { const d = await run(() => api.commandScorebookDispute(ev.id, reason), `Under review (${reason}) — excluded from totals until resolved`); if (d) setDisputing(null); }}
+                                      className="px-2 py-1 rounded text-xs font-bold cursor-pointer" style={{ backgroundColor: 'rgba(251, 191, 36, 0.15)', color: '#fbbf24' }}>{reason}</button>
+                                  ))}
+                                  <button onClick={() => setDisputing(null)} className="px-2 py-1 rounded text-xs cursor-pointer" style={{ color: '#64748b' }}>cancel</button>
+                                </span>
+                              : <GhostButton onClick={() => setDisputing(ev.id)}>Dispute</GhostButton>}
+                          {videoOn && l.timecode_s != null && (
+                            <>
+                              <span className="inline-block w-1" />
+                              <GhostButton onClick={() => setClipEdit(clipEdit?.id === ev.id ? null : { id: ev.id, start: l.clip?.[0] ?? Math.max(0, l.timecode_s - 4), end: l.clip?.[1] ?? l.timecode_s + 8, t: l.timecode_s })}>Clip</GhostButton>
+                            </>
+                          )}
                         </>
                       )}
                     </td>

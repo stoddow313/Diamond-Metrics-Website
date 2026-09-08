@@ -278,6 +278,17 @@ test('tagging: plays carry feed, moment and a default clip; pitches carry their 
   assert.throws(() => setEventClip(db, fixed.event_id, { clip_start_s: 130, clip_end_s: 129 }, admin), /end after the start/);
 });
 
+test('a state adjustment needs a half inning in progress and is audited like any other event', () => {
+  const j5 = makeJob();
+  ourLineup(j5, false); theirLineup(j5);
+  assert.throws(() => appendEvent(db, j5, { event_type: 'state_adjustment', payload: { outs: 1, note: 'nothing has happened yet' } }, admin), /no half inning is in progress/);
+  pa(j5, { pa: { result: 'walk' } });
+  const rp = appendEvent(db, j5, { event_type: 'state_adjustment', payload: { outs: 1, note: 'runner was doubled off on a play we missed' } }, admin);
+  assert.equal(rp.state.outs, 1);
+  assert.ok(rp.issues.some(i => i.code === 'state_adjusted' && i.level === 'info'));
+  assert.ok(db.prepare("SELECT 1 FROM cmd_review_actions WHERE target_table='cmd_events' AND target_id=? AND action='created'").get(rp.event.id));
+});
+
 test('game-over suggestion follows the ruleset run rule; scoring after final is refused', () => {
   const j2 = makeJob();
   ourLineup(j2, true);   // we are home

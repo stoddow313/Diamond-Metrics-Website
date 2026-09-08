@@ -18,10 +18,13 @@
 // and scorer judgment for earned runs (uncertain → needs review, never a guess).
 //   substitution      { kind, side, slot?, base?, player_in_id?, player_in_label?, player_out_id?, player_out_label?, position? }
 //   game_final        { reason: regulation|run_rule|time_limit|forfeit|darkness|other, note? }
+//   state_adjustment  { outs?, score?: {us?, them?}, bases?: {1|2|3: {player_id?|label?}|null}, next_slot?: {us?, them?}, note }
+//                     — PRD §5.5 "edit count/outs/bases/score only when the derived state is incorrect; correction reason".
+//                     Applied at its point in the log and surfaced to reviewers as an info issue; never silent.
 import { commandRoster } from './commandRoster.js';
 
 export const SCOREBOOK_VERSION = 'CMD_SCOREBOOK_V1';
-export const EVENT_TYPES = ['lineup', 'half_inning', 'plate_appearance', 'pitch', 'runner', 'substitution', 'game_final'];
+export const EVENT_TYPES = ['lineup', 'half_inning', 'plate_appearance', 'pitch', 'runner', 'substitution', 'game_final', 'state_adjustment'];
 export const PA_RESULTS = [
   'single', 'double', 'triple', 'home_run',
   'walk', 'intentional_walk', 'hit_by_pitch', 'catcher_interference',
@@ -150,6 +153,15 @@ export function validatePayload(type, p = {}) {
     case 'game_final':
       need(FINAL_REASONS.includes(p.reason), `reason must be one of ${FINAL_REASONS.join(', ')}`);
       return;
+    case 'state_adjustment': {
+      need(typeof p.note === 'string' && p.note.trim().length >= 3, 'a state adjustment needs a reason (note)');
+      need(['outs', 'score', 'bases', 'next_slot'].some(k => p[k] !== undefined), 'a state adjustment must change outs, score, bases or the batting-order pointer');
+      if (p.outs !== undefined) need(Number.isInteger(p.outs) && p.outs >= 0 && p.outs <= 3, 'outs must be 0–3');
+      if (p.score !== undefined) { need(p.score && typeof p.score === 'object', 'score must be { us?, them? }'); for (const side of ['us', 'them']) if (p.score[side] !== undefined) need(Number.isInteger(p.score[side]) && p.score[side] >= 0, `score.${side} must be a whole number`); }
+      if (p.bases !== undefined) { need(p.bases && typeof p.bases === 'object', 'bases must be { 1?, 2?, 3? }'); for (const b of Object.keys(p.bases)) { need(['1', '2', '3'].includes(b), 'bases keys are 1, 2, 3'); const r = p.bases[b]; need(r === null || (r && typeof r === 'object' && (r.player_id || r.label)), `bases.${b} must be null or a player`); } }
+      if (p.next_slot !== undefined) { need(p.next_slot && typeof p.next_slot === 'object', 'next_slot must be { us?, them? }'); for (const side of ['us', 'them']) if (p.next_slot[side] !== undefined) need(Number.isInteger(p.next_slot[side]) && p.next_slot[side] >= 1, `next_slot.${side} must be a batting-order number`); }
+      return;
+    }
     default:
       throw err(`Unknown scorebook event type ${type}`);
   }
@@ -540,6 +552,30 @@ export function replay(events, { ruleset = {}, disputed = new Set() } = {}) {
           entry.child = true;
         }
         break;
+      case 'state_adjustment': {
+        if (!state.half) { issue('no_half_inning', 'blocking', e, 'State adjustment before any half inning'); break; }
+        const changes = [];
+        if (p.outs !== undefined && p.outs !== state.outs) { changes.push(`outs ${state.outs}→${p.outs}`); state.outs = p.outs; }
+        if (p.score) for (const side of ['us', 'them']) if (p.score[side] !== undefined && p.score[side] !== state.score[side]) {
+          const delta = p.score[side] - state.score[side];
+          changes.push(`${side} runs ${state.score[side]}→${p.score[side]}`);
+          state.score[side] = p.score[side]; state.team[side].r += delta;
+          const ls = state.line_score[side]; while (ls.length < state.inning) ls.push(0); ls[state.inning - 1] = Math.max(0, ls[state.inning - 1] + delta);
+        }
+        if (p.bases) for (const b of [1, 2, 3]) if (p.bases[b] !== undefined) {
+          const was = state.bases[b];
+          if (p.bases[b] === null) { if (was) { changes.push(`${b}B cleared`); state.bases[b] = null; } }
+          else {
+            const ref = mkRef(state.batting, p.bases[b].player_id, p.bases[b].label);
+            if (!was || refKey(was.ref) !== refKey(ref)) { changes.push(`${b}B → ${ref.label || `#${ref.player_id}`}`); state.bases[b] = { ref, responsible: state.pitcher[fieldingSide()], unearned: false, reached: 'adjustment' }; names.set(refKey(ref), ref); }
+          }
+        }
+        if (p.next_slot) for (const side of ['us', 'them']) if (p.next_slot[side] !== undefined && p.next_slot[side] !== state.next_slot[side]) { changes.push(`${side} next batter slot ${state.next_slot[side]}→${p.next_slot[side]}`); state.next_slot[side] = p.next_slot[side]; }
+        entry.text = `State adjusted${changes.length ? `: ${changes.join(', ')}` : ' (no change)'} — ${p.note}`;
+        issue('state_adjusted', 'info', e, `Scorer adjusted the derived state (${changes.join(', ') || 'no change'}): ${p.note}`);
+        endHalfIfDone(e);
+        break;
+      }
       case 'game_final':
         state.final = { reason: p.reason, note: p.note || '', event_id: e.id };
         if (!state.half_complete && state.outs > 0 && state.outs < 3 && p.reason === 'regulation') issue('final_mid_inning', 'warning', e, 'Game marked final mid-inning');
@@ -599,7 +635,7 @@ export function replay(events, { ruleset = {}, disputed = new Set() } = {}) {
 // ── Persistence helpers ────────────────────────────────────────────────────
 export function loadEvents(db, jobId) {
   return db.prepare(
-    "SELECT * FROM cmd_events WHERE job_id = ? AND event_type IN ('lineup','half_inning','plate_appearance','pitch','runner','substitution','game_final') AND status IN ('active','needs_review') ORDER BY sequence, id"
+    "SELECT * FROM cmd_events WHERE job_id = ? AND event_type IN ('lineup','half_inning','plate_appearance','pitch','runner','substitution','game_final','state_adjustment') AND status IN ('active','needs_review') ORDER BY sequence, id"
   ).all(jobId).map(e => ({ ...e, payload: safeJson(e.payload) }));
 }
 const safeJson = s => { try { return typeof s === 'string' ? JSON.parse(s || '{}') : (s || {}); } catch { return {}; } };
@@ -723,6 +759,7 @@ export function appendEvent(db, jobId, { event_type, parent_event_id = null, pay
   if (!job) throw err('Job not found', 404);
   const before = replayJob(db, jobId);
   if (before.state.final && event_type !== 'game_final') throw err('Game is final — void the final event to keep scoring', 409);
+  if (event_type === 'state_adjustment' && (!before.state.half || before.state.half_complete)) throw err('Nothing to adjust — no half inning is in progress', 409);
   const tag = tagFor(db, jobId, { selected_feed_id, timecode_s, clip_start_s, clip_end_s });
 
   const run = db.transaction(() => {
