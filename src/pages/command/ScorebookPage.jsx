@@ -14,12 +14,26 @@ import { cardStyle } from '../../components/admin/theme';
 const LABELS = {
   single: '1B', double: '2B', triple: '3B', home_run: 'HR', walk: 'BB', intentional_walk: 'IBB', hit_by_pitch: 'HBP', catcher_interference: 'CI',
   strikeout: 'K', strikeout_looking: 'Kc', groundout: 'GO', flyout: 'FO', lineout: 'LO', popout: 'PO', sacrifice_fly: 'SF', sacrifice_bunt: 'SAC',
-  fielders_choice: 'FC', reach_on_error: 'E', double_play: 'DP', triple_play: 'TP',
+  fielders_choice: 'FC', reach_on_error: 'E', double_play: 'DP', triple_play: 'TP', strikeout_reached: 'K·1B',
 };
 const RESULT_KEYS = { 1: 'single', 2: 'double', 3: 'triple', 4: 'home_run', g: 'groundout', y: 'flyout', l: 'lineout', p: 'popout', e: 'reach_on_error', x: 'fielders_choice', v: 'sacrifice_fly', n: 'sacrifice_bunt', d: 'double_play' };
 const OUT_RESULTS = new Set(['strikeout', 'strikeout_looking', 'groundout', 'flyout', 'lineout', 'popout', 'sacrifice_fly', 'sacrifice_bunt', 'double_play', 'triple_play']);
-const BATTER_TO = { single: 1, double: 2, triple: 3, home_run: 4, walk: 1, intentional_walk: 1, hit_by_pitch: 1, catcher_interference: 1, fielders_choice: 1, reach_on_error: 1 };
+const BATTER_TO = { single: 1, double: 2, triple: 3, home_run: 4, walk: 1, intentional_walk: 1, hit_by_pitch: 1, catcher_interference: 1, fielders_choice: 1, reach_on_error: 1, strikeout_reached: 1 };
 const POSITIONS = ['P', 'C', '1B', '2B', '3B', 'SS', 'LF', 'CF', 'RF', 'DH', 'EH'];
+const FIELDED_RESULTS = new Set([...OUT_RESULTS, 'fielders_choice', 'reach_on_error']);
+const STRIKE_PITCHES = new Set(['called_strike', 'swinging_strike', 'check_swing_strike', 'foul_tip', 'foul_bunt']);
+// The count the way the engine builds it: fouls stop adding at two strikes,
+// a foul bunt or foul tip is strike three, balls in play and HBP change nothing.
+function countOf(list) {
+  let b = 0, s = 0;
+  for (const p of list) {
+    if (p.result === 'ball' || p.result === 'intentional_ball') b += 1;
+    else if (p.result === 'foul') { if (s < 2) s += 1; }
+    else if (STRIKE_PITCHES.has(p.result)) s += 1;
+  }
+  return { b: Math.min(b, 4), s: Math.min(s, 3) };
+}
+const fmtRate = (v, digits = 3) => (v == null ? '—' : digits === 3 ? v.toFixed(3).replace(/^0\./, '.') : v.toFixed(digits));
 
 const refName = r => (r ? (r.name || r.label || (r.player_id ? `#${r.player_id}` : '—')) : '—');
 
@@ -33,7 +47,7 @@ function defaultAdvances(result, bases) {
     if (result === 'home_run') to = 4;
     else if (result === 'triple') to = 4;
     else if (result === 'double') to = Math.min(4, b + 2);
-    else if (result === 'single' || result === 'fielders_choice' || result === 'reach_on_error') to = b + 1;
+    else if (result === 'single' || result === 'fielders_choice' || result === 'reach_on_error' || result === 'strikeout_reached') to = b + 1;
     else if (forced(result)) {
       // only forced runners move
       const chain = b === 1 || (b === 2 && bases[1]) || (b === 3 && bases[2] && bases[1]);
@@ -67,15 +81,7 @@ export default function ScorebookPage() {
   useEffect(() => { load(); }, [load]);
 
   const state = data?.state;
-  const balls = pitches.filter(p => p.result === 'ball' || p.result === 'intentional_ball').length;
-  const strikeCount = useMemo(() => {
-    let s = 0;
-    for (const p of pitches) {
-      if (p.result === 'called_strike' || p.result === 'swinging_strike') s += 1;
-      else if (p.result === 'foul' && s < 2) s += 1;
-    }
-    return Math.min(3, s);
-  }, [pitches]);
+  const { b: balls, s: strikeCount } = useMemo(() => countOf(pitches), [pitches]);
 
   const battingSide = state?.upcoming?.batting || state?.batting;   // the half in progress, or the one about to start
   const battingRoster = useMemo(() => {
@@ -104,9 +110,7 @@ export default function ScorebookPage() {
     if (!state || state.final) return;
     const next = [...pitches, { result }];
     setPitches(next);
-    const b = next.filter(p => p.result === 'ball' || p.result === 'intentional_ball').length;
-    let s = 0;
-    for (const p of next) { if (p.result === 'called_strike' || p.result === 'swinging_strike') s += 1; else if (p.result === 'foul' && s < 2) s += 1; }
+    const { b, s } = countOf(next);
     if (result === 'hit_by_pitch') return openResult('hit_by_pitch', next);
     if (result === 'in_play') return openResult(null, next);
     if (b >= 4) return submitPA({ result: 'walk' }, next, {});
@@ -114,7 +118,7 @@ export default function ScorebookPage() {
   }
 
   function openResult(result, pitchList = pitches) {
-    setResultPanel({ result, rbi: null, batted_ball: '', direction: '', error_label: '', error_player_id: '', advances: result ? defaultAdvances(result, state.bases) : {}, pitchList });
+    setResultPanel({ result, rbi: null, batted_ball: '', direction: '', fielders: '', error_position: '', error_label: '', error_player_id: '', advances: result ? defaultAdvances(result, state.bases) : {}, pitchList });
   }
   function chooseResult(result) {
     setResultPanel(rp => ({ ...rp, result, advances: defaultAdvances(result, state.bases) }));
@@ -125,6 +129,7 @@ export default function ScorebookPage() {
       from: Number(from), to: a.out ? Number(from) : a.to, how: a.out ? 'out' : a.how, out: !!a.out,
       runner_player_id: state.bases[from]?.ref?.player_id || undefined, runner_label: state.bases[from]?.ref?.label || undefined,
       error_label: a.error_label || undefined,
+      unearned: typeof a.unearned === 'boolean' ? a.unearned : undefined,   // the scorer's earned-run ruling, when given
     })).filter(r => r.out || r.to > r.from);
     const batter = batterOverride ? battingRoster.find(p => String(p.player_id || p.label) === batterOverride) : null;
     const body = {
@@ -147,7 +152,12 @@ export default function ScorebookPage() {
     if (!rp?.result) return;
     const adv = {};
     for (const [from, a] of Object.entries(rp.advances)) adv[from] = { ...a, from: Number(from) };
-    submitPA({ result: rp.result, rbi: rp.rbi == null || rp.rbi === '' ? undefined : Number(rp.rbi), batted_ball: rp.batted_ball || undefined, direction: rp.direction || undefined, error_label: rp.error_label || undefined, error_player_id: rp.error_player_id || undefined }, rp.pitchList, adv);
+    submitPA({
+      result: rp.result, rbi: rp.rbi == null || rp.rbi === '' ? undefined : Number(rp.rbi), batted_ball: rp.batted_ball || undefined, direction: rp.direction || undefined,
+      fielders: FIELDED_RESULTS.has(rp.result) && rp.fielders ? rp.fielders : undefined,
+      error_position: rp.result === 'reach_on_error' && rp.error_position ? Number(rp.error_position) : undefined,
+      error_label: rp.error_label || undefined, error_player_id: rp.error_player_id || undefined,
+    }, rp.pitchList, adv);
   }
 
   // ── keyboard ─────────────────────────────────────────────────────────
@@ -163,7 +173,7 @@ export default function ScorebookPage() {
         if (RESULT_KEYS[k]) { e.preventDefault(); chooseResult(RESULT_KEYS[k]); }
         return;
       }
-      const map = { b: 'ball', c: 'called_strike', s: 'swinging_strike', f: 'foul', h: 'hit_by_pitch', i: 'in_play' };
+      const map = { b: 'ball', c: 'called_strike', s: 'swinging_strike', f: 'foul', h: 'hit_by_pitch', i: 'in_play', t: 'foul_tip', u: 'foul_bunt', w: 'check_swing_strike' };
       if (map[k]) { e.preventDefault(); addPitch(map[k]); }
       if (e.key === 'Escape' && pitches.length) setPitches([]);
     };
@@ -210,6 +220,21 @@ export default function ScorebookPage() {
     const r = state.bases[base];
     if (!r) return;
     await run(() => api.commandScorebookEvent(jobId, { event_type: 'runner', payload: { runner_player_id: r.ref.player_id || undefined, runner_label: r.ref.label || undefined, from: base, to: out ? base : to, how, out } }), `${refName(r.ref)}: ${how.replace(/_/g, ' ')}`);
+  }
+  // One wild pitch, passed ball or balk moves every runner up a base. The
+  // events share a group id so the engine charges the pitcher (or catcher) once.
+  async function everybodyMoves(how) {
+    const group = `${how}-${Date.now().toString(36)}`;
+    const occupied = [3, 2, 1].filter(b => state.bases[b]);
+    if (!occupied.length) return;
+    await run(async () => {
+      let d = null;
+      for (const b of occupied) {
+        const r = state.bases[b];
+        d = await api.commandScorebookEvent(jobId, { event_type: 'runner', payload: { runner_player_id: r.ref.player_id || undefined, runner_label: r.ref.label || undefined, from: b, to: b + 1, how, group } });
+      }
+      return d;
+    }, `${how.replace(/_/g, ' ')}: ${occupied.length} runner${occupied.length === 1 ? '' : 's'} moved up`);
   }
 
   if (!data) return <p style={{ color: '#94a3b8' }}>{error || 'Loading scorebook…'}</p>;
@@ -289,6 +314,22 @@ export default function ScorebookPage() {
             <Field label="Note"><TextInput value={finalForm.note} onChange={e => setFinalForm(f => ({ ...f, note: e.target.value }))} placeholder="1:45 time limit" /></Field>
             <PrimaryButton disabled={busy} onClick={async () => { const d = await run(() => api.commandScorebookEvent(jobId, { event_type: 'game_final', payload: finalForm }), 'Game marked final — validate the game record from the job page'); if (d) setFinalForm(null); }}>Mark final</PrimaryButton>
             <GhostButton onClick={() => setFinalForm(null)}>Cancel</GhostButton>
+          </div>
+        )}
+        {state.line_score?.innings > 0 && (
+          <div className="mt-3 pt-3 border-t overflow-x-auto" style={{ borderColor: '#1e3a5f' }} data-testid="line-score">
+            <table className="text-xs tabular-nums">
+              <thead><tr style={{ color: '#64748b' }}><th className="text-left pr-3 font-normal"></th>{Array.from({ length: state.line_score.innings }, (_, i) => <th key={i} className="px-1.5 font-normal">{i + 1}</th>)}<th className="pl-3 px-1.5">R</th><th className="px-1.5">H</th><th className="px-1.5">E</th><th className="px-1.5">LOB</th></tr></thead>
+              <tbody>
+                {[state.line_score.away, state.line_score.home].map(row => (
+                  <tr key={row.side} style={{ color: '#cfe8ff' }}>
+                    <td className="pr-3 font-bold" style={{ color: row.side === 'us' ? '#38bdf8' : '#94a3b8' }}>{row.side === 'us' ? 'Us' : (data.job.opponent_label || 'Them')}</td>
+                    {Array.from({ length: state.line_score.innings }, (_, i) => <td key={i} className="px-1.5 text-center">{row.runs[i] ?? (i < (state.inning || 0) ? 0 : '')}</td>)}
+                    <td className="pl-3 px-1.5 text-center font-bold text-white">{row.r}</td><td className="px-1.5 text-center">{row.h}</td><td className="px-1.5 text-center">{row.e}</td><td className="px-1.5 text-center">{row.lob}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         )}
         {data.issues.length > 0 && (
@@ -389,14 +430,24 @@ export default function ScorebookPage() {
                   </div>
                 </div>
                 {!resultPanel && (
-                  <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
-                    {[['ball', 'Ball', 'B'], ['called_strike', 'Called K', 'C'], ['swinging_strike', 'Swinging', 'S'], ['foul', 'Foul', 'F'], ['hit_by_pitch', 'HBP', 'H'], ['in_play', 'In play', 'I']].map(([r, label, key]) => (
-                      <button key={r} onClick={() => addPitch(r)} disabled={busy} className="px-3 py-3 rounded-xl border text-sm font-bold cursor-pointer hover:bg-slate-800"
-                        style={{ borderColor: r === 'in_play' ? '#38bdf8' : '#334155', color: r === 'in_play' ? '#38bdf8' : '#cfe8ff' }} data-testid={`pitch-${r}`}>
-                        {label} <span className="text-[10px] ml-1" style={{ color: '#64748b' }}>{key}</span>
-                      </button>
-                    ))}
-                  </div>
+                  <>
+                    <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
+                      {[['ball', 'Ball', 'B'], ['called_strike', 'Called K', 'C'], ['swinging_strike', 'Swinging', 'S'], ['foul', 'Foul', 'F'], ['hit_by_pitch', 'HBP', 'H'], ['in_play', 'In play', 'I']].map(([r, label, key]) => (
+                        <button key={r} onClick={() => addPitch(r)} disabled={busy} className="px-3 py-3 rounded-xl border text-sm font-bold cursor-pointer hover:bg-slate-800"
+                          style={{ borderColor: r === 'in_play' ? '#38bdf8' : '#334155', color: r === 'in_play' ? '#38bdf8' : '#cfe8ff' }} data-testid={`pitch-${r}`}>
+                          {label} <span className="text-[10px] ml-1" style={{ color: '#64748b' }}>{key}</span>
+                        </button>
+                      ))}
+                    </div>
+                    <div className="flex flex-wrap gap-1.5 mt-2 text-xs">
+                      {[['foul_tip', 'Foul tip', 'T'], ['foul_bunt', 'Foul bunt', 'U'], ['check_swing_strike', 'Check-swing strike', 'W']].map(([r, label, key]) => (
+                        <button key={r} onClick={() => addPitch(r)} disabled={busy} className="px-2.5 py-1.5 rounded-lg cursor-pointer" style={{ backgroundColor: 'rgba(30, 41, 59, 0.9)', color: '#94a3b8' }} data-testid={`pitch-${r}`}
+                          title={r === 'foul_tip' ? 'A strike even with two — strike three is a strikeout' : r === 'foul_bunt' ? 'A strike even with two strikes' : 'Counts as a swing and a miss'}>
+                          {label} <span className="ml-1" style={{ color: '#64748b' }}>{key}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </>
                 )}
                 {resultPanel && (
                   <div className="rounded-xl border p-4" style={{ borderColor: '#38bdf8' }} data-testid="result-panel">
@@ -427,7 +478,19 @@ export default function ScorebookPage() {
                             <option value="">—</option>{data.vocab.directions.map(d => <option key={d} value={d}>{d}</option>)}
                           </Select>
                         </Field>
+                        {FIELDED_RESULTS.has(resultPanel.result) && (
+                          <Field label={resultPanel.result === 'reach_on_error' ? 'Fielders on the play (optional)' : 'Fielders, e.g. 6-3'}>
+                            <TextInput value={resultPanel.fielders} onChange={e => setResultPanel(rp => ({ ...rp, fielders: e.target.value }))} placeholder={resultPanel.result === 'double_play' ? '6-4-3' : resultPanel.result === 'flyout' ? '8' : '6-3'} />
+                          </Field>
+                        )}
                         {resultPanel.result === 'reach_on_error' && (
+                          <Field label="Error by (position)">
+                            <Select value={resultPanel.error_position} onChange={e => setResultPanel(rp => ({ ...rp, error_position: e.target.value }))}>
+                              <option value="">—</option>{Object.entries(data.vocab.position_numbers || {}).map(([pos, n]) => <option key={n} value={n}>{n} · {pos}</option>)}
+                            </Select>
+                          </Field>
+                        )}
+                        {resultPanel.result === 'reach_on_error' && !resultPanel.error_position && (
                           battingSide === 'them'
                             ? <Field label="Error by (our player)">
                                 <Select value={resultPanel.error_player_id} onChange={e => setResultPanel(rp => ({ ...rp, error_player_id: e.target.value }))}>
@@ -459,6 +522,15 @@ export default function ScorebookPage() {
                                   {['advance', 'scored_on_play', 'error', 'wild_pitch', 'passed_ball'].filter(h => h !== 'scored_on_play' || a.to === 4).map(h => <option key={h} value={h}>{h.replace(/_/g, ' ')}</option>)}
                                 </Select>
                               )}
+                              {!a.out && a.to === 4 && state.half_misplay && !state.bases[b].unearned && (
+                                <span className="flex items-center gap-1 text-xs" title={`${state.half_misplay.kind} happened earlier this half — rule the run, or it stays under review and the pitcher's ER is withheld`}>
+                                  <span style={{ color: '#fbbf24' }}>ER?</span>
+                                  {[['earned', false], ['unearned', true]].map(([label, val]) => (
+                                    <button key={label} onClick={() => set({ unearned: a.unearned === val ? undefined : val })} className="px-2 py-1 rounded text-xs font-bold cursor-pointer"
+                                      style={a.unearned === val ? { backgroundColor: '#fbbf24', color: '#06122b' } : { backgroundColor: 'rgba(30, 41, 59, 0.9)', color: '#94a3b8' }}>{label}</button>
+                                  ))}
+                                </span>
+                              )}
                             </div>
                           );
                         })}
@@ -481,11 +553,16 @@ export default function ScorebookPage() {
                         {b === 3 && <GhostButton onClick={() => runnerPlay(b, 'stolen_base', 4)}>steals home</GhostButton>}
                         <GhostButton onClick={() => runnerPlay(b, 'caught_stealing', b + 1, true)}>CS</GhostButton>
                         <GhostButton onClick={() => runnerPlay(b, 'pickoff', b, true)}>picked off</GhostButton>
-                        <GhostButton onClick={() => runnerPlay(b, 'wild_pitch', Math.min(4, b + 1))}>WP → {b + 1 === 4 ? 'home' : `${b + 1}B`}</GhostButton>
-                        <GhostButton onClick={() => runnerPlay(b, 'passed_ball', Math.min(4, b + 1))}>PB</GhostButton>
+                        <GhostButton onClick={() => runnerPlay(b, 'defensive_indifference', Math.min(4, b + 1))}>indifference</GhostButton>
                         <GhostButton onClick={() => setSub({ kind: 'courtesy_runner', side: battingSide, base: b, player_in: '', player_in_label: '' })}>courtesy runner</GhostButton>
                       </div>
                     ))}
+                    <div className="flex items-center gap-1.5 py-1 flex-wrap text-xs mt-1">
+                      <span className="w-40" style={{ color: '#64748b' }}>everyone moves up</span>
+                      <GhostButton onClick={() => everybodyMoves('wild_pitch')}>wild pitch</GhostButton>
+                      <GhostButton onClick={() => everybodyMoves('passed_ball')}>passed ball</GhostButton>
+                      <GhostButton onClick={() => everybodyMoves('balk')}>balk</GhostButton>
+                    </div>
                   </div>
                 )}
               </>
@@ -649,32 +726,47 @@ function CorrectionEditor({ editing, setEditing, vocab, busy, onSave }) {
 function BoxScore({ data }) {
   const ours = data.tallies.filter(t => t.player_id);
   const theirs = data.tallies.filter(t => !t.player_id);
-  const bat = ['bs_pa', 'bs_ab', 'bs_r', 'bs_h', 'bs_2b', 'bs_3b', 'bs_hr', 'bs_rbi', 'bs_bb', 'bs_k', 'bs_hbp', 'bs_sb'];
-  const pit = ['bs_ip', 'bs_bf', 'bs_pitches', 'bs_ha', 'bs_ra', 'bs_er', 'bs_bba', 'bs_kp', 'bs_hra'];
+  // Columns follow the appendix's stored fields; rates are derived and read "—" when there is nothing to divide by.
+  const bat = ['bs_pa', 'bs_ab', 'bs_r', 'bs_h', 'bs_1b', 'bs_2b', 'bs_3b', 'bs_hr', 'bs_tb', 'bs_rbi', 'bs_bb', 'bs_ibb', 'bs_k', 'bs_hbp', 'bs_sh', 'bs_sf', 'bs_roe', 'bs_fc', 'bs_sb', 'bs_cs', 'bs_lob'];
+  const batRates = ['avg', 'obp', 'slg', 'ops'];
+  const pit = ['bs_ip', 'bs_bf', 'bs_pitches', 'bs_strikes', 'bs_balls', 'bs_ha', 'bs_ra', 'bs_er', 'bs_bba', 'bs_ibba', 'bs_hbpa', 'bs_kp', 'bs_hra', 'bs_wp', 'bs_bk', 'bs_ir', 'bs_irs'];
+  const pitRates = ['era', 'whip', 'k_per_9', 'bb_per_9', 'strike_pct', 'whiff_pct', 'csw_pct'];
+  const fld = ['bs_po', 'bs_a', 'bs_e', 'bs_dp', 'bs_pb'];
+  const fldRates = ['fpct'];
+  const fielded = t => t.stats.bs_po + t.stats.bs_a + t.stats.bs_e + t.stats.bs_dp + t.stats.bs_pb > 0;
   return (
     <section className="rounded-2xl border p-5" style={cardStyle} data-testid="box-score">
-      <p className="text-xs mb-3" style={{ color: '#64748b' }}>Derived live from the event log ({data.version}). Only our players publish; opponent lines are context. Disputed plays are excluded.</p>
-      <StatTable rows={ours.filter(t => t.stats.bs_pa > 0)} keys={bat} title="Our batting" />
-      <StatTable rows={ours.filter(t => t.stats.bs_bf > 0 || t.outs_pitched > 0)} keys={pit} title="Our pitching" />
-      <StatTable rows={theirs.filter(t => t.stats.bs_pa > 0)} keys={bat} title="Their batting" />
-      <StatTable rows={theirs.filter(t => t.stats.bs_bf > 0 || t.outs_pitched > 0)} keys={pit} title="Their pitching" />
+      <p className="text-xs mb-3" style={{ color: '#64748b' }}>Derived live from the event log ({data.version}). Only our players publish; opponent lines are context. Disputed plays are excluded. An ER marked ? awaits the scorer's ruling and is withheld from the record until then.</p>
+      <StatTable rows={ours.filter(t => t.stats.bs_pa > 0)} keys={bat} rates={batRates} title="Our batting" />
+      <StatTable rows={ours.filter(t => t.stats.bs_bf > 0 || t.outs_pitched > 0)} keys={pit} rates={pitRates} title="Our pitching" />
+      <StatTable rows={ours.filter(fielded)} keys={fld} rates={fldRates} title="Our fielding" />
+      <StatTable rows={theirs.filter(t => t.stats.bs_pa > 0)} keys={bat} rates={batRates} title="Their batting" />
+      <StatTable rows={theirs.filter(t => t.stats.bs_bf > 0 || t.outs_pitched > 0)} keys={pit} rates={pitRates} title="Their pitching" />
+      <StatTable rows={theirs.filter(fielded)} keys={fld} rates={fldRates} title="Their fielding" />
       {data.tallies.length === 0 && <p className="text-sm" style={{ color: '#64748b' }}>No plays yet.</p>}
     </section>
   );
 }
 
-function StatTable({ rows, keys, title }) {
+const HEAD = { bs_pitches: 'PIT', bs_strikes: 'STR', bs_balls: 'BAL', bs_ha: 'H', bs_ra: 'R', bs_bba: 'BB', bs_ibba: 'IBB', bs_hbpa: 'HBP', bs_kp: 'K', bs_hra: 'HR', bs_k: 'K', bs_pk: 'PK', k_per_9: 'K/9', bb_per_9: 'BB/9', strike_pct: 'STR%', whiff_pct: 'WHIFF%', csw_pct: 'CSW%', k_pct: 'K%', bb_pct: 'BB%', fpct: 'FPCT', sb_pct: 'SB%' };
+
+function StatTable({ rows, keys, rates = [], title }) {
   if (!rows.length) return null;
-  const head = k => k.replace('bs_', '').toUpperCase();
+  const head = k => HEAD[k] || k.replace('bs_', '').toUpperCase();
   return (
     <div className="overflow-x-auto mb-4">
       <p className="text-[11px] font-bold uppercase tracking-widest mb-1.5" style={{ color: '#94a3b8' }}>{title}</p>
       <table className="w-full text-sm">
-        <thead><tr className="text-left text-xs uppercase tracking-wider" style={{ color: '#64748b' }}><th className="px-3 py-1.5">Player</th>{keys.map(k => <th key={k} className="px-2 py-1.5 text-right">{head(k)}</th>)}</tr></thead>
+        <thead><tr className="text-left text-xs uppercase tracking-wider" style={{ color: '#64748b' }}><th className="px-3 py-1.5">Player</th>{keys.map(k => <th key={k} className="px-2 py-1.5 text-right">{head(k)}</th>)}{rates.map(k => <th key={k} className="px-2 py-1.5 text-right" style={{ color: '#475569' }}>{head(k)}</th>)}</tr></thead>
         <tbody>{rows.map(t => (
           <tr key={t.key} className="border-t" style={{ borderColor: '#1e3a5f' }}>
-            <td className="px-3 py-1.5 font-bold text-white">{t.name || t.label}{!t.player_id ? <span className="text-[10px] ml-1" style={{ color: '#475569' }}>label</span> : null}</td>
-            {keys.map(k => <td key={k} className="px-2 py-1.5 text-right tabular-nums" style={{ color: '#cfe8ff' }}>{t.stats[k]}</td>)}
+            <td className="px-3 py-1.5 font-bold text-white whitespace-nowrap">{t.name || t.label}{!t.player_id ? <span className="text-[10px] ml-1" style={{ color: '#475569' }}>label</span> : null}</td>
+            {keys.map(k => (
+              <td key={k} className="px-2 py-1.5 text-right tabular-nums" style={{ color: k === 'bs_er' && t.er_uncertain ? '#fbbf24' : '#cfe8ff' }} title={k === 'bs_er' && t.er_uncertain ? 'Awaiting the scorer\'s earned-run ruling — withheld from the record' : undefined}>
+                {t.stats[k]}{k === 'bs_er' && t.er_uncertain ? '?' : ''}
+              </td>
+            ))}
+            {rates.map(k => <td key={k} className="px-2 py-1.5 text-right tabular-nums" style={{ color: '#94a3b8' }}>{fmtRate(t.rates?.[k], ['era', 'whip', 'k_per_9', 'bb_per_9'].includes(k) ? 2 : 3)}</td>)}
           </tr>
         ))}</tbody>
       </table>

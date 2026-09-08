@@ -491,6 +491,46 @@ It validates once the game is final with no blocking issues, and releases
 through the same **Game record → validated → released** path as an import.
 Opponents are labels and never publish.
 
+**Calculation contract** (Metric Recipe Appendix, "V1 Scorekeeping and
+Derived Box-Score Rules"). Every stored field is a `bs_*` key on the
+per-player tally; rates are derived and come back `null` when the denominator
+is zero, never 0.
+
+| Area | Stored (`bs_*`) | Derived |
+|---|---|---|
+| Batting | g, pa, ab, r, h, 1b, 2b, 3b, hr, tb, rbi, bb, ibb, k, hbp, sh, sf, roe, fc, lob, swings, whiffs | avg, obp, slg, ops, k_pct, bb_pct |
+| Baserunning | sb, cs, pk (pickoff outs) | sb_pct |
+| Pitching | gs, bf, pitches, strikes, balls, cstr (called strikes), swings_a, whiffs_a, ha, ra, er, bba, ibba, hbpa, kp, hra, wp, bk, ir, irs; innings as outs (`bs_ip` shown in thirds) | era, whip, k_per_9, bb_per_9, k_bb, strike_pct, whiff_pct, csw_pct |
+| Fielding | po, a, e, dp (participation), pb | fpct |
+| Team | line score (runs by inning), r / h / e / lob per side, result at final | — |
+
+Pitch accounting: fouls add a strike only before two strikes; a foul bunt or
+foul tip on strike three is a strikeout (`foul_bunt`, `foul_tip`); a check
+swing called a strike is a swing and a miss (`check_swing_strike`); balls in
+play and a hit batter change neither count. The engine rebuilds the count from
+the pitches and flags `count_mismatch` when the recorded result disagrees —
+it never silently fixes it. A dropped third strike is `strikeout_reached`
+(K for both, batter on first).
+
+Fielding credit is the scorer's notation — `6-3`, `8`, `6-4-3` — resolved to
+whoever is playing that position: every fielder but the last gets an assist,
+the last one (two on a double play) a putout, everyone on a DP shares the
+participation. A strikeout is the catcher's putout. Wild pitches and balks go
+to the pitcher of record, passed balls to the catcher, once per play however
+many runners moved (`group` on the runner events ties them together).
+
+Forced advances: when the batter reaches an occupied base on a walk, hit
+batter or catcher's interference, the runners ahead move up by rule (a forced
+run is an RBI). On any other result the runner is moved up one base with a
+`base_occupied` warning so the scorer confirms or corrects.
+
+Earned runs: a run is earned unless the runner reached or scored on a
+misplay, or the scorer rules it unearned. When a misplay happened earlier in
+the half and the scorer has not ruled, the run is flagged
+`er_needs_judgment` and that pitcher's ER is **withheld from the live record
+until ruled** (`unearned: true|false` on the run) — a value under review is
+never published as a guess.
+
 ---
 
 ## 4. Backups and restore
