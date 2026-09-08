@@ -221,5 +221,5 @@ test('synthetic jobs: withdraw and restore run the workflow but never touch prof
   assert.equal(resultsOf(r).length, 1);
   assert.equal(resultOf(r).status, 'published');
   assert.equal(db.prepare('SELECT COUNT(*) c FROM games WHERE command_job_id = ?').get(sJob).c, 0);
-  assert.deepEqual(resyncPublishedRollups(db, sJob, admin, 'test'), { changes: [], synthetic: true });
+  assert.deepEqual(resyncPublishedRollups(db, sJob, admin, 'test'), { changes: [], gamesRemoved: 0, synthetic: true });
 });

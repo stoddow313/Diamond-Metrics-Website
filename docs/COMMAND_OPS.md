@@ -563,7 +563,13 @@ Two layers keep testing off customer records:
    customer notifications record as `suppressed_synthetic`, release runs
    end-to-end but writes nothing to games/stat_entries (no player-profile
    publication), and pipeline analytics exclude it. Existing jobs can be
-   marked synthetic from the job page.
+   marked synthetic from the job page — and the flag is retroactive: marking
+   a job synthetic removes anything it had already published (values and the
+   empty game row) from the profile at once, unmarking it republishes what
+   its published results say, and every API boot re-derives all jobs'
+   published rollups (`published_rollups_reconciled` in the logs; per-job
+   changes audited as `published_rollups_resynced`). Manually entered admin
+   stats are never touched.
 2. **A staging service** — for infrastructure testing (deploys, worker,
    storage, email provider, restores) where a synthetic flag is not enough.
 

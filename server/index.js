@@ -22,6 +22,7 @@ import { mountCommandOpsRoutes } from './commandOpsRoutes.js';
 import { mountLiveRoutes } from './liveRoutes.js';
 import { startBackupScheduler } from './backup.js';
 import { requestLogger, errorHandler, installProcessHandlers, log, ENV } from './observability.js';
+import { backfillPublishedRollups } from './releaseLogic.js';
 import {
   attributedGames, aggregateByPlayer, teamCategoryBlocks, standings,
   leaderboard, overallLeaderboard, trendSeries, calcStamp, DEFAULT_MINS,
@@ -1796,6 +1797,16 @@ if (process.env.DM_INLINE_WORKER !== '0') startInlineWorker(db);
 
 // Nightly SQLite snapshot to the storage adapter (DM_BACKUPS=0 disables).
 startBackupScheduler(db);
+
+// Profiles must match what a release actually published — and a synthetic job
+// publishes nothing. Re-derive every job's rollups once per boot so a value
+// released before a job was flagged synthetic, or withdrawn by older code
+// without an immediate resync, never lingers on a player page.
+try {
+  log('info', 'published_rollups_reconciled', backfillPublishedRollups(db));
+} catch (err) {
+  log('warn', 'published_rollups_reconcile_failed', { message: String(err?.message || err) });
+}
 
 // Terminal error handler — must be registered after every route.
 app.use(errorHandler);
