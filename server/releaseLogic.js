@@ -6,6 +6,7 @@
 import { rollupForMetricCode, RELEASE_VERSION } from './metricRelease.js';
 import { emitJobEvent } from './notifications.js';
 import { assessCapture } from './captureSpec.js';
+import { loadEvents } from './scorebook.js';
 
 const httpError = (message, status = 400) => Object.assign(new Error(message), { status });
 
@@ -45,6 +46,14 @@ export function computeQaFlags(db, jobId) {
   const drafts = results.filter(r => r.status === 'draft');
   if (drafts.length > 0) {
     flags.push({ code: 'unreviewed_results', level: 'blocking', label: `${drafts.length} result${drafts.length === 1 ? '' : 's'} awaiting review`, detail: 'Every draft result must be approved or returned before the job can be approved.' });
+  }
+
+  // Scorebook (Phase 2): disputed plays are excluded from totals and must be
+  // resolved before the game record can be trusted; the metric track is not
+  // blocked by them.
+  const disputed = loadEvents(db, jobId).filter(e => e.status === 'needs_review').length;
+  if (disputed > 0) {
+    flags.push({ code: 'unresolved_scoring_judgment', level: 'warning', label: `${disputed} scorebook event${disputed === 1 ? '' : 's'} under review`, detail: 'Disputed plays are excluded from box-score totals until resolved or corrected on the scorebook.' });
   }
 
   // Guest placeholders (§4.2): results attributed to a job guest release to a

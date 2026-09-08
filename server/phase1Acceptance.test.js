@@ -20,6 +20,7 @@ const { decideResult, releaseMetrics, computeQaFlags, releasePlan, resultForEvid
 const { assessCapture, unavailableReasonFor, CAPTURE_SPECS } = await import('./captureSpec.js');
 const { commandRoster, addJobGuest } = await import('./commandRoster.js');
 const { validateGameRecordSource, releaseGameRecord } = await import('./gameRecord.js');
+const { appendEvent, appendPlateAppearance, correctEvent, replayJob } = await import('./scorebook.js');
 
 let admin, org, team, baseball, pitcher, runner, other;
 
@@ -195,7 +196,31 @@ test('5. radar ambiguity: suggestions follow confirmed neighbours in time or seq
 });
 
 // §7.6 Full-game correction: changed defensive judgment recalculates dependent rollups without duplicates.
-test.todo('6. full-game correction — needs Phase 2 scorebook events (defensive judgments); the recalculation mechanism is proven for metrics in resultLifecycle.test.js and will be reused');
+test('6. full-game correction: a changed defensive judgment (error → hit) recalculates dependent rollups without duplicates, through to the released box score', () => {
+  const job = makeJob();
+  appendEvent(db, job, { event_type: 'lineup', payload: { side: 'us', us_is_home: false, slots: [{ slot: 1, player_id: pitcher, label: 'Pat' }, { slot: 2, player_id: runner, label: 'Rae' }, { slot: 3, player_id: other, label: 'Sam' }] } }, admin);
+  appendEvent(db, job, { event_type: 'lineup', payload: { side: 'them', slots: [{ slot: 1, label: 'Opp P', position: 'P' }, { slot: 2, label: 'Opp SS' }] } }, admin);
+  appendPlateAppearance(db, job, { pa: { result: 'reach_on_error', error_label: 'Opp SS' } }, admin);
+  appendPlateAppearance(db, job, { pa: { result: 'single' }, runners: [{ from: 1, to: 3, how: 'advance' }] }, admin);
+  appendPlateAppearance(db, job, { pa: { result: 'sacrifice_fly' }, runners: [{ from: 3, to: 4, how: 'scored_on_play' }] }, admin);
+  appendPlateAppearance(db, job, { pa: { result: 'strikeout' } }, admin);
+  appendPlateAppearance(db, job, { pa: { result: 'groundout' } }, admin);
+  appendEvent(db, job, { event_type: 'game_final', payload: { reason: 'time_limit' } }, admin);
+  const src = db.prepare("SELECT id FROM cmd_game_record_sources WHERE job_id = ? AND source_kind = 'live_internal'").get(job);
+  assert.equal(validateGameRecordSource(db, src.id, {}, admin).status, 'validated');
+  releaseGameRecord(db, job, admin);
+  db.prepare("UPDATE cmd_jobs SET game_record_status = 'released' WHERE id = ?").run(job);
+  assert.equal(entry(job, pitcher, 'bs_h'), undefined, 'reached on error: no hit published');
+  assert.equal(entry(job, pitcher, 'bs_r').value, 1);
+  // The scorer reviews the video: it was a clean single. The run was earned after all.
+  const paEvent = db.prepare("SELECT * FROM cmd_events WHERE job_id = ? AND event_type = 'plate_appearance' AND status = 'active' ORDER BY sequence LIMIT 1").get(job);
+  correctEvent(db, paEvent.id, { payload: { result: 'single' } }, admin, 'video: clean single, no error');
+  assert.equal(entry(job, pitcher, 'bs_h').value, 1, 'the hit reaches the profile immediately');
+  assert.equal(db.prepare("SELECT COUNT(*) c FROM stat_entries s JOIN games g ON g.id = s.game_id WHERE g.command_job_id = ? AND g.player_id = ? AND s.metric_key = 'bs_h'").get(job, pitcher).c, 1, 'no duplicate entries');
+  assert.equal(db.prepare("SELECT COUNT(*) c FROM cmd_events WHERE job_id = ? AND sequence = ? AND status = 'active'").get(job, paEvent.sequence).c, 1, 'one active event at that point in the game');
+  assert.ok(db.prepare("SELECT 1 FROM cmd_review_actions WHERE target_table = 'cmd_events' AND action = 'corrected' AND note LIKE '%clean single%'").get(), 'audited with the reason');
+  assert.ok(db.prepare("SELECT 1 FROM cmd_review_actions WHERE target_table = 'cmd_jobs' AND target_id = ? AND action = 'game_record_rereleased'").get(job));
+});
 
 // §7.7 Roster complexity: pinch/guest/courtesy runner, re-entry, pitcher substitution/inherited runners retain correct attribution.
 test('7a. roster complexity (Phase 1 half): a courtesy or guest runner is timed against a placeholder and reassigned after the game without duplicates', () => {
@@ -240,7 +265,37 @@ test('7a. roster complexity (Phase 1 half): a courtesy or guest runner is timed 
   assert.ok(entry(job, runner, 'steal_time'));
   assert.ok(!computeQaFlags(db, job).some(f => f.code === 'guest_attribution'), 'no guest results remain');
 });
-test.todo('7b. roster complexity — pitcher substitution, inherited runners, re-entry need Phase 2 lineup and scorebook events');
+test('7b. roster complexity (scorebook half): pitcher substitution with inherited runners, a courtesy runner, and re-entry keep correct attribution', () => {
+  const job = makeJob();
+  appendEvent(db, job, { event_type: 'lineup', payload: { side: 'us', us_is_home: true, slots: [{ slot: 1, player_id: pitcher, label: 'Pat', position: 'P' }, { slot: 2, player_id: runner, label: 'Rae', position: 'C' }, { slot: 3, player_id: other, label: 'Sam', position: 'SS' }] } }, admin);
+  appendEvent(db, job, { event_type: 'lineup', payload: { side: 'them', slots: [{ slot: 1, label: 'Opp 1', position: 'P' }, { slot: 2, label: 'Opp 2' }, { slot: 3, label: 'Opp 3' }] } }, admin);
+  // Top 1: they bat against Pat; Pat walks the leadoff man, then is replaced. The inherited runner scores off the reliever.
+  appendPlateAppearance(db, job, { pa: { result: 'walk' } }, admin);
+  const guest = addJobGuest(db, job, { first_name: 'Rel', last_name: 'Iever', jersey: '44' }, admin);
+  appendEvent(db, job, { event_type: 'substitution', payload: { kind: 'pitching_change', side: 'us', player_in_id: guest.id, player_in_label: 'Rel Iever', player_out_id: pitcher, slot: 1 } }, admin);
+  let rp = appendPlateAppearance(db, job, { pa: { result: 'double' }, runners: [{ from: 1, to: 4, how: 'scored_on_play' }] }, admin);
+  const pat = rp.tallies.find(t => t.player_id === pitcher).stats, rel = rp.tallies.find(t => t.player_id === guest.id).stats;
+  assert.equal(pat.bs_ra, 1); assert.equal(pat.bs_er, 1); assert.equal(pat.bs_ha, 0);
+  assert.equal(rel.bs_ha, 1); assert.equal(rel.bs_ra, 0);
+  appendPlateAppearance(db, job, { pa: { result: 'strikeout' } }, admin);
+  appendPlateAppearance(db, job, { pa: { result: 'strikeout' } }, admin);
+  rp = appendPlateAppearance(db, job, { pa: { result: 'strikeout' } }, admin);
+  assert.equal(rp.state.half, 'bottom');
+  // Bottom 1: our catcher singles; a courtesy runner takes her place and steals second.
+  appendPlateAppearance(db, job, { pa: { result: 'flyout' } }, admin);          // Pat
+  appendPlateAppearance(db, job, { pa: { result: 'single' } }, admin);          // Rae (C)
+  appendEvent(db, job, { event_type: 'substitution', payload: { kind: 'courtesy_runner', side: 'us', base: 1, player_in_id: other, player_in_label: 'Sam', player_out_id: runner } }, admin);
+  appendEvent(db, job, { event_type: 'runner', payload: { runner_player_id: other, from: 1, to: 2, how: 'stolen_base' } }, admin);
+  rp = replayJob(db, job);
+  assert.equal(rp.tallies.find(t => t.player_id === other).stats.bs_sb, 1, 'the courtesy runner owns the steal');
+  assert.equal(rp.tallies.find(t => t.player_id === runner).stats.bs_h, 1, 'the batter keeps the hit');
+  assert.equal(rp.state.bases[2].responsible.label, 'Opp 1', 'responsible pitcher survives the substitution');
+  // Re-entry of the starter (allowed once).
+  appendEvent(db, job, { event_type: 'substitution', payload: { kind: 'pinch_hitter', side: 'us', slot: 3, player_in_id: guest.id, player_in_label: 'Rel Iever', player_out_id: other } }, admin);
+  rp = appendEvent(db, job, { event_type: 'substitution', payload: { kind: 're_entry', side: 'us', slot: 3, player_in_id: other, player_in_label: 'Sam' } }, admin);
+  assert.ok(!rp.issues.some(i => i.code.startsWith('reentry_')), JSON.stringify(rp.issues));
+  assert.equal(rp.state.lineups.us.slots.find(s => s.slot === 3).current.player_id, other);
+});
 
 // §7.8 Tournament batch: uploads map to correct games without duplicate entities; missing media is flagged.
 test('8. tournament batch: bulk jobs are unique per game and team, and the footage report flags jobs with missing or failed media', () => {

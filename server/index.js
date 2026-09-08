@@ -19,6 +19,7 @@ import { mountCommandMeasureRoutes } from './commandMeasureRoutes.js';
 import { mountCommandReviewRoutes } from './commandReviewRoutes.js';
 import { startInlineWorker } from './mediaWorker.js';
 import { mountCommandOpsRoutes } from './commandOpsRoutes.js';
+import { mountScorebookRoutes } from './scorebookRoutes.js';
 import { mountLiveRoutes } from './liveRoutes.js';
 import { startBackupScheduler } from './backup.js';
 import { requestLogger, errorHandler, installProcessHandlers, log, ENV } from './observability.js';
@@ -1784,6 +1785,7 @@ mountCommandRadarRoutes(app, { db, requireInternal });
 mountCommandMeasureRoutes(app, { db, requireInternal });
 mountCommandReviewRoutes(app, { db, requireInternal });
 mountCommandOpsRoutes(app, { db, requireInternal, createJob });
+mountScorebookRoutes(app, { db, requireInternal });
 
 // Field Live (M7). Off unless DM_LIVE_ENABLED is set, so this ships dark and the
 // relay simply gets 404s until someone turns it on deliberately.

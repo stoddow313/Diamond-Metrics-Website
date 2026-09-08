@@ -455,6 +455,42 @@ labels; the first real export from a tournament is the compatibility check,
 exactly as with the Pocket Radar CSV. If a column is reported as unplaced,
 send the header row and it is a one-line alias addition.
 
+### 3.15 Scorebook (Phase 2 core scorekeeping)
+
+**Scorebook →** on the job page. Everything is derived from the event stream
+(`cmd_events`), replayed on every read — there is no stored box score to get
+stale. Version `CMD_SCOREBOOK_V1`.
+
+Flow: enter **our lineup** (batting order, positions, home/away) and **their
+lineup** (labels, who is pitching) → score. Pitch keys **B / C / S / F / H**
+build the count; four balls or three strikes resolve the plate appearance by
+themselves; **I** (in play) opens the result panel with the runner
+advancements the result usually implies pre-selected — confirm or change
+them. The third out opens the next half inning automatically; before the
+first pitch (and after a third out with a game-over suggestion pending) the
+scoreboard shows the half about to start and who leads off. Substitutions
+(pinch hitter/runner, courtesy runner, defensive, pitching change, re-entry)
+live on the lineup panel; the ruleset decides what is legal and flags what
+is not (the scorer can still record it). A courtesy runner does not count as
+entering the game; a pitching change to a player already in the lineup is a
+position switch (the lineup slot is left alone), to a bench arm it takes the
+outgoing pitcher's slot. Runs by inherited runners are charged to the pitcher
+who put them on. **Mark final** when the game ends; the engine suggests it
+from the ruleset (regulation, run rule) but never decides.
+
+Corrections: every logged play has **Correct**, **Void** and **Dispute**.
+Correct supersedes the event in place (same position in the game; children
+follow; audit keeps both versions and the reason); Void supersedes with no
+replacement; Dispute marks `needs_review` — the play is excluded from totals
+and surfaced as a QA flag until resolved. If the game record was already
+released, a correction re-releases it immediately so the profile never shows
+a superseded value.
+
+Publishing: the scorebook is the job's `live_internal` game-record source.
+It validates once the game is final with no blocking issues, and releases
+through the same **Game record → validated → released** path as an import.
+Opponents are labels and never publish.
+
 ---
 
 ## 4. Backups and restore

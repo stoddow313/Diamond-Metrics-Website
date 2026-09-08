@@ -867,13 +867,31 @@ try {
   console.error(JSON.stringify({ level: 'warn', event: 'results_unique_index_skipped', message: String(err?.message || err) }));
 }
 
+db.exec('CREATE INDEX IF NOT EXISTS idx_cmd_events_job_seq ON cmd_events(job_id, sequence)');
+
 // ── Seed Command reference data (idempotent; active flags follow code) ──
 {
   const insSport = db.prepare('INSERT OR IGNORE INTO sports (key, name) VALUES (?, ?)');
   insSport.run('baseball', 'Baseball');
   const baseball = db.prepare("SELECT id FROM sports WHERE key = 'baseball'").get().id;
+  // Phase 2 ruleset defaults (roadmap §4.2 "honor configured event rules").
+  // Innings, run rule, tiebreaker and substitution rules drive the scorebook's
+  // game-over suggestions and re-entry checks; the scorer always decides.
+  const BASEBALL_DEFAULT_RULESET = {
+    innings: 7, extra_innings: true,
+    run_rule: [{ after_inning: 3, margin: 15 }, { after_inning: 5, margin: 10 }],
+    time_limit_minutes: null, tiebreaker: 'runner_on_second',
+    dh: 'allowed', extra_hitter: 'allowed', re_entry: 'starters_once', courtesy_runner: 'pitcher_catcher',
+  };
   db.prepare('INSERT OR IGNORE INTO rulesets (sport_id, key, name, config) VALUES (?, ?, ?, ?)')
-    .run(baseball, 'baseball_default', 'Baseball — default', JSON.stringify({ innings: 7, extra_innings: true }));
+    .run(baseball, 'baseball_default', 'Baseball — default', JSON.stringify(BASEBALL_DEFAULT_RULESET));
+  {
+    // Databases seeded before Phase 2 hold only { innings, extra_innings }: fill in the rest, keeping what was set.
+    const rs = db.prepare("SELECT config FROM rulesets WHERE key = 'baseball_default'").get();
+    let cfg = {};
+    try { cfg = JSON.parse(rs?.config || '{}'); } catch { cfg = {}; }
+    if (!cfg.run_rule) db.prepare("UPDATE rulesets SET config = ? WHERE key = 'baseball_default'").run(JSON.stringify({ ...BASEBALL_DEFAULT_RULESET, ...cfg }));
+  }
 
   const insMetric = db.prepare(
     `INSERT OR IGNORE INTO cmd_metric_registry
