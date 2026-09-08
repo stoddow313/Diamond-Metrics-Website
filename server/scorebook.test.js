@@ -327,6 +327,38 @@ test('internal metrics on plays: a linked radar reading is matched to our pitche
   assert.throws(() => appendEvent(db, j6, { event_type: 'runner', payload: { runner_player_id: SS, from: 2, to: 3, how: 'stolen_base', attempt_id: 999999 } }, admin), /running attempt on this job/);
 });
 
+test('the game result publishes with the record from the live scorebook, follows corrections, and is absent for import-only records', () => {
+  const j7 = makeJob();
+  ourLineup(j7, true);   // we are home
+  theirLineup(j7);
+  const outs = () => { for (let i = 0; i < 3; i += 1) pa(j7, { pa: { result: 'strikeout' } }); };
+  outs();                                                         // top 1: they go quietly
+  pa(j7, { pa: { result: 'home_run' } }); outs();                 // bottom 1: we score once
+  appendEvent(db, j7, { event_type: 'game_final', payload: { reason: 'time_limit' } }, admin);
+  const src = db.prepare("SELECT id FROM cmd_game_record_sources WHERE job_id = ? AND source_kind = 'live_internal'").get(j7);
+  validateGameRecordSource(db, src.id, admin);
+  db.prepare("UPDATE cmd_jobs SET game_record_status = 'validated' WHERE id = ?").run(j7);
+  releaseGameRecord(db, j7, admin);
+  let row = db.prepare('SELECT * FROM cmd_game_results WHERE job_id = ?').get(j7);
+  assert.deepEqual([row.us_runs, row.them_runs, row.winner, row.final_reason], [1, 0, 'us', 'time_limit']);
+  assert.deepEqual(JSON.parse(row.line_score).home.runs, [1]);
+  assert.equal(JSON.parse(row.team).them.lob, 0);
+  assert.match(db.prepare("SELECT note FROM cmd_review_actions WHERE target_table='cmd_jobs' AND target_id=? AND action='game_record_released' ORDER BY id DESC LIMIT 1").get(j7).note, /final 1–0/);
+  // The homer is ruled a double on review: the record re-releases and the result follows.
+  db.prepare("UPDATE cmd_jobs SET game_record_status = 'released' WHERE id = ?").run(j7);
+  const hr = db.prepare("SELECT id FROM cmd_events WHERE job_id = ? AND event_type = 'plate_appearance' AND status = 'active' AND payload LIKE '%home_run%'").get(j7);
+  correctEvent(db, hr.id, { payload: { result: 'double', pitch_count: 0 } }, admin, 'video review: ball bounced over the fence');
+  row = db.prepare('SELECT * FROM cmd_game_results WHERE job_id = ?').get(j7);
+  assert.deepEqual([row.us_runs, row.them_runs, row.winner], [0, 0, 'tie']);
+  // A record built only from an import carries no result.
+  const j8 = makeJob();
+  const imp = db.prepare("INSERT INTO cmd_game_record_sources (job_id, source_kind, label, raw_import, created_by) VALUES (?, 'manual', 'Manual box', ?, ?)").run(j8, 'Number,Last,First,PA,AB,H\n6,Short,Sam,4,4,2\n', admin).lastInsertRowid;
+  validateGameRecordSource(db, imp, admin);
+  db.prepare("UPDATE cmd_jobs SET game_record_status = 'validated' WHERE id = ?").run(j8);
+  releaseGameRecord(db, j8, admin);
+  assert.equal(db.prepare('SELECT COUNT(*) c FROM cmd_game_results WHERE job_id = ?').get(j8).c, 0);
+});
+
 test('game-over suggestion follows the ruleset run rule; scoring after final is refused', () => {
   const j2 = makeJob();
   ourLineup(j2, true);   // we are home

@@ -711,7 +711,8 @@ export function liveRecordReport(db, jobId) {
   const rows = rp.tallies.filter(t => t.player_id).map(t => {
     // Publish what the log supports: non-zero box-score fields (PA always), and
     // never an earned-run figure the scorer has not ruled on yet.
-    const stats = Object.fromEntries(Object.entries(t.stats).filter(([k, v]) => (k.startsWith('bs_') && v !== 0 || k === 'bs_pa') && !(k === 'bs_er' && t.er_uncertain)));
+    const stats = Object.fromEntries(Object.entries(t.stats).filter(([k, v]) => (k.startsWith('bs_') && v !== 0 || k === 'bs_pa') && k !== 'bs_ip' && !(k === 'bs_er' && t.er_uncertain)));
+    if (t.outs_pitched > 0) stats.bs_outs = t.outs_pitched;   // innings are stored as outs; the display shows thirds
     return { key: `live:${t.player_id}`, group: 'scorebook', row: null, jersey: rosterById.get(t.player_id)?.jersey || '', name: t.name || t.label, stats, player_id: t.player_id, player_name: t.name || t.label, resolved_by: 'scorebook', skipped: false };
   });
   const blocking = rp.issues.filter(i => i.level === 'blocking');

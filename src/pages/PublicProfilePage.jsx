@@ -47,10 +47,40 @@ const REPORT_TYPES = ['Hitting Report', 'Pitching Report', 'Athletic Testing Rep
 
 function fmt(value, def) {
   if (value === null || value === undefined) return '—';
+  // Innings are stored as outs (appendix) and shown the way scorers write them: 14 outs → 4.2
+  if (def.display === 'innings') { const o = Math.round(Number(value)); return `${Math.floor(o / 3)}.${o % 3}`; }
   let s = Number(value).toFixed(def.decimals);
   // Baseball convention: .412, not 0.412
   if (def.decimals === 3 && s.startsWith('0.')) s = s.slice(1);
   return s;
+}
+
+// Season rates from the box sums, per the appendix: three decimals, never a
+// value when the denominator is zero. Innings come from outs.
+function seasonRates(group, s) {
+  const r3 = (n, d) => (d > 0 ? (n / d).toFixed(3).replace(/^0\./, '.') : null);
+  const r2 = (n, d) => (d > 0 ? (n / d).toFixed(2) : null);
+  const v = k => s[k] ?? 0;
+  const out = [];
+  if (group === 'batting' && s.bs_ab != null) {
+    const tb = s.bs_tb ?? (v('bs_h') - v('bs_2b') - v('bs_3b') - v('bs_hr') + 2 * v('bs_2b') + 3 * v('bs_3b') + 4 * v('bs_hr'));
+    const avg = r3(v('bs_h'), v('bs_ab')), obp = r3(v('bs_h') + v('bs_bb') + v('bs_hbp'), v('bs_ab') + v('bs_bb') + v('bs_hbp') + v('bs_sf')), slg = r3(tb, v('bs_ab'));
+    out.push(['AVG', avg], ['OBP', obp], ['SLG', slg], ['OPS', avg != null && obp != null && slg != null ? (Number(obp) + Number(slg)).toFixed(3).replace(/^0\./, '.') : null]);
+  }
+  if (group === 'pitching' && s.bs_outs != null) {
+    const ip = v('bs_outs') / 3;
+    out.push(['ERA', r2(9 * v('bs_er'), ip)], ['WHIP', r2(v('bs_bba') + v('bs_ha'), ip)], ['K/9', r2(9 * v('bs_kp'), ip)], ['BB/9', r2(9 * v('bs_bba'), ip)]);
+  }
+  if (group === 'fielding' && (s.bs_po != null || s.bs_a != null || s.bs_e != null)) {
+    out.push(['FPCT', r3(v('bs_po') + v('bs_a'), v('bs_po') + v('bs_a') + v('bs_e'))]);
+  }
+  return out.filter(([, val]) => val != null);
+}
+
+// W 5–3 from the player's side, published with the validated game record.
+function ResultBadge({ result }) {
+  const color = result.outcome === 'W' ? '#4ade80' : result.outcome === 'L' ? '#f87171' : '#94a3b8';
+  return <span className="ml-2 text-[10px] font-bold tabular-nums" style={{ color }} title="Final score, published with the game record">{result.outcome} {result.us}–{result.them}</span>;
 }
 
 function typeLabel(t) {
@@ -154,7 +184,10 @@ function RecentActivity({ games, onViewAll }) {
               </div>
               <div className="min-w-0">
                 <p className="text-[10px] font-bold uppercase tracking-wider" style={{ color: text.faint }}>{niceDate(g.game_date)}</p>
-                <p className="text-xs font-bold text-white truncate">{g.opponent || typeLabel(g.game_type)}</p>
+                <p className="text-xs font-bold text-white truncate">
+                  {g.opponent || typeLabel(g.game_type)}
+                  {g.result && <ResultBadge result={g.result} />}
+                </p>
               </div>
             </div>
           ))}
@@ -515,14 +548,31 @@ function GameSummaryTab({ data }) {
           Season Totals · {rows.length} game{rows.length === 1 ? '' : 's'}
           {pendingGames.length > 0 && <span className="normal-case tracking-normal font-normal" style={{ color: text.faint }}> · {pendingGames.length} more pending full review</span>}
         </p>
-        <div className="grid gap-3 grid-cols-3 sm:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8">
-          {boxMetrics.map(m => (
-            <div key={m.key} className="rounded-xl border p-2.5 text-center" style={cardStyle}>
-              <p className="text-lg font-extrabold text-white leading-none">{fmt(m.headline, m)}</p>
-              <p className="text-[9px] font-bold uppercase tracking-wider mt-1 leading-tight" style={{ color: text.faint }} title={m.label}>{m.short}</p>
+        {[['batting', 'Batting'], ['pitching', 'Pitching'], ['fielding', 'Fielding']].map(([group, label]) => {
+          const tiles = boxMetrics.filter(m => (m.group || 'batting') === group);
+          if (!tiles.length) return null;
+          const rates = seasonRates(group, Object.fromEntries(boxMetrics.map(m => [m.key, m.headline])));
+          return (
+            <div key={group} className="mb-3">
+              <div className="flex items-center gap-3 mb-1.5 flex-wrap">
+                <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: text.faint }}>{label}</p>
+                {rates.length > 0 && (
+                  <p className="text-[11px] tabular-nums" style={{ color: text.secondary }}>
+                    {rates.map(([k, v]) => <span key={k} className="mr-3"><span style={{ color: text.faint }}>{k}</span> <b style={{ color: text.body }}>{v}</b></span>)}
+                  </p>
+                )}
+              </div>
+              <div className="grid gap-3 grid-cols-3 sm:grid-cols-4 lg:grid-cols-6 xl:grid-cols-8">
+                {tiles.map(m => (
+                  <div key={m.key} className="rounded-xl border p-2.5 text-center" style={cardStyle}>
+                    <p className="text-lg font-extrabold text-white leading-none">{fmt(m.headline, m)}</p>
+                    <p className="text-[9px] font-bold uppercase tracking-wider mt-1 leading-tight" style={{ color: text.faint }} title={m.label}>{m.short}</p>
+                  </div>
+                ))}
+              </div>
             </div>
-          ))}
-        </div>
+          );
+        })}
       </div>
 
       {/* Box score game log */}
@@ -541,7 +591,7 @@ function GameSummaryTab({ data }) {
             {rows.map(g => (
               <tr key={g.id} className="border-b" style={rowBorder}>
                 <td className="py-2 pr-3 whitespace-nowrap" style={{ color: text.secondary }}>{niceDate(g.game_date)}</td>
-                <td className="py-2 pr-3 font-bold whitespace-nowrap" style={{ color: text.body }}>{g.opponent || typeLabel(g.game_type)}</td>
+                <td className="py-2 pr-3 font-bold whitespace-nowrap" style={{ color: text.body }}>{g.opponent || typeLabel(g.game_type)}{g.result && <ResultBadge result={g.result} />}</td>
                 {boxMetrics.map(m => {
                   const v = valueByGameAndKey[`${g.id}:${m.key}`];
                   return (

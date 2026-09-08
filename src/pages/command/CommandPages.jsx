@@ -141,6 +141,12 @@ function GameRecordSources({ job, onChange, setError }) {
   return (
     <section className="rounded-2xl border p-6" style={cardStyle}>
       <h2 className="text-lg font-bold text-white mb-1" style={{ fontSize: '1.125rem' }}>Game record sources</h2>
+      {job.game_result && (
+        <p className="text-sm mb-2 tabular-nums" style={{ color: '#cfe8ff' }} data-testid="game-result">
+          Final · <b style={{ color: job.game_result.winner === 'us' ? '#4ade80' : job.game_result.winner === 'them' ? '#f87171' : '#94a3b8' }}>Us {job.game_result.us_runs} · {job.opponent_label || 'Them'} {job.game_result.them_runs}</b>
+          <span className="text-xs ml-2" style={{ color: '#64748b' }}>{job.game_result.final_reason?.replace(/_/g, ' ')} · published with the record{job.game_result.line_score?.innings ? ` · ${job.game_result.line_score.innings} inning${job.game_result.line_score.innings === 1 ? '' : 's'}` : ''}</span>
+        </p>
+      )}
       <p className="text-xs mb-3" style={{ color: '#64748b' }}>
         GameChanger exports and manual box scores attach here. Raw content is kept verbatim; rows resolve to the roster by jersey, then name; you resolve the rest. A validated record releases box-score statistics on its own track — it never blocks metric release and never mixes with measured metrics.
       </p>

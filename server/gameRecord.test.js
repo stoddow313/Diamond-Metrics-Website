@@ -67,10 +67,10 @@ test('parser: batting, pitching and fielding blocks map to box-score keys; deriv
   assert.deepEqual(parsed.blocks.map(b => b.group), ['batting', 'pitching', 'fielding']);
   assert.equal(parsed.row_count, 5, 'three batters, one pitcher, one fielder — no Totals row');
   const aceBat = parsed.blocks[0].rows.find(r => r.jersey === '7');
-  assert.deepEqual(aceBat.stats, { bs_pa: 4, bs_ab: 3, bs_h: 1, bs_2b: 1, bs_3b: 0, bs_hr: 0, bs_rbi: 2, bs_r: 1, bs_bb: 1, bs_k: 1, bs_hbp: 0, bs_sb: 1 });
+  assert.deepEqual(aceBat.stats, { bs_pa: 4, bs_ab: 3, bs_h: 1, bs_1b: 0, bs_2b: 1, bs_3b: 0, bs_hr: 0, bs_rbi: 2, bs_r: 1, bs_bb: 1, bs_k: 1, bs_hbp: 0, bs_sh: 0, bs_sf: 0, bs_roe: 0, bs_fc: 0, bs_sb: 1, bs_cs: 0, bs_pk: 0 }, 'every appendix count the export carries is kept');
   const acePitch = parsed.blocks[1].rows[0];
-  assert.deepEqual(acePitch.stats, { bs_ip: 4.2, bs_bf: 20, bs_pitches: 72, bs_ha: 5, bs_ra: 2, bs_er: 1, bs_bba: 1, bs_kp: 6, bs_hra: 0 });
-  assert.deepEqual(parsed.blocks[2].rows[0].stats, { bs_e: 1 });
+  assert.deepEqual(acePitch.stats, { bs_outs: 14, bs_gs: 1, bs_bf: 20, bs_pitches: 72, bs_ha: 5, bs_ra: 2, bs_er: 1, bs_bba: 1, bs_kp: 6, bs_hbpa: 0, bs_hra: 0 }, '4.2 innings are fourteen outs');
+  assert.deepEqual(parsed.blocks[2].rows[0].stats, { bs_a: 3, bs_po: 1, bs_e: 1, bs_dp: 0 });
   assert.ok(parsed.blocks[0].unknown_columns.length === 0, `batting columns all placed or deliberately ignored: ${parsed.blocks[0].unknown_columns}`);
   assert.equal(parsed.blocks[0].rows.find(r => r.jersey === '21').name, 'Sammy Bat');
 });
@@ -141,7 +141,7 @@ test('two releases: metrics publish first; the validated game record later publi
   assert.equal(out.players, 3);
   assert.equal(entry(ace, 'bs_pa').value, 4);
   assert.equal(entry(ace, 'bs_pa').method, 'scorebook_derived');
-  assert.equal(entry(ace, 'bs_ip').value, 4.2, 'pitching line lands on the same player');
+  assert.equal(entry(ace, 'bs_outs').value, 14, 'pitching line lands on the same player, innings stored as outs');
   assert.equal(entry(ace, 'bs_kp').value, 6);
   assert.equal(entry(slugger, 'bs_h').value, 2);
   assert.equal(entry(glove, 'bs_e').value, 1);

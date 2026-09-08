@@ -516,6 +516,22 @@ both as running attempts at the tagged moment on the selected feed — the
 running queue measures them as usual. Only modules the order activated are
 offered; opponents are labels and cannot be timed or matched.
 
+Innings pitched are stored as **outs** (`bs_outs`, appendix rule) on the
+profile and in imports — "5.2" in a GameChanger export becomes 17 outs — and
+displayed in thirds again (`IP 5.2`). Season innings therefore add up
+correctly (4.2 + 4.2 = 9.1, not 9.4). Older `bs_ip` rows convert once at boot
+(`stat_entries_ip_to_outs`). The profile's Game Summary groups the stored
+fields into batting / pitching / fielding with the appendix rates (AVG, OBP,
+SLG, OPS; ERA, WHIP, K/9, BB/9; FPCT), three decimals, blank when there is
+nothing to divide by.
+
+The game itself publishes with the record: when a validated live scorebook is
+among the sources and the game is final, the release writes
+`cmd_game_results` (score, winner, final reason, line score, team R/H/E/LOB),
+rewritten on every re-release. The player profile shows it as `W 5–3` on the
+game row; the job page shows the final. Import-only records carry player
+lines only, so they publish no result.
+
 Publishing: the scorebook is the job's `live_internal` game-record source.
 It validates once the game is final with no blocking issues, and releases
 through the same **Game record → validated → released** path as an import.

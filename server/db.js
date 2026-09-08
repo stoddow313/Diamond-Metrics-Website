@@ -869,6 +869,36 @@ try {
 
 db.exec('CREATE INDEX IF NOT EXISTS idx_cmd_events_job_seq ON cmd_events(job_id, sequence)');
 
+// Innings pitched used to publish as thirds notation (4.2); the appendix wants
+// outs. Convert once — the profile shows thirds again from the outs.
+{
+  const rows = db.prepare("SELECT s.id, s.game_id, s.value, s.method, s.metric_result_id, s.game_record_source_id FROM stat_entries s WHERE s.metric_key = 'bs_ip'").all();
+  if (rows.length) {
+    const toOuts = ip => { const whole = Math.floor(ip); const frac = Math.round((ip - whole) * 10); return whole * 3 + Math.min(Math.max(frac, 0), 2); };
+    const up = db.prepare(`INSERT INTO stat_entries (game_id, metric_key, value, method, metric_result_id, game_record_source_id) VALUES (?, 'bs_outs', ?, ?, ?, ?)
+                           ON CONFLICT (game_id, metric_key) DO UPDATE SET value = excluded.value, method = excluded.method, game_record_source_id = excluded.game_record_source_id`);
+    const del = db.prepare('DELETE FROM stat_entries WHERE id = ?');
+    db.transaction(() => { for (const r of rows) { up.run(r.game_id, toOuts(r.value), r.method, r.metric_result_id ?? null, r.game_record_source_id ?? null); del.run(r.id); } })();
+    console.error(JSON.stringify({ level: 'info', event: 'stat_entries_ip_to_outs', rows: rows.length }));
+  }
+}
+
+// The game itself, published with the game record (score, line score, team
+// totals); one row per job, rewritten on every release.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS cmd_game_results (
+    job_id       INTEGER PRIMARY KEY REFERENCES cmd_jobs(id) ON DELETE CASCADE,
+    source_id    INTEGER,
+    us_runs      INTEGER NOT NULL,
+    them_runs    INTEGER NOT NULL,
+    winner       TEXT NOT NULL,
+    final_reason TEXT DEFAULT '',
+    line_score   TEXT NOT NULL DEFAULT '{}',
+    team         TEXT NOT NULL DEFAULT '{}',
+    released_at  TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+`);
+
 // ── Seed Command reference data (idempotent; active flags follow code) ──
 {
   const insSport = db.prepare('INSERT OR IGNORE INTO sports (key, name) VALUES (?, ?)');
