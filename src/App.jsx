@@ -17,6 +17,7 @@ import RunningQueuePage from './pages/command/RunningQueuePage';
 import ReviewPage from './pages/command/ReviewPage';
 import OpsPage from './pages/command/OpsPage';
 import BulkJobsPage from './pages/command/BulkJobsPage';
+import ScorebookPage from './pages/command/ScorebookPage';
 import AdminLayout from './components/admin/AdminLayout';
 import AdminPlayersPage from './pages/admin/AdminPlayersPage';
 import AdminPlayerEditorPage from './pages/admin/AdminPlayerEditorPage';
@@ -89,6 +90,7 @@ function AppRoutes() {
         <Route path="feeds/:feedId" element={<FeedViewerPage />} />
         <Route path="jobs/:jobId/radar" element={<RadarQueuePage />} />
         <Route path="jobs/:jobId/running" element={<RunningQueuePage />} />
+        <Route path="jobs/:jobId/scorebook" element={<ScorebookPage />} />
         <Route path="jobs/:jobId/review" element={<ReviewPage />} />
         <Route path="bulk" element={<BulkJobsPage />} />
         <Route path="ops" element={<OpsPage />} />

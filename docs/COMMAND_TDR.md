@@ -137,6 +137,36 @@ linked to their `metric_result_id`), so profiles/dashboards/rating engine read t
 unchanged. A job with only unavailable results publishes **no** stat_entries row for
 that metric — absence, never zero.
 
+## 7. Phase 2 — Core scorekeeping (decision record, 2026-09-08)
+
+**Increment (roadmap §8):** game → half inning → plate appearance → pitch/play
+event; box-score foundation and standard-stat rollups. **Gate:** ordinary game
+corrections are auditable; scorebook-derived stats are clearly distinguished
+from measured/estimated metrics. Acceptance tests §7.6 (full-game correction)
+and §7.7b (substitutions, inherited runners, re-entry) become real.
+
+### 7.1 Decisions
+
+| Area | Decision | Why |
+|---|---|---|
+| Event storage | Reuse `cmd_events` (typed rows, parent links, `superseded_by`). New types: `lineup`, `half_inning`, `plate_appearance`, `pitch`, `runner`, `substitution`, `game_final`. No new event table. | The M4 spine was built for this ("Phase 2 adds pitch/PA/play types to the SAME table"). One ordered stream per job means one correction model and one audit trail. |
+| Derived state and stats | **Replay, never store.** `replayJob()` folds the active events into game state (inning, outs, count, bases with responsible pitcher, score, lineups, pitcher of record) and per-player box-score tallies (`bs_*`), deterministically, versioned `CMD_SCOREBOOK_V1`. | A correction upstream recalculates everything downstream by construction — no stale tallies, no duplicate tags. It also makes the engine a pure function that is exhaustively testable. |
+| Corrections | Supersede, never edit in place: a corrected event gets a new row at the same sequence and parent; the old row is `superseded`; children re-parent; the audit row carries previous and new payload. Voiding is a supersede with no replacement. | Roadmap §3.2 "latest approved correction supersedes the prior published value while preserving version history and a reason". |
+| Disputed events | `status = 'needs_review'` with a note. Excluded from tallies and from release; surfaced as a QA flag. Clear results still publish. | Roadmap §4.2 "disputed events remain needs_review and excluded from dependent calculations". |
+| Runner advancement | Explicit `runner` events per runner (advance / stolen base / caught stealing / pickoff / wild pitch / passed ball / error / out / scored). Home runs auto-score everyone. The UI proposes the conventional advances for a result; the scorer confirms. | Baseball advancement is contextual; automation would guess. Explicit events are what a reviewer can audit. |
+| Earned runs and inherited runners | Every runner carries the pitcher responsible for them (the pitcher of record when they reached). A run is charged to that pitcher regardless of who is pitching when it scores. Unearned when the runner reached or scored on an error/passed ball or the scorer flags it. | §7.7b "pitcher substitution/inherited runners retain correct attribution". |
+| Substitutions | `substitution` events: pinch hitter, pinch runner, courtesy runner (P/C, per ruleset), defensive change, pitching change, re-entry (`starters_once` per ruleset). Lineups are replayed, not stored. | Youth rules (re-entry, courtesy runners, EH/DH) are ruleset config, not code. |
+| Opponent side | Opponent batters and runners are label-only (`#12`) — no player rows, nothing publishes for them. Our pitcher's line needs their plate appearances, so both halves are scored. | Roadmap: never create duplicate or speculative player records. |
+| Publication | The live scorebook is a **`live_internal` game-record source**. Validation replays the events into the same per-player stat rows a GameChanger import produces; the existing game-record release publishes `bs_*` with `method = 'scorebook_derived'`. One release path for imports and live scoring. | Roadmap §6 "publish box-score statistics only through a validated game-record release"; gate "scorebook-derived stats clearly distinguished". |
+| Corrections after release | A correction to a released record re-runs the game-record release immediately (audited) when the record is still valid; the profile never shows a superseded value. | Roadmap §3.2 forbids stale profile values. Metric corrections already behave this way. |
+| Game over | The engine suggests game over from the ruleset (regulation innings, run rule, walk-off); the scorer records `game_final` with a reason. The record cannot be validated until final. | Time limits and umpire decisions are not knowable from events. |
+
+### 7.2 Out of scope for the first slice
+
+Pitch location and heatmaps, 150+ standard-stat parity, splits, box-score
+outputs for opponents, automatic game-over, and any suggestion that changes a
+result without the scorer.
+
 ## 6. Decision log
 
 | Date | Decision | Status |
@@ -158,4 +188,5 @@ that metric — absence, never zero.
 | 2026-08-21 | M5 built: capture-readiness QA flags (consent + unreviewed results block approval); per-result reviewer decisions; release adapter publishes DM_RELEASE_V1 rollups into `games`/`stat_entries` with `method` + `metric_result_id` provenance (`games.command_job_id` keys one game per player per job); corrections supersede with full history (`superseded_by` chains, `withdrawn` for invalidated evidence); `paid_metric_unavailable` notification with reasons, deduped across re-releases | Shipped |
 | 2026-08-21 | Phase 1 acceptance test passing: Rookie job → radar + frame-timed evidence → review → release → public profile, no CSV handoff; unavailable never publishes and never zeros | Verified |
 | 2026-08-21 | M6 built: structured JSON logs + dependency-free Sentry forwarding (`SENTRY_DSN`), pipeline telemetry (stage p50/p90, turnaround, radar match / unavailable / review-return rates, media durations), nightly SQLite online-backup snapshots to the storage adapter with retention, `/command/ops` dashboard, bulk tournament job creation, staging + runbook in docs/COMMAND_OPS.md | Shipped |
+| 2026-09-08 | **Phase 2 started.** Scorebook events on `cmd_events`; replay-derived state and tallies (`CMD_SCOREBOOK_V1`); supersede-based corrections with immediate re-release; live scorebook as a `live_internal` game-record source through the existing release adapter (§7) | Decided |
 | 2026-08-21 | **Dedicated Render worker deferred, not delivered.** A Render persistent disk attaches to exactly one service, so a separate worker cannot share the API's SQLite file. Pilot runs the inline worker; the dedicated worker is gated on the Postgres migration (TDR §1). Escalation path if transcoding starves latency: larger API instance first. | Decided — supersedes the M6 "dedicated worker service" line item |

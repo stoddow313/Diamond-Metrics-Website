@@ -171,6 +171,12 @@ function GameRecordSources({ job, onChange, setError }) {
             {!g.has_content && (
               <p className="text-xs mt-1" style={{ color: '#fbbf24' }}>No content attached — this source is a placeholder note. Attach the export as a new source to validate it.</p>
             )}
+            {g.source_kind === 'live_internal' && (
+              <p className="text-xs mt-1" style={{ color: '#94a3b8' }}>
+                Replayed from the scorebook event log — never stored as a file. It validates itself when the game is marked final, and every correction after release re-releases the box score.{' '}
+                <Link to={`/command/jobs/${g.job_id}/scorebook`} className="hover:underline" style={{ color: '#c4b5fd' }}>Open scorebook →</Link>
+              </p>
+            )}
             {report && (
               <div className="mt-2 text-xs" style={{ color: '#94a3b8' }}>
                 <p>
@@ -790,6 +796,13 @@ export function JobDetailPage() {
                 style={{ backgroundColor: 'rgba(56, 189, 248, 0.12)', color: '#38bdf8' }}
               >
                 Running queue →
+              </Link>
+              <Link
+                to={`/command/jobs/${job.id}/scorebook`}
+                className="px-4 py-2 rounded-xl text-sm font-bold"
+                style={{ backgroundColor: 'rgba(167, 139, 250, 0.14)', color: '#c4b5fd' }}
+              >
+                Scorebook →
               </Link>
               <Link
                 to={`/command/jobs/${job.id}/review`}

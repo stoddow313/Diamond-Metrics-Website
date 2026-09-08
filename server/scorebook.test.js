@@ -1,0 +1,253 @@
+// Phase 2 core scorekeeping: replayed state and tallies, auto half innings,
+// substitutions with inherited runners, courtesy runners, re-entry rules,
+// auditable corrections that recalculate downstream, disputes, and the live
+// scorebook publishing through the game-record release.
+import { test, before, after } from 'node:test';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+
+const TEST_DB = `/tmp/dm-scorebook-${process.pid}.db`;
+process.env.DM_DB_PATH = TEST_DB;
+process.env.DM_STORAGE = 'local';
+process.env.DM_MEDIA_DIR = `/tmp/dm-scorebook-${process.pid}-store`;
+process.env.DM_LOG_SILENT = '1';
+
+const { db } = await import('./db.js');
+const { PACKAGES } = await import('./commandLogic.js');
+const { replay, appendEvent, appendPlateAppearance, correctEvent, voidEvent, disputeEvent, resolveEvent, replayJob, ipFromOuts, liveRecordReport } = await import('./scorebook.js');
+const { validateGameRecordSource, releaseGameRecord } = await import('./gameRecord.js');
+const { computeQaFlags } = await import('./releaseLogic.js');
+
+let admin, team, baseball, P, C, SS, LF, DH, SUB, CR, PH, job;
+const players = {};
+
+function makeJob() {
+  const order = db.prepare("INSERT INTO cmd_orders (package_key, label) VALUES ('rookie', 'Rookie')").run().lastInsertRowid;
+  for (const code of PACKAGES.rookie.metric_codes) db.prepare("INSERT INTO cmd_metric_requirements (order_id, metric_code, priority, capture_requirement, enabled) VALUES (?, ?, 10, '', 1)").run(order, code);
+  const id = db.prepare("INSERT INTO cmd_jobs (sport_id, team_id, game_date, order_id, opponent_label) VALUES (?, ?, '2026-09-12', ?, 'Rivals')").run(baseball, team, order).lastInsertRowid;
+  db.prepare('INSERT INTO cmd_consent (job_id, media_consent, sharing_scope, recorded_by) VALUES (?, 1, ?, ?)').run(id, 'customer', admin);
+  return id;
+}
+const ourLineup = (j, usIsHome = false) => appendEvent(db, j, { event_type: 'lineup', payload: { side: 'us', us_is_home: usIsHome, slots: [
+  { slot: 1, player_id: SS, label: 'Sam Short', position: 'SS' }, { slot: 2, player_id: LF, label: 'Lee Left', position: 'LF' },
+  { slot: 3, player_id: DH, label: 'Dee Hitter', position: 'DH' }, { slot: 4, player_id: C, label: 'Cat Catcher', position: 'C' },
+  { slot: 5, player_id: P, label: 'Pat Pitcher', position: 'P' },
+] } }, admin);
+const theirLineup = j => appendEvent(db, j, { event_type: 'lineup', payload: { side: 'them', slots: [1, 2, 3, 4, 5].map(n => ({ slot: n, label: `Opp #${n}`, position: n === 1 ? 'P' : '' })) } }, admin);
+const pa = (j, body) => appendPlateAppearance(db, j, body, admin);
+const tally = (rp, key) => rp.tallies.find(t => t.key === key)?.stats;
+const entry = (j, playerId, key) => db.prepare('SELECT s.* FROM stat_entries s JOIN games g ON g.id = s.game_id WHERE g.command_job_id = ? AND g.player_id = ? AND s.metric_key = ?').get(j, playerId, key);
+
+before(() => {
+  const org = db.prepare("INSERT INTO organizations (name) VALUES ('Org')").run().lastInsertRowid;
+  team = db.prepare("INSERT INTO teams (organization_id, name, slug) VALUES (?, 'Canyon', 'canyon')").run(org).lastInsertRowid;
+  baseball = db.prepare("SELECT id FROM sports WHERE key='baseball'").get().id;
+  admin = db.prepare('SELECT id FROM admins ORDER BY id LIMIT 1').get().id;
+  const mk = (f, l, j) => { const id = db.prepare('INSERT INTO players (first_name, last_name, slug) VALUES (?, ?, ?)').run(f, l, `${f}-${l}`.toLowerCase()).lastInsertRowid; db.prepare("INSERT INTO roster_memberships (team_id, player_id, jersey, start_date, end_date) VALUES (?, ?, ?, '2026-01-01', '2026-12-31')").run(team, id, j); players[id] = `${f} ${l}`; return id; };
+  P = mk('Pat', 'Pitcher', '1'); C = mk('Cat', 'Catcher', '2'); SS = mk('Sam', 'Short', '6'); LF = mk('Lee', 'Left', '7'); DH = mk('Dee', 'Hitter', '9'); SUB = mk('Sue', 'Sub', '12'); CR = mk('Cory', 'Runner', '15'); PH = mk('Pete', 'Hitter', '20');
+  job = makeJob();
+});
+
+after(() => {
+  db.close();
+  fs.rmSync(process.env.DM_MEDIA_DIR, { recursive: true, force: true });
+  for (const f of [TEST_DB, `${TEST_DB}-wal`, `${TEST_DB}-shm`]) fs.rmSync(f, { force: true });
+});
+
+test('replay: a half inning of plays yields batter, pitcher and team totals; innings pitched count outs in thirds', () => {
+  const ev = (id, type, payload, parent = null) => ({ id, sequence: id, event_type: type, parent_event_id: parent, status: 'active', payload });
+  const events = [
+    ev(1, 'lineup', { side: 'us', us_is_home: false, slots: [{ slot: 1, player_id: 10, label: 'A' }, { slot: 2, player_id: 11, label: 'B' }, { slot: 3, player_id: 12, label: 'Cc' }, { slot: 4, player_id: 13, label: 'D' }] }),
+    ev(2, 'lineup', { side: 'them', slots: [{ slot: 1, label: 'Opp1', position: 'P' }] }),
+    ev(3, 'half_inning', { inning: 1, half: 'top' }),
+    ev(4, 'plate_appearance', { result: 'single' }, 3),
+    ev(5, 'plate_appearance', { result: 'walk' }, 3),
+    ev(6, 'runner', { from: 1, to: 2, how: 'advance' }, 5),
+    ev(7, 'plate_appearance', { result: 'home_run' }, 3),
+    ev(8, 'plate_appearance', { result: 'strikeout' }, 3),
+    ev(9, 'plate_appearance', { result: 'groundout' }, 3),
+    ev(10, 'plate_appearance', { result: 'single' }, 3),
+    ev(11, 'plate_appearance', { result: 'flyout' }, 3),
+  ];
+  const rp = replay(events, { ruleset: { innings: 7 } });
+  assert.equal(rp.state.score.us, 3);
+  assert.equal(rp.state.outs, 3);
+  assert.equal(rp.state.half_complete, true);
+  assert.deepEqual(rp.state.bases, { 1: null, 2: null, 3: null });
+  const a = rp.tallies.find(t => t.key === 'p:10').stats, b = rp.tallies.find(t => t.key === 'p:11').stats, c = rp.tallies.find(t => t.key === 'p:12').stats;
+  // A: single, then groundout the second time through. B: walk, then a single. C: HR (3 RBI), then the flyout.
+  assert.equal(a.bs_h, 1); assert.equal(a.bs_r, 1); assert.equal(a.bs_ab, 2);
+  assert.equal(b.bs_bb, 1); assert.equal(b.bs_h, 1); assert.equal(b.bs_ab, 1, 'the walk is not an at-bat, the single is'); assert.equal(b.bs_r, 1);
+  assert.equal(c.bs_hr, 1); assert.equal(c.bs_rbi, 3); assert.equal(c.bs_r, 1); assert.equal(c.bs_ab, 2);
+  const opp = rp.tallies.find(t => t.key === 'l:them:Opp1').stats;
+  assert.equal(opp.bs_bf, 7); assert.equal(opp.bs_ha, 3); assert.equal(opp.bs_hra, 1); assert.equal(opp.bs_bba, 1); assert.equal(opp.bs_kp, 1);
+  assert.equal(opp.bs_ra, 3); assert.equal(opp.bs_er, 3); assert.equal(opp.bs_ip, 1);
+  assert.equal(rp.state.next_slot.us, 4, 'seven batters through a four-man order: slot 4 is up next');
+  assert.equal(ipFromOuts(14), 4.2);
+  assert.equal(rp.issues.length, 0, JSON.stringify(rp.issues));
+});
+
+test('scoring through the API: lineups, auto half innings on the third out, and the live source appears', () => {
+  ourLineup(job, false);
+  const ready = theirLineup(job);
+  assert.deepEqual(ready.state.upcoming, { inning: 1, half: 'top', batting: 'us' }, 'before the first pitch the scorer sees who leads off');
+  assert.equal(ready.state.expected_batter.player_id, SS);
+  let rp = pa(job, { pa: { result: 'single' } });
+  assert.equal(rp.state.inning, 1); assert.equal(rp.state.half, 'top'); assert.equal(rp.state.batting, 'us');
+  assert.equal(rp.state.expected_batter.player_id, LF, 'the lineup advances to slot 2');
+  rp = pa(job, { pa: { result: 'flyout' } });
+  rp = pa(job, { pa: { result: 'strikeout_looking' } });
+  rp = pa(job, { pa: { result: 'groundout' } });
+  assert.equal(rp.state.half, 'bottom'); assert.equal(rp.state.inning, 1); assert.equal(rp.state.outs, 0);
+  assert.equal(rp.state.batting, 'them', 'third out flipped the half automatically');
+  assert.equal(rp.events.filter(e => e.event_type === 'half_inning').length, 2);
+  const src = db.prepare("SELECT * FROM cmd_game_record_sources WHERE job_id = ? AND source_kind = 'live_internal'").get(job);
+  assert.ok(src, 'live scorebook registered as a game-record source');
+  assert.equal(src.validation_status, 'validating', 'not validated until the game is final');
+});
+
+test('inherited runners: the run is charged to the pitcher who put the runner on, the hit to the pitcher on the mound', () => {
+  // Bottom 1: they bat, Pat pitches for us.
+  let rp = pa(job, { pa: { batter_label: 'Opp #1', result: 'walk' } });
+  assert.equal(rp.state.pitcher.us.player_id, P);
+  appendEvent(db, job, { event_type: 'substitution', payload: { kind: 'pitching_change', side: 'us', player_in_id: SUB, player_in_label: 'Sue Sub', player_out_id: P, slot: 5 } }, admin);
+  rp = pa(job, { pa: { batter_label: 'Opp #2', result: 'single' }, runners: [{ from: 1, to: 4, how: 'scored_on_play' }] });
+  const pat = tally(rp, `p:${P}`), sue = tally(rp, `p:${SUB}`);
+  assert.equal(pat.bs_bba, 1); assert.equal(pat.bs_ra, 1); assert.equal(pat.bs_er, 1, 'inherited runner scores against Pat');
+  assert.equal(sue.bs_ha, 1); assert.equal(sue.bs_ra, 0); assert.equal(sue.bs_bf, 1);
+  assert.equal(rp.state.score.them, 1);
+  assert.equal(tally(rp, 'l:them:Opp #2').bs_rbi, 1);
+  // Close the half: three outs, then top 2 begins.
+  rp = pa(job, { pa: { batter_label: 'Opp #3', result: 'strikeout' } });
+  rp = pa(job, { pa: { batter_label: 'Opp #4', result: 'popout' } });
+  rp = pa(job, { pa: { batter_label: 'Opp #5', result: 'lineout' } });
+  assert.equal(rp.state.inning, 2); assert.equal(rp.state.half, 'top');
+  assert.equal(tally(rp, `p:${SUB}`).bs_ip, 1, 'three outs on the mound is one inning');
+});
+
+test('courtesy runner and re-entry: the courtesy runner owns the steal and the run, the batter keeps the RBI; a starter re-enters once', () => {
+  // Top 2, we bat. Slot 5 is due — and that is Sue, who took Pat's slot with the pitching change in the
+  // previous inning — so the courtesy runner has to be a bench player, not the batter herself.
+  let rp = replayJob(db, job);
+  const due = rp.state.expected_batter;
+  assert.equal(due.player_id, SUB, 'the relief pitcher bats in the slot she took over');
+  const runsBefore = tally(rp, `p:${due.player_id}`)?.bs_r || 0;   // totals are game-wide; earlier innings in this suite may have scored
+  rp = pa(job, { pa: { result: 'single' } });
+  assert.equal(rp.state.bases[1].ref.player_id, due.player_id);
+  // Courtesy runner for the catcher/pitcher slot.
+  appendEvent(db, job, { event_type: 'substitution', payload: { kind: 'courtesy_runner', side: 'us', base: 1, player_in_id: CR, player_in_label: 'Cory Runner', player_out_id: due.player_id } }, admin);
+  rp = replayJob(db, job);
+  assert.equal(rp.state.bases[1].ref.player_id, CR);
+  assert.equal(rp.state.bases[1].responsible.label, 'Opp #1', 'responsible pitcher unchanged by the courtesy runner');
+  // Steal second between batters, then the next batter singles her home.
+  appendEvent(db, job, { event_type: 'runner', payload: { runner_player_id: CR, from: 1, to: 2, how: 'stolen_base' } }, admin);
+  rp = pa(job, { pa: { result: 'single' }, runners: [{ from: 2, to: 4, how: 'scored_on_play' }] });
+  assert.equal(tally(rp, `p:${CR}`).bs_sb, 1);
+  assert.equal(tally(rp, `p:${CR}`).bs_r, 1);
+  assert.equal(tally(rp, `p:${SS}`).bs_rbi, 1, 'the batter who drove her in keeps the RBI');
+  assert.equal(tally(rp, `p:${due.player_id}`).bs_r, runsBefore, 'the replaced runner does not get the run');
+  const batter = rp.state.lineups.us.slots.find(s => s.slot === rp.state.next_slot.us - 1 || (rp.state.next_slot.us === 1 && s.slot === 5));
+  assert.ok(batter);
+  // Re-entry: a starter may return once under starters_once.
+  appendEvent(db, job, { event_type: 'substitution', payload: { kind: 'pinch_hitter', side: 'us', slot: 3, player_in_id: PH, player_in_label: 'Pete Hitter', player_out_id: DH } }, admin);
+  rp = appendEvent(db, job, { event_type: 'substitution', payload: { kind: 're_entry', side: 'us', slot: 3, player_in_id: DH, player_in_label: 'Dee Hitter' } }, admin);
+  assert.ok(!rp.issues.some(i => i.code.startsWith('reentry')), JSON.stringify(rp.issues));
+  appendEvent(db, job, { event_type: 'substitution', payload: { kind: 'pinch_hitter', side: 'us', slot: 3, player_in_id: PH, player_in_label: 'Pete Hitter', player_out_id: DH } }, admin);
+  rp = appendEvent(db, job, { event_type: 'substitution', payload: { kind: 're_entry', side: 'us', slot: 3, player_in_id: DH, player_in_label: 'Dee Hitter' } }, admin);
+  assert.ok(rp.issues.some(i => i.code === 'reentry_twice'), 'a second re-entry is flagged for the reviewer');
+});
+
+test('correction: a defensive judgment changes (error → single) and every dependent total recalculates with no duplicates', () => {
+  // Error charged to their shortstop, then corrected to a clean single.
+  let rp = pa(job, { pa: { result: 'reach_on_error', error_label: 'Opp #6' } });
+  const paEvent = rp.events.filter(e => e.event_type === 'plate_appearance').at(-1);
+  const batterKey = `p:${paEvent.payload.batter_player_id || rp.log.at(-1)}`;
+  const before = { e: tally(rp, 'l:them:Opp #6')?.bs_e, hits: rp.tallies.filter(t => t.player_id).reduce((n, t) => n + t.stats.bs_h, 0) };
+  assert.equal(before.e, 1);
+  rp = correctEvent(db, paEvent.id, { payload: { ...paEvent.payload, result: 'single', error_label: undefined } }, admin, 'video review: clean hit, no error');
+  const after = { e: tally(rp, 'l:them:Opp #6')?.bs_e ?? 0, hits: rp.tallies.filter(t => t.player_id).reduce((n, t) => n + t.stats.bs_h, 0) };
+  assert.equal(after.e, 0, 'the error is gone');
+  assert.equal(after.hits, before.hits + 1, 'the hit is counted once');
+  const old = db.prepare('SELECT * FROM cmd_events WHERE id = ?').get(paEvent.id);
+  assert.equal(old.status, 'superseded'); assert.ok(old.superseded_by);
+  const repl = db.prepare('SELECT * FROM cmd_events WHERE id = ?').get(old.superseded_by);
+  assert.equal(repl.sequence, old.sequence, 'same place in the game');
+  assert.equal(db.prepare("SELECT COUNT(*) c FROM cmd_events WHERE job_id = ? AND sequence = ? AND status = 'active'").get(job, old.sequence).c, 1, 'no duplicate active event');
+  const a = db.prepare("SELECT * FROM cmd_review_actions WHERE target_table='cmd_events' AND target_id=? AND action='corrected'").get(repl.id);
+  assert.ok(a && /clean hit/.test(a.note) && /reach_on_error/.test(a.prev_state) && /single/.test(a.new_state), 'audit carries both versions and the reason');
+  assert.ok(batterKey);
+});
+
+test('dispute: a play under review is excluded from totals and flagged; resolving restores it', () => {
+  let rp = replayJob(db, job);
+  const lastPa = rp.events.filter(e => e.event_type === 'plate_appearance' && e.status === 'active').at(-1);
+  const hitsBefore = rp.tallies.filter(t => t.player_id).reduce((n, t) => n + t.stats.bs_h, 0);
+  rp = disputeEvent(db, lastPa.id, { note: 'was the runner interference?' }, admin);
+  assert.ok(rp.issues.some(i => i.code === 'unresolved_scoring_judgment'));
+  assert.equal(rp.tallies.filter(t => t.player_id).reduce((n, t) => n + t.stats.bs_h, 0), hitsBefore - 1, 'disputed hit excluded');
+  assert.ok(computeQaFlags(db, job).some(f => f.code === 'unresolved_scoring_judgment' && f.level === 'warning'));
+  rp = resolveEvent(db, lastPa.id, { note: 'umpire confirmed clean' }, admin);
+  assert.equal(rp.tallies.filter(t => t.player_id).reduce((n, t) => n + t.stats.bs_h, 0), hitsBefore);
+  assert.ok(!rp.issues.some(i => i.code === 'unresolved_scoring_judgment'));
+});
+
+test('void: a mistaken event is superseded with its children; the game replays without it', () => {
+  let rp = pa(job, { pa: { result: 'double' }, pitches: [{ result: 'ball' }, { result: 'in_play' }] });
+  const paEvent = rp.events.filter(e => e.event_type === 'plate_appearance').at(-1);
+  const kids = db.prepare('SELECT id FROM cmd_events WHERE parent_event_id = ?').all(paEvent.id);
+  assert.equal(kids.length, 2);
+  rp = voidEvent(db, paEvent.id, admin, 'entered on the wrong batter');
+  assert.ok(!rp.events.some(e => e.id === paEvent.id));
+  assert.ok(kids.every(k => db.prepare('SELECT status FROM cmd_events WHERE id = ?').get(k.id).status === 'superseded'));
+});
+
+test('the live scorebook validates only when final and publishes our players through the game-record release; corrections re-release', () => {
+  const src = db.prepare("SELECT * FROM cmd_game_record_sources WHERE job_id = ? AND source_kind = 'live_internal'").get(job);
+  let v = validateGameRecordSource(db, src.id, {}, admin);
+  assert.equal(v.status, 'validating');
+  assert.match(v.report.warnings[0], /not final/);
+  assert.throws(() => releaseGameRecord(db, job, admin), /No validated game-record source/);
+  // Mark final; run rule not reached, so this is a scorer decision (time limit).
+  let rp = appendEvent(db, job, { event_type: 'game_final', payload: { reason: 'time_limit', note: '1:45 limit' } }, admin);
+  assert.equal(rp.state.final.reason, 'time_limit');
+  v = validateGameRecordSource(db, src.id, {}, admin);
+  assert.equal(v.status, 'validated', JSON.stringify(v.report.warnings));
+  assert.ok(v.report.rows.every(r => r.player_id), 'only our players are rows');
+  assert.ok(!v.report.rows.some(r => /Opp/.test(r.name)));
+  const out = releaseGameRecord(db, job, admin);
+  assert.ok(out.players >= 3);
+  db.prepare("UPDATE cmd_jobs SET game_record_status = 'released' WHERE id = ?").run(job);
+  const ss = entry(job, SS, 'bs_pa');
+  assert.ok(ss && ss.method === 'scorebook_derived');
+  const sue = entry(job, CR, 'bs_sb');
+  assert.equal(sue.value, 1, "the courtesy runner's steal reaches the profile");
+  assert.equal(entry(job, P, 'bs_er').value, 1, "Pat's inherited run is on the profile");
+  // A correction after release re-releases immediately: void the stolen base → SB gone from the profile.
+  const sb = db.prepare("SELECT id FROM cmd_events WHERE job_id = ? AND event_type = 'runner' AND status = 'active' AND payload LIKE '%stolen_base%' ORDER BY id LIMIT 1").get(job);
+  voidEvent(db, sb.id, admin, 'was defensive indifference');
+  assert.equal(entry(job, CR, 'bs_sb'), undefined, 'stale value removed from the profile at once');
+  assert.ok(db.prepare("SELECT 1 FROM cmd_review_actions WHERE target_table='cmd_jobs' AND target_id=? AND action='game_record_rereleased'").get(job));
+  assert.equal(db.prepare("SELECT COUNT(*) c FROM stat_entries s JOIN games g ON g.id=s.game_id WHERE g.command_job_id=? AND g.player_id=? AND s.metric_key='bs_pa'").get(job, SS).c, 1, 'no duplicate entries after re-release');
+});
+
+test('game-over suggestion follows the ruleset run rule; scoring after final is refused', () => {
+  const j2 = makeJob();
+  ourLineup(j2, true);   // we are home
+  theirLineup(j2);
+  // Top 1: they go quietly; bottom 1..3: we score 15 with home runs in bottom 3.
+  const outs = () => { pa(j2, { pa: { result: 'strikeout' } }); pa(j2, { pa: { result: 'strikeout' } }); pa(j2, { pa: { result: 'strikeout' } }); };
+  let rp;
+  for (let inning = 1; inning <= 3; inning += 1) {
+    outs();                       // top: them
+    if (inning < 3) outs();       // bottom: us, quiet
+    else { for (let i = 0; i < 15; i += 1) rp = pa(j2, { pa: { result: 'home_run' } }); }
+  }
+  assert.equal(rp.state.score.us, 15);
+  // 15 runs after 3 complete innings is not yet a completed bottom half; finish it.
+  rp = pa(j2, { pa: { result: 'flyout' } }); rp = pa(j2, { pa: { result: 'flyout' } }); rp = pa(j2, { pa: { result: 'flyout' } });
+  assert.equal(rp.state.game_over_suggested?.reason, 'run_rule', JSON.stringify(rp.state.game_over_suggested));
+  appendEvent(db, j2, { event_type: 'game_final', payload: { reason: 'run_rule' } }, admin);
+  assert.throws(() => pa(j2, { pa: { result: 'single' } }), /final/);
+  const live = liveRecordReport(db, j2);
+  assert.equal(live.status, 'validated');
+});

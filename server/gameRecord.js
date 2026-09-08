@@ -13,6 +13,7 @@
 // could not place instead of guessing.
 import { resyncPublishedRollups } from './releaseLogic.js';
 import { commandRoster } from './commandRoster.js';
+import { liveRecordReport, setGameRecordReleaseHook } from './scorebook.js';
 
 const norm = s => String(s ?? '').trim();
 const key = s => norm(s).toLowerCase().replace(/[^a-z0-9#%/+-]+/g, '');
@@ -190,6 +191,16 @@ export function resolveBoxScoreRows(db, jobId, parsed, resolutions = {}) {
 export function validateGameRecordSource(db, sourceId, { resolutions = {} } = {}, actorId = null) {
   const source = db.prepare('SELECT * FROM cmd_game_record_sources WHERE id = ?').get(sourceId);
   if (!source) throw Object.assign(new Error('Game record source not found'), { status: 404 });
+  if (source.source_kind === 'live_internal') {
+    // The live scorebook has no file to parse: its rows are replayed from events.
+    const live = liveRecordReport(db, source.job_id);
+    db.prepare("UPDATE cmd_game_record_sources SET validation_status = ?, parsed_report = ?, validated_at = CASE WHEN ? = 'validated' THEN COALESCE(validated_at, datetime('now')) ELSE NULL END WHERE id = ?")
+      .run(live.status, JSON.stringify(live.report), live.status, sourceId);
+    db.prepare(
+      "INSERT INTO cmd_review_actions (target_table, target_id, actor_id, action, note, prev_state, new_state) VALUES ('cmd_jobs', ?, ?, 'game_record_source_validated', ?, ?, ?)"
+    ).run(source.job_id, actorId, `live scorebook: ${live.report.rows.length} player rows${live.report.scorebook.final ? '' : ' — game not final'}${live.report.scorebook.issues.length ? `; ${live.report.scorebook.issues.length} issue(s)` : ''}`, source.validation_status, live.status);
+    return live;
+  }
   const content = source.raw_import || '';
   if (!content.trim()) throw Object.assign(new Error('This source has no imported content — attach the CSV text first'), { status: 400 });
   const parsed = parseBoxScoreCsv(content);
@@ -288,3 +299,13 @@ export function releaseGameRecord(db, jobId, actorId = null) {
   resyncPublishedRollups(db, jobId, actorId, 'game record released');
   return { written, players: players.length, sources: sources.length, synthetic };
 }
+
+// A correction to a released scorebook re-runs the release so the profile
+// never shows a superseded value (TDR §7.1).
+setGameRecordReleaseHook((db, jobId, actorId, why) => {
+  const out = releaseGameRecord(db, jobId, actorId);
+  db.prepare(
+    "INSERT INTO cmd_review_actions (target_table, target_id, actor_id, action, note) VALUES ('cmd_jobs', ?, ?, 'game_record_rereleased', ?)"
+  ).run(jobId, actorId ?? null, `${why} — ${out.written.length} entries republished`);
+  return out;
+});

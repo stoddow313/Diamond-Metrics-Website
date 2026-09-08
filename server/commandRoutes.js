@@ -92,7 +92,7 @@ export function mountCommandRoutes(app, { db, requireInternal }) {
            FROM cmd_review_actions ra JOIN cmd_metric_results r ON r.id = ra.target_id LEFT JOIN admins a ON a.id = ra.actor_id
           WHERE ra.target_table = 'cmd_metric_results' AND r.job_id = ?
          UNION ALL
-         SELECT ra.*, a.name AS actor_name, 'attempt' AS scope, e.event_type AS subject
+         SELECT ra.*, a.name AS actor_name, CASE WHEN e.event_type IN ('lineup','half_inning','plate_appearance','pitch','runner','substitution','game_final') THEN 'scorebook' ELSE 'attempt' END AS scope, e.event_type AS subject
            FROM cmd_review_actions ra JOIN cmd_events e ON e.id = ra.target_id LEFT JOIN admins a ON a.id = ra.actor_id
           WHERE ra.target_table = 'cmd_events' AND e.job_id = ?
        ) ORDER BY id DESC LIMIT 300`
@@ -107,7 +107,7 @@ export function mountCommandRoutes(app, { db, requireInternal }) {
       let report = null;
       try { report = g.parsed_report ? JSON.parse(g.parsed_report) : null; } catch { report = null; }
       const { parsed_report: _pr, resolutions: _rs, ...rest } = g;
-      return { ...rest, report, has_content: !!(g.raw_import && String(g.raw_import).trim()) };
+      return { ...rest, report, has_content: g.source_kind === 'live_internal' || !!(g.raw_import && String(g.raw_import).trim()) };   // the live scorebook's content is the event log
     });
     return { ...job, requirements, audit: auditTrail, notifications, game_record_sources: gameRecordSources };
   }
