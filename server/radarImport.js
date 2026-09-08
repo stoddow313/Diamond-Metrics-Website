@@ -7,6 +7,53 @@
 // the format is pinned. Raw rows are immutable — analyst decisions layer on.
 import { resultForEvidence, applyResultState, withdrawResult, resyncPublishedRollups } from './releaseLogic.js';
 export const PITCH_TYPES = ['fastball', 'curveball', 'slider', 'changeup', 'other', 'unknown'];
+
+// Phase 1 match suggestions (roadmap §4: "suggest timestamp/sequence
+// matches"). Pitches come in runs: the nearest reading the analyst already
+// confirmed, if it is close in time (or adjacent in the file when there are
+// no timestamps), is the best guess for the same pitcher. Suggestions are
+// computed on read, never stored, and never create a result — only a
+// confirmation does. Returns Map<readingId, suggestion>.
+export function suggestMatches(readings, { windowS = 8 * 60, sequenceGap = 3 } = {}) {
+  const ts = r => { const t = Date.parse(r.source_timestamp || ''); return Number.isFinite(t) ? t / 1000 : null; };
+  const fmt = s => (s < 60 ? `${Math.round(s)} s` : `${Math.round(s / 60)} min`);
+  const confirmed = readings.filter(r => r.status === 'matched' && r.player_id);
+  const out = new Map();
+  for (const r of readings) {
+    if (r.status !== 'unmatched' || r.velocity == null || confirmed.length === 0) continue;
+    const t = ts(r);
+    let best = null;
+    for (const c of confirmed) {
+      const tc = ts(c);
+      let gap, basis;
+      if (t != null && tc != null) {
+        gap = Math.abs(tc - t); basis = 'time';
+        if (gap > windowS) continue;
+      } else if (r.import_id && c.import_id === r.import_id && r.row_index != null && c.row_index != null) {
+        gap = Math.abs(c.row_index - r.row_index); basis = 'sequence';
+        if (gap === 0 || gap > sequenceGap) continue;
+      } else {
+        continue;
+      }
+      if (!best || gap < best.gap) best = { c, gap, basis };
+    }
+    if (!best) continue;
+    const { c, gap, basis } = best;
+    const direction = basis === 'time' ? (ts(c) < t ? 'earlier' : 'later') : (c.row_index < r.row_index ? 'above' : 'below');
+    out.set(r.id, {
+      player_id: c.player_id,
+      first_name: c.first_name,
+      last_name: c.last_name,
+      pitch_or_exit: c.pitch_or_exit,
+      confidence: basis === 'time' ? (gap <= 60 ? 'high' : 'medium') : 'medium',
+      reason: basis === 'time'
+        ? `same pitcher confirmed ${fmt(gap)} ${direction}`
+        : `same pitcher confirmed ${gap} row${gap === 1 ? '' : 's'} ${direction} in the file`,
+      from_reading_id: c.id,
+    });
+  }
+  return out;
+}
 export const READING_STATUSES = ['unmatched', 'matched', 'invalid'];
 
 const norm = s => String(s ?? '').toLowerCase().trim();

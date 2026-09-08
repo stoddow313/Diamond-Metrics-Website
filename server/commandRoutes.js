@@ -2,6 +2,7 @@
 // index.js with shared db + auth middleware. Every state change writes a
 // cmd_review_actions row; creation flows are transactional.
 import { PACKAGES, buildRequirements, canTransition, roleCanTransition, METRIC_RELEASE_STATES, GAME_RECORD_STATES, orderablePackages, SHARING_SCOPES_V1, assertRequirementToggle } from './commandLogic.js';
+import { addJobGuest } from './commandRoster.js';
 import { emitJobEvent } from './notifications.js';
 import { computeQaFlags, releaseMetrics } from './releaseLogic.js';
 
@@ -283,6 +284,60 @@ export function mountCommandRoutes(app, { db, requireInternal }) {
     ).run(job.id, b.source_kind, String(b.label || ''), typeof b.raw_import === 'string' ? b.raw_import : JSON.stringify(b.raw_import || ''), String(b.note || ''), req.internal.id);
     audit('cmd_jobs', job.id, req.internal.id, 'game_record_source_attached', { note: `${b.source_kind}${b.label ? ` — ${b.label}` : ''}` });
     res.status(201).json({ job: jobDetail(job.id), source_id: info.lastInsertRowid });
+  });
+
+  // Guest / unknown-player placeholder for one job (roadmap §4.2). Never a
+  // guessed permanent match: the placeholder is reassigned to the identified
+  // player after the game, or stays a non-public guest.
+  app.post('/api/command/jobs/:id/guests', requireInternal, (req, res) => {
+    const job = db.prepare('SELECT id FROM cmd_jobs WHERE id = ?').get(req.params.id);
+    if (!job) return res.status(404).json({ error: 'Job not found' });
+    try {
+      res.status(201).json({ player: addJobGuest(db, job.id, req.body || {}, req.internal.id) });
+    } catch (err) {
+      res.status(err.status || 500).json({ error: err.message });
+    }
+  });
+
+  // Tournament footage triage (roadmap §4.2 bulk triage): every job for a
+  // tournament with its feeds, so missing or failed footage is visible in one
+  // place before analysts start, without creating any new entities.
+  app.get('/api/command/tournaments/:id/footage', requireInternal, (req, res) => {
+    const tournament = db.prepare('SELECT id, name, start_date, end_date FROM tournaments WHERE id = ?').get(req.params.id);
+    if (!tournament) return res.status(404).json({ error: 'Tournament not found' });
+    const jobs = db.prepare(`${jobListSql} WHERE j.tournament_id = ? ORDER BY j.game_date, j.id`).all(tournament.id);
+    const feeds = db.prepare(
+      `SELECT f.job_id, f.id, f.label, f.original_name, f.status, f.error, f.height, f.effective_fps
+         FROM cmd_video_feeds f JOIN cmd_jobs j ON j.id = f.job_id
+        WHERE j.tournament_id = ? ORDER BY f.id`
+    ).all(tournament.id);
+    const byJob = new Map();
+    for (const f of feeds) { if (!byJob.has(f.job_id)) byJob.set(f.job_id, []); byJob.get(f.job_id).push(f); }
+    const rows = jobs.map(j => {
+      const fs = byJob.get(j.id) || [];
+      const ready = fs.filter(f => f.status === 'ready').length;
+      const failed = fs.filter(f => ['failed', 'retrying'].includes(f.status)).length;
+      const processing = fs.filter(f => ['uploading', 'queued', 'processing'].includes(f.status)).length;
+      const flag = fs.length === 0 ? 'missing_footage' : (ready === 0 && failed > 0 ? 'failed_footage' : ready === 0 ? 'processing' : null);
+      return {
+        job_id: j.id, team_name: j.team_name, opponent_label: j.opponent_label, game_date: j.game_date,
+        assigned_to: j.assigned_to, assigned_name: j.assigned_name, synthetic: j.synthetic,
+        metric_release_status: j.metric_release_status, game_record_status: j.game_record_status,
+        feeds: fs, ready, failed, processing, flag,
+      };
+    });
+    res.json({
+      tournament,
+      jobs: rows,
+      totals: {
+        jobs: rows.length,
+        missing_footage: rows.filter(r => r.flag === 'missing_footage').length,
+        failed_footage: rows.filter(r => r.flag === 'failed_footage').length,
+        processing: rows.filter(r => r.flag === 'processing').length,
+        ready: rows.filter(r => r.ready > 0).length,
+        unassigned: rows.filter(r => !r.assigned_to).length,
+      },
+    });
   });
 
   app.put('/api/command/requirements/:id', requireInternal, (req, res) => {

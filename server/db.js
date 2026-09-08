@@ -835,6 +835,20 @@ addColumnIfMissing('cmd_notifications', 'email_error', "email_error TEXT DEFAULT
 // same player revives that row (a published value returns to the profile)
 // instead of creating a second result.
 addColumnIfMissing('cmd_metric_results', 'restore_status', 'restore_status TEXT');
+// Job-scoped guest / unknown-player placeholders (roadmap §4.2). The player
+// row is real but never public; the link says which job it stands in for.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS cmd_job_guests (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    job_id     INTEGER NOT NULL REFERENCES cmd_jobs(id) ON DELETE CASCADE,
+    player_id  INTEGER NOT NULL REFERENCES players(id) ON DELETE CASCADE,
+    jersey     TEXT DEFAULT '',
+    label      TEXT DEFAULT '',
+    created_by INTEGER REFERENCES admins(id),
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE (job_id, player_id)
+  );
+`);
 // Guard the invariant at the database for live rows. Legacy supersede
 // chains (superseded_by set) and withdrawn rows are exempt; if a pre-existing
 // duplicate ever blocks the index it must not take the API down — the

@@ -20,6 +20,14 @@ export default function BulkJobsPage() {
   const [preview, setPreview] = useState(null);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const [footage, setFootage] = useState(null);   // triage of existing jobs for the selected tournament
+
+  // Footage triage (roadmap §4.2): which of this tournament's jobs have no
+  // footage, failed footage, or nothing ready yet — before anyone starts.
+  useEffect(() => {
+    if (!form.tournament_id) { setFootage(null); return; }
+    api.commandTournamentFootage(form.tournament_id).then(setFootage).catch(() => setFootage(null));
+  }, [form.tournament_id]);
 
   useEffect(() => { api.commandBootstrap().then(setBoot).catch(err => setError(err.message)); }, []);
 
@@ -159,6 +167,51 @@ export default function BulkJobsPage() {
           </PrimaryButton>
         </div>
       </section>
+
+      {footage && footage.jobs.length > 0 && (
+        <section className="rounded-2xl border overflow-hidden mb-4" style={cardStyle} data-testid="footage-triage">
+          <div className="px-5 py-3 border-b flex items-center justify-between gap-3 flex-wrap" style={{ borderColor: '#1e3a5f' }}>
+            <p className="text-sm font-bold text-white">Footage triage · {footage.totals.jobs} existing job{footage.totals.jobs === 1 ? '' : 's'}</p>
+            <p className="text-xs" style={{ color: '#94a3b8' }}>
+              <span style={{ color: footage.totals.missing_footage ? '#f87171' : '#4ade80' }}>{footage.totals.missing_footage} missing footage</span>
+              {' · '}<span style={{ color: footage.totals.failed_footage ? '#f87171' : '#94a3b8' }}>{footage.totals.failed_footage} failed</span>
+              {' · '}{footage.totals.processing} processing · {footage.totals.ready} ready
+              {' · '}<span style={{ color: footage.totals.unassigned ? '#fbbf24' : '#94a3b8' }}>{footage.totals.unassigned} unassigned</span>
+            </p>
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-xs uppercase tracking-wider" style={{ color: '#64748b' }}>
+                  <th className="px-5 py-2">Date</th><th className="px-5 py-2">Team</th><th className="px-5 py-2">Opponent</th>
+                  <th className="px-5 py-2">Footage</th><th className="px-5 py-2">Analyst</th><th className="px-5 py-2 text-right">Open</th>
+                </tr>
+              </thead>
+              <tbody>
+                {footage.jobs.map(j => (
+                  <tr key={j.job_id} className="border-t" style={{ borderColor: '#1e3a5f' }}>
+                    <td className="px-5 py-2" style={{ color: '#94a3b8' }}>{j.game_date}</td>
+                    <td className="px-5 py-2 font-bold text-white">{j.team_name}{j.synthetic ? <span className="ml-2 text-[10px] font-bold uppercase" style={{ color: '#fbbf24' }}>synthetic</span> : null}</td>
+                    <td className="px-5 py-2" style={{ color: '#94a3b8' }}>{j.opponent_label || '—'}</td>
+                    <td className="px-5 py-2 text-xs font-bold">
+                      {j.flag === 'missing_footage' && <span style={{ color: '#f87171' }}>Missing footage</span>}
+                      {j.flag === 'failed_footage' && <span style={{ color: '#f87171' }}>Failed — {j.feeds.find(f => ['failed', 'retrying'].includes(f.status))?.error?.slice(0, 80) || 'see job'}</span>}
+                      {j.flag === 'processing' && <span style={{ color: '#38bdf8' }}>Processing {j.processing} feed{j.processing === 1 ? '' : 's'}</span>}
+                      {!j.flag && <span style={{ color: '#4ade80' }}>{j.ready} ready{j.failed ? ` · ${j.failed} failed` : ''}</span>}
+                    </td>
+                    <td className="px-5 py-2 text-xs" style={{ color: j.assigned_name ? '#cfe8ff' : '#fbbf24' }}>{j.assigned_name || 'unassigned'}</td>
+                    <td className="px-5 py-2 text-right">
+                      <Link to={`/command/jobs/${j.job_id}`} className="text-xs font-bold hover:underline" style={{ color: '#38bdf8' }}>
+                        {j.flag === 'missing_footage' ? 'Attach footage →' : 'Job →'}
+                      </Link>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      )}
 
       {preview && (
         <section className="rounded-2xl border overflow-hidden" style={cardStyle}>

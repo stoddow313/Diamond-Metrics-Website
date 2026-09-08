@@ -20,6 +20,23 @@ export const CAPTURE_SPECS = {
   // Radar velocity comes from the radar device, not the video.
   pitch_velocity_radar: { needs_video: false },
   exit_velocity_radar:  { needs_video: false },
+  // Advanced modules (Phase 3 recipes, inactive in the registry today). Declared
+  // now so a multi-angle job picks the eligible feed per metric — a 4K/120 side
+  // angle qualifies for launch angle while the behind-home 1080p60 does not —
+  // and so a 30 fps feed makes them unavailable with a structured reason.
+  exit_velocity_video:   { min_height: 1080, min_fps: 120, needs_video: true, view: 'Side view (1B/3B line): contact plus 4–5 flight frames' },
+  launch_angle_video:    { min_height: 1080, min_fps: 120, needs_video: true, view: 'Side view (1B/3B line): contact plus 4–5 flight frames' },
+  pitch_velocity_video:  { min_height: 1080, min_fps: 120, needs_video: true, view: 'Side view with release and plate' },
+  of_throw_velocity_video: { min_height: 1080, min_fps: 120, needs_video: true, view: 'Side view of the throw, release to catch' },
+  time_to_home:          { min_height: 1080, min_fps: 60, needs_video: true, view: 'Side view with release and plate' },
+  ss_to_first:           { min_height: 1080, min_fps: 60, needs_video: true, view: 'Release and first-base receipt both visible' },
+  reaction_time:         { min_height: 1080, min_fps: 60, needs_video: true, view: 'Controlled session: start signal and first movement visible' },
+  sprint_30:             { min_height: 1080, min_fps: 60, needs_video: true, view: 'Controlled lane: start and finish markers visible' },
+  sprint_60:             { min_height: 1080, min_fps: 60, needs_video: true, view: 'Controlled lane: start and finish markers visible' },
+  sprint_speed:          { min_height: 1080, min_fps: 60, needs_video: true, view: 'Controlled lane: start and finish markers visible' },
+  // Scorebook-derived and analyst-judged metrics are not gated on capture spec.
+  spray_direction: { needs_video: false }, strike_pct: { needs_video: false }, whiff_pct: { needs_video: false },
+  command_target: { needs_video: false }, throw_accuracy: { needs_video: false },
 };
 
 // NTSC rates sit fractionally below their nominal value (60000/1001 =
@@ -125,5 +142,6 @@ export function unavailableReasonFor(assessment) {
   const blocking = (assessment.issues || []).find(i => i.severity === 'blocking');
   if (!blocking) return null;
   if (blocking.code === 'no_ready_feed') return 'camera_stopped';
+  if (blocking.code === 'frame_rate_below_minimum') return 'insufficient_frame_rate';
   return 'insufficient_capture_quality';
 }

@@ -38,6 +38,39 @@ export default function RunningQueuePage() {
   const [currentFrame, setCurrentFrame] = useState(0);
   const [unavailableReason, setUnavailableReason] = useState('base_not_visible');
   const [unavailableNote, setUnavailableNote] = useState('');
+  const [guest, setGuest] = useState(null);   // inline guest placeholder form
+  const [notice, setNotice] = useState('');
+
+  const rosterLabel = p => `${p.jersey ? `#${p.jersey} ` : ''}${p.first_name} ${p.last_name}${p.is_guest ? ' · guest' : ''}`;
+
+  async function addGuest(e) {
+    e?.preventDefault();
+    setError(''); setNotice('');
+    try {
+      const { player } = await api.commandAddGuest(jobId, guest);
+      setGuest(null);
+      await load();
+      setSticky(s => ({ ...s, player_id: String(player.id) }));
+      setNotice(`${player.first_name} ${player.last_name} added as a guest placeholder — reassign after the game; no public profile is created.`);
+    } catch (err) {
+      setError(`Could not add the guest: ${err.message}`);
+    }
+  }
+
+  // Post-game reassignment: the attempt keeps its frames; its results follow
+  // the runner on the same rows and the profile updates immediately.
+  async function reassign(attemptId, playerId) {
+    if (!playerId) return;
+    setError(''); setNotice('');
+    try {
+      await api.commandReassignAttempt(attemptId, Number(playerId));
+      await load();
+      const p = data.roster.find(x => x.id === Number(playerId));
+      setNotice(`Attempt reassigned to ${p ? `${p.first_name} ${p.last_name}` : 'the selected runner'} — results moved with it; anything already reviewed is back in review.`);
+    } catch (err) {
+      setError(`Could not reassign: ${err.message}`);
+    }
+  }
 
   const load = () => api.commandAttempts(jobId).then(setData).catch(err => setError(err.message));
   useEffect(() => {
@@ -136,6 +169,11 @@ export default function RunningQueuePage() {
       </div>
 
       <ErrorNote>{error}</ErrorNote>
+      {notice && (
+        <p className="text-sm mb-4 px-4 py-2.5 rounded-xl border" style={{ borderColor: 'rgba(74, 222, 128, 0.35)', backgroundColor: 'rgba(74, 222, 128, 0.08)', color: '#4ade80' }}>
+          {notice}
+        </p>
+      )}
 
       {readyFeeds.length === 0 ? (
         <div className="rounded-2xl border p-10 text-center" style={cardStyle}>
@@ -156,9 +194,24 @@ export default function RunningQueuePage() {
                 <Field label="Runner (carries forward)">
                   <Select value={sticky.player_id} onChange={e => setSticky(s => ({ ...s, player_id: e.target.value }))}>
                     <option value="">—</option>
-                    {data.roster.map(p => <option key={p.id} value={p.id}>{p.first_name} {p.last_name}</option>)}
+                    {data.roster.map(p => <option key={p.id} value={p.id}>{rosterLabel(p)}</option>)}
                   </Select>
                 </Field>
+                <button type="button" onClick={() => setGuest(g => (g ? null : { first_name: '', last_name: '', jersey: '' }))}
+                  className="text-[11px] font-bold text-left cursor-pointer hover:underline -mt-2" style={{ color: '#fbbf24' }} data-testid="add-guest-toggle">
+                  {guest ? 'cancel guest' : '+ guest / unknown runner'}
+                </button>
+                {guest && (
+                  <form onSubmit={addGuest} className="flex flex-col gap-2 p-3 rounded-xl border" style={{ borderColor: 'rgba(251, 191, 36, 0.35)' }} data-testid="guest-form">
+                    <div className="grid grid-cols-3 gap-2">
+                      <TextInput value={guest.jersey} onChange={e => setGuest(g => ({ ...g, jersey: e.target.value }))} placeholder="#" />
+                      <TextInput value={guest.first_name} onChange={e => setGuest(g => ({ ...g, first_name: e.target.value }))} placeholder="First" />
+                      <TextInput value={guest.last_name} onChange={e => setGuest(g => ({ ...g, last_name: e.target.value }))} placeholder="Last" />
+                    </div>
+                    <PrimaryButton type="submit" disabled={!guest.jersey && !guest.first_name && !guest.last_name}>Add guest placeholder</PrimaryButton>
+                    <p className="text-[11px]" style={{ color: '#64748b' }}>Courtesy runner or unknown player: time them now, reassign when identified.</p>
+                  </form>
+                )}
                 <div className="flex gap-2">
                   {data.attempt_types.map(t => (
                     <button key={t} onClick={() => setSticky(s => ({ ...s, attempt_type: t }))}
@@ -176,9 +229,16 @@ export default function RunningQueuePage() {
             {activeAttempt && (
               <section className="rounded-2xl border p-4" style={{ ...cardStyle, borderColor: '#38bdf8' }}>
                 <p className="text-[11px] font-bold uppercase tracking-widest mb-1" style={{ color: '#38bdf8' }}>Measuring</p>
-                <p className="text-sm font-bold text-white mb-3">
+                <p className="text-sm font-bold text-white mb-1">
                   {activeAttempt.first_name} {activeAttempt.last_name} · {activeAttempt.payload.attempt_type.replace(/_/g, ' ')}
                 </p>
+                <div className="flex items-center gap-2 mb-3">
+                  <span className="text-[11px]" style={{ color: '#64748b' }}>Reassign runner</span>
+                  <Select value="" onChange={e => reassign(activeAttempt.id, e.target.value)} data-testid="reassign-runner">
+                    <option value="">— pick —</option>
+                    {data.roster.filter(p => p.id !== activeAttempt.player_id).map(p => <option key={p.id} value={p.id}>{rosterLabel(p)}</option>)}
+                  </Select>
+                </div>
                 <div className="grid grid-cols-2 gap-2 mb-3">
                   <GhostButton onClick={() => setMarks(m => ({ ...m, start: currentFrame }))}>
                     Mark start{marks.start != null ? `: ${marks.start}` : ''}

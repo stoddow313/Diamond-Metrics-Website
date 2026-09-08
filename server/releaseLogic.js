@@ -47,6 +47,22 @@ export function computeQaFlags(db, jobId) {
     flags.push({ code: 'unreviewed_results', level: 'blocking', label: `${drafts.length} result${drafts.length === 1 ? '' : 's'} awaiting review`, detail: 'Every draft result must be approved or returned before the job can be approved.' });
   }
 
+  // Guest placeholders (§4.2): results attributed to a job guest release to a
+  // non-public player row. A warning, not a block — a courtesy runner from
+  // another team is legitimately a guest — but the reviewer must see it.
+  const guestResults = db.prepare(
+    `SELECT COUNT(*) c FROM cmd_metric_results r
+       JOIN cmd_job_guests g ON g.player_id = r.player_id AND g.job_id = r.job_id
+      WHERE r.job_id = ? AND r.superseded_by IS NULL AND r.status != 'withdrawn'`
+  ).get(jobId).c;
+  if (guestResults > 0) {
+    flags.push({
+      code: 'guest_attribution', level: 'warning',
+      label: `${guestResults} result${guestResults === 1 ? '' : 's'} attributed to a guest placeholder`,
+      detail: 'Reassign to the identified player before release, or leave as a guest if the runner is not on any roster — no public profile is published for a placeholder.',
+    });
+  }
+
   const order = db.prepare('SELECT o.contact_email FROM cmd_orders o JOIN cmd_jobs j ON j.order_id = o.id WHERE j.id = ?').get(jobId);
   if (!order?.contact_email) {
     flags.push({ code: 'no_contact_email', level: 'warning', label: 'Order has no contact email', detail: 'Customer notifications will be recorded in-app but no email can be sent.' });

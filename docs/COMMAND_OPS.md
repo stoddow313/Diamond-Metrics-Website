@@ -407,6 +407,28 @@ The review page's **Correction history** lists withdrawn results with the
 reason, who withdrew them and when; the job page's audit trail now includes
 reading classifications, result withdrawals/revivals, and attempt actions.
 
+### 3.13 Phase 1 acceptance matrix (roadmap §7)
+
+`server/phase1Acceptance.test.js` holds one block per roadmap acceptance
+test, in the roadmap's order. Status on 2026-09-08:
+
+| # | Roadmap test | Status | Evidence |
+|---|---|---|---|
+| 1 | Clean Rookie | passes | 1080p60 + radar CSV → release; the 30-minute median is a pilot measurement, tracked on `/command/ops` stage timing |
+| 2 | 30-fps usable | passes | timing measures at 30 fps with a precision warning; 120-fps side-angle metrics are unavailable with `insufficient_frame_rate` |
+| 3 | Bad capture | passes | structured unavailable reasons, audited override; radar releases regardless |
+| 4 | Pro multi-angle | passes (Phase 1 half) | per-metric eligible-feed selection; advanced *measurements* are Phase 3 |
+| 5 | Radar ambiguity | passes | time/sequence match suggestions, confirm / invalidate / leave unmatched; suggestions never publish |
+| 6 | Full-game correction | Phase 2 | needs scorebook events; recalculation mechanism proven for metrics (§3.12) |
+| 7 | Roster complexity | passes (Phase 1 half) | courtesy runners, guest/unknown placeholders, post-game reassignment; substitutions and inherited runners are Phase 2 |
+| 8 | Tournament batch | passes | bulk jobs unique per game and team; footage triage flags missing/failed media |
+| 9 | Two releases | metric half passes | game-record half ships with the GameChanger release (`feat/game-record-release`) |
+
+Guest placeholders (`cmd_job_guests`) are real player rows with
+`is_public = 0`; they never get a public profile. Reassigning an attempt
+moves its results on the same rows (reviewed values return to draft) and
+resyncs the profile immediately.
+
 ---
 
 ## 4. Backups and restore
