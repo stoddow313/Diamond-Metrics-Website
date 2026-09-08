@@ -87,6 +87,162 @@ function FeedRow({ feed: f, onRetry }) {
 
 const SHARING_LABELS = { internal: 'Internal only', customer: 'Customer (numbers only in V1)', public: 'Public profile' };
 
+// Game-record sources (roadmap §6): a GameChanger export or a manual box
+// score attaches with its raw content preserved, validates against the
+// roster (jersey, then name), the analyst resolves what the parser could
+// not, and a validated record releases box-score statistics through the
+// game-record release — never mixed with measured metrics.
+const SOURCE_KINDS = [
+  ['gamechanger_export', 'GameChanger export (CSV)'],
+  ['postgame_manual', 'Manual box score (CSV)'],
+  ['live_internal', 'Live internal scoring'],
+];
+
+function GameRecordSources({ job, onChange, setError }) {
+  const [attach, setAttach] = useState(null);   // { source_kind, label, raw_import }
+  const [busy, setBusy] = useState(false);
+  const [resolutions, setResolutions] = useState({});   // sourceId -> { rowKey: playerId|null }
+  const sources = job.game_record_sources || [];
+
+  async function readFile(file) {
+    if (!file) return;
+    const text = await file.text();
+    setAttach(a => ({ ...a, raw_import: text, label: a.label || file.name }));
+  }
+
+  async function submitAttach(e) {
+    e?.preventDefault();
+    setError(''); setBusy(true);
+    try {
+      const { job: updated } = await api.commandAttachGameRecordSource(job.id, attach);
+      onChange(updated);
+      setAttach(null);
+    } catch (err) {
+      setError(`Could not attach the source: ${err.message}`);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function validate(source) {
+    setError(''); setBusy(true);
+    try {
+      const { job: updated } = await api.commandValidateGameRecordSource(source.id, resolutions[source.id] || {});
+      onChange(updated);
+    } catch (err) {
+      setError(`Validation failed: ${err.message}`);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const statusColor = { pending_validation: '#94a3b8', validating: '#fbbf24', validated: '#4ade80', rejected: '#f87171' };
+
+  return (
+    <section className="rounded-2xl border p-6" style={cardStyle}>
+      <h2 className="text-lg font-bold text-white mb-1" style={{ fontSize: '1.125rem' }}>Game record sources</h2>
+      <p className="text-xs mb-3" style={{ color: '#64748b' }}>
+        GameChanger exports and manual box scores attach here. Raw content is kept verbatim; rows resolve to the roster by jersey, then name; you resolve the rest. A validated record releases box-score statistics on its own track — it never blocks metric release and never mixes with measured metrics.
+      </p>
+      {sources.length === 0 && <p className="text-sm mb-3" style={{ color: '#94a3b8' }}>No game-record source attached yet.</p>}
+      {sources.map(g => {
+        const report = g.report;
+        const unresolved = report?.unresolved || [];
+        const pending = resolutions[g.id] || {};
+        return (
+          <div key={g.id} className="py-3 border-t" style={{ borderColor: '#1e3a5f' }} data-testid={`source-${g.id}`}>
+            <div className="flex items-center justify-between gap-3 flex-wrap">
+              <p className="text-sm text-white">
+                <b>{(SOURCE_KINDS.find(k => k[0] === g.source_kind) || [g.source_kind, g.source_kind.replace(/_/g, ' ')])[1]}</b>{g.label ? ` · ${g.label}` : ''}
+                <span className="text-xs" style={{ color: '#475569' }}> · {g.created_by_name || ''} {String(g.created_at).slice(0, 16)} UTC</span>
+              </p>
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded" style={{ backgroundColor: 'rgba(30, 41, 59, 0.9)', color: statusColor[g.validation_status] || '#94a3b8' }}>
+                  {g.validation_status.replace(/_/g, ' ')}
+                </span>
+                {g.has_content && g.validation_status !== 'validated' && (
+                  <GhostButton onClick={() => validate(g)} disabled={busy}>{report ? 'Re-validate' : 'Validate'}</GhostButton>
+                )}
+                {g.has_content && g.validation_status === 'validated' && (
+                  <GhostButton onClick={() => validate(g)} disabled={busy} title="Re-parse after editing the roster">Re-validate</GhostButton>
+                )}
+              </div>
+            </div>
+            {!g.has_content && (
+              <p className="text-xs mt-1" style={{ color: '#fbbf24' }}>No content attached — this source is a placeholder note. Attach the export as a new source to validate it.</p>
+            )}
+            {report && (
+              <div className="mt-2 text-xs" style={{ color: '#94a3b8' }}>
+                <p>
+                  {report.blocks.map(b => `${b.group}: ${b.rows} row${b.rows === 1 ? '' : 's'}`).join(' · ')} ·{' '}
+                  <b style={{ color: '#cfe8ff' }}>{report.rows.filter(r => r.player_id).length}</b> of {report.rows.length} resolved
+                  {report.rows.some(r => r.skipped) ? ` · ${report.rows.filter(r => r.skipped).length} skipped` : ''}
+                </p>
+                {report.warnings.length > 0 && (
+                  <p style={{ color: '#fbbf24' }}>{report.warnings.join(' · ')}</p>
+                )}
+                {unresolved.length > 0 && (
+                  <div className="mt-2 rounded-xl border p-3" style={{ borderColor: 'rgba(251, 191, 36, 0.35)' }} data-testid="unresolved-rows">
+                    <p className="font-bold mb-2" style={{ color: '#fbbf24' }}>{unresolved.length} row{unresolved.length === 1 ? '' : 's'} could not be matched to the roster — pick the player, or skip the row (other team, coach, totals).</p>
+                    {unresolved.map(r => (
+                      <div key={r.key} className="flex items-center gap-2 py-1 flex-wrap">
+                        <span className="w-48 truncate" style={{ color: '#cfe8ff' }}>{r.jersey ? `#${r.jersey} ` : ''}{r.name || '(no name)'} <span style={{ color: '#475569' }}>· {r.group} row {r.row}</span></span>
+                        <Select
+                          value={pending[r.key] === undefined ? '' : (pending[r.key] === null ? 'skip' : String(pending[r.key]))}
+                          onChange={e => setResolutions(all => ({ ...all, [g.id]: { ...(all[g.id] || {}), [r.key]: e.target.value === 'skip' ? null : (e.target.value ? Number(e.target.value) : undefined) } }))}
+                        >
+                          <option value="">— pick player —</option>
+                          <option value="skip">Skip this row</option>
+                          {(report.roster || []).map(p => <option key={p.id} value={p.id}>{p.jersey ? `#${p.jersey} ` : ''}{p.name}{p.is_guest ? ' · guest' : ''}</option>)}
+                        </Select>
+                      </div>
+                    ))}
+                    <PrimaryButton onClick={() => validate(g)} disabled={busy || !Object.keys(pending).length}>Apply and re-validate</PrimaryButton>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        );
+      })}
+
+      {attach ? (
+        <form onSubmit={submitAttach} className="mt-3 pt-3 border-t flex flex-col gap-3" style={{ borderColor: '#1e3a5f' }} data-testid="attach-source-form">
+          <div className="grid grid-cols-2 gap-3">
+            <Field label="Source">
+              <Select value={attach.source_kind} onChange={e => setAttach(a => ({ ...a, source_kind: e.target.value }))}>
+                {SOURCE_KINDS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+              </Select>
+            </Field>
+            <Field label="Label">
+              <TextInput value={attach.label} onChange={e => setAttach(a => ({ ...a, label: e.target.value }))} placeholder="GameChanger export — vs Chargers 8/7" />
+            </Field>
+          </div>
+          <label className="inline-block px-4 py-2 rounded-lg text-sm font-bold cursor-pointer self-start" style={{ backgroundColor: 'rgba(30, 41, 59, 0.9)', color: '#cfe8ff' }}>
+            Choose CSV file…
+            <input type="file" accept=".csv,text/csv" className="hidden" onChange={e => readFile(e.target.files?.[0])} />
+          </label>
+          <textarea
+            value={attach.raw_import}
+            onChange={e => setAttach(a => ({ ...a, raw_import: e.target.value }))}
+            placeholder="…or paste the export here. Number,Last,First,PA,AB,H,… tables for batting, pitching and fielding are all understood."
+            className="w-full rounded-lg border p-2 text-xs font-mono"
+            style={{ borderColor: '#334155', backgroundColor: 'rgba(15,23,42,0.9)', color: '#f8fafc', minHeight: 120 }}
+          />
+          <div className="flex gap-2">
+            <PrimaryButton type="submit" disabled={busy || !attach.raw_import.trim()}>Attach source</PrimaryButton>
+            <GhostButton type="button" onClick={() => setAttach(null)}>Cancel</GhostButton>
+          </div>
+        </form>
+      ) : (
+        <div className="mt-3">
+          <GhostButton onClick={() => setAttach({ source_kind: 'gamechanger_export', label: '', raw_import: '' })}>+ Attach GameChanger export or box score</GhostButton>
+        </div>
+      )}
+    </section>
+  );
+}
+
 function StatusBadge({ value }) {
   return (
     <span
@@ -522,6 +678,10 @@ export function JobDetailPage() {
   if (error && !job) return <p style={{ color: '#f87171' }}>{error}</p>;
   if (!job) return <p style={{ color: '#94a3b8' }}>Loading job…</p>;
 
+  const hasValidatedSource = (job.game_record_sources || []).some(g => g.validation_status === 'validated');
+  const nextRecord = {
+    pending: ['in_progress'], in_progress: ['validated'], validated: ['released', 'in_progress'], released: ['in_progress'],
+  }[job.game_record_status] || [];
   const nextMetric = {
     not_started: ['in_progress'], in_progress: ['ready_for_review'],
     ready_for_review: ['approved', 'needs_correction'], needs_correction: ['in_progress'],
@@ -643,6 +803,17 @@ export function JobDetailPage() {
                   Metrics → {to.replace(/_/g, ' ')}
                 </PrimaryButton>
               ))}
+              {nextRecord.map(to => (
+                <GhostButton
+                  key={`gr-${to}`}
+                  onClick={() => transition('game_record', to)}
+                  disabled={to === 'validated' && !hasValidatedSource}
+                  title={to === 'validated' && !hasValidatedSource ? 'Validate a game-record source below first' : to === 'released' ? 'Publishes box-score statistics to player profiles' : undefined}
+                  style={to === 'released' ? { borderColor: '#4ade80', color: '#4ade80' } : undefined}
+                >
+                  Game record → {to.replace(/_/g, ' ')}
+                </GhostButton>
+              ))}
               {job.game_record_status === 'pending' && (
                 <GhostButton onClick={() => transition('game_record', 'not_ordered')}>Game record: not ordered</GhostButton>
               )}
@@ -685,33 +856,7 @@ export function JobDetailPage() {
             </div>
           </section>
 
-          <section className="rounded-2xl border p-6" style={cardStyle}>
-            <h2 className="text-lg font-bold text-white mb-1" style={{ fontSize: '1.125rem' }}>Game record sources</h2>
-            <p className="text-xs mb-3" style={{ color: '#64748b' }}>
-              GameChanger scorecards and manual scores attach here for later validation — they never block metric release.
-            </p>
-            {(job.game_record_sources || []).length === 0 ? (
-              <p className="text-sm mb-3" style={{ color: '#94a3b8' }}>No game-record source attached yet.</p>
-            ) : (job.game_record_sources || []).map(g => (
-              <p key={g.id} className="text-xs py-1.5 border-t" style={{ borderColor: '#1e3a5f', color: '#cfe8ff' }}>
-                <b>{g.source_kind.replace(/_/g, ' ')}</b>{g.label ? ` · ${g.label}` : ''} ·{' '}
-                <span style={{ color: '#fbbf24' }}>{g.validation_status.replace(/_/g, ' ')}</span>
-                <span style={{ color: '#475569' }}> · {g.created_by_name || ''} {g.created_at}</span>
-              </p>
-            ))}
-            <GhostButton
-              onClick={async () => {
-                try {
-                  const label = window.prompt('Source label (e.g. GameChanger export — vs Chargers 8/7):');
-                  if (label === null) return;
-                  const { job: updated } = await api.commandAttachGameRecordSource(job.id, { source_kind: 'gamechanger_export', label });
-                  setJob(updated);
-                } catch (err) { setError(err.message); }
-              }}
-            >
-              + Attach GameChanger scorecard
-            </GhostButton>
-          </section>
+          <GameRecordSources job={job} onChange={setJob} setError={setError} />
 
           <section className="rounded-2xl border p-6" style={cardStyle}>
             <h2 className="text-lg font-bold text-white mb-1" style={{ fontSize: '1.125rem' }}>Customer notifications</h2>

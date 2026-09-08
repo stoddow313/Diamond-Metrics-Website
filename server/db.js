@@ -835,6 +835,12 @@ addColumnIfMissing('cmd_notifications', 'email_error', "email_error TEXT DEFAULT
 // same player revives that row (a published value returns to the profile)
 // instead of creating a second result.
 addColumnIfMissing('cmd_metric_results', 'restore_status', 'restore_status TEXT');
+// Game-record sources carry their validation report and the analyst's row
+// resolutions; scorebook-derived stat entries point back at their source.
+addColumnIfMissing('cmd_game_record_sources', 'parsed_report', 'parsed_report TEXT');
+addColumnIfMissing('cmd_game_record_sources', 'resolutions', 'resolutions TEXT');
+addColumnIfMissing('cmd_game_record_sources', 'validated_at', 'validated_at TEXT');
+addColumnIfMissing('stat_entries', 'game_record_source_id', 'game_record_source_id INTEGER');
 // Job-scoped guest / unknown-player placeholders (roadmap §4.2). The player
 // row is real but never public; the link says which job it stands in for.
 db.exec(`
