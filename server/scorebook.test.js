@@ -14,7 +14,7 @@ process.env.DM_LOG_SILENT = '1';
 
 const { db } = await import('./db.js');
 const { PACKAGES } = await import('./commandLogic.js');
-const { replay, appendEvent, appendPlateAppearance, correctEvent, voidEvent, disputeEvent, resolveEvent, replayJob, ipFromOuts, liveRecordReport } = await import('./scorebook.js');
+const { replay, appendEvent, appendPlateAppearance, correctEvent, voidEvent, disputeEvent, resolveEvent, replayJob, ipFromOuts, liveRecordReport, setEventClip } = await import('./scorebook.js');
 const { validateGameRecordSource, releaseGameRecord } = await import('./gameRecord.js');
 const { computeQaFlags } = await import('./releaseLogic.js');
 
@@ -250,6 +250,81 @@ test('an earned run awaiting the scorer\'s ruling is withheld from the live reco
   assert.equal(patRow().stats.bs_er, undefined, 'no earned runs at all now, so the zero is simply absent');
   assert.ok(!live.report.warnings.some(w => /withheld/.test(w)));
   assert.equal(replayJob(db, j3).tallies.find(t => t.player_id === P).stats.bs_er, 0);
+});
+
+test('tagging: plays carry feed, moment and a default clip; pitches carry their own moments; corrections keep the link; foreign feeds are refused; clips adjust', () => {
+  const j4 = makeJob();
+  const feed = db.prepare("INSERT INTO cmd_video_feeds (job_id, label, storage_key, original_name, status, effective_fps, nominal_fps, width, height, duration_s) VALUES (?, 'Behind home', 'k4', 'g.mp4', 'ready', 60, 60, 1920, 1080, 5400)").run(j4).lastInsertRowid;
+  const other = db.prepare("INSERT INTO cmd_video_feeds (job_id, label, storage_key, original_name, status, effective_fps, nominal_fps, width, height, duration_s) VALUES (?, 'Other job', 'k5', 'o.mp4', 'ready', 60, 60, 1920, 1080, 100)").run(job).lastInsertRowid;
+  ourLineup(j4, false); theirLineup(j4);
+  const rp = pa(j4, { pa: { result: 'single' }, pitches: [{ result: 'ball', timecode_s: 120.0 }, { result: 'in_play', timecode_s: 125.5 }], runners: [], selected_feed_id: feed });
+  const row = db.prepare('SELECT * FROM cmd_events WHERE id = ?').get(rp.event_id);
+  assert.equal(row.selected_feed_id, feed); assert.equal(row.timecode_s, 125.5, 'the play is stamped with its last pitch');
+  assert.deepEqual([row.clip_start_s, row.clip_end_s], [121.5, 133.5], 'default clip around the moment');
+  const pitchRows = db.prepare("SELECT timecode_s, payload FROM cmd_events WHERE parent_event_id = ? AND event_type = 'pitch' ORDER BY sequence").all(rp.event_id);
+  assert.deepEqual(pitchRows.map(r => r.timecode_s), [120, 125.5]);
+  assert.ok(!('timecode_s' in JSON.parse(pitchRows[0].payload)), 'the moment lives on the row, not in the payload');
+  assert.ok(rp.log.some(l => l.id === rp.event_id && l.timecode_s === 125.5 && l.feed_id === feed && l.clip[0] === 121.5), 'the log carries the link for the UI');
+  const sb = appendEvent(db, j4, { event_type: 'runner', payload: { runner_player_id: SS, from: 1, to: 2, how: 'stolen_base' }, selected_feed_id: feed, timecode_s: 190 }, admin);
+  assert.equal(sb.event.timecode_s, 190); assert.equal(sb.event.clip_start_s, 186);
+  const fixed = correctEvent(db, rp.event_id, { payload: { result: 'double', pitch_count: 2 } }, admin, 'video review');
+  const fixedRow = db.prepare('SELECT * FROM cmd_events WHERE id = ?').get(fixed.event_id);
+  assert.equal(fixedRow.timecode_s, 125.5); assert.equal(fixedRow.selected_feed_id, feed); assert.equal(fixedRow.clip_end_s, 133.5);
+  assert.throws(() => pa(j4, { pa: { result: 'flyout' }, selected_feed_id: other, timecode_s: 200 }), /attached to this job/);
+  assert.throws(() => appendEvent(db, j4, { event_type: 'runner', payload: { runner_player_id: SS, from: 2, to: 3, how: 'stolen_base' }, timecode_s: -1 }, admin), /non-negative/);
+  const adj = setEventClip(db, fixed.event_id, { clip_start_s: 124, clip_end_s: 129 }, admin);
+  assert.deepEqual([adj.event.clip_start_s, adj.event.clip_end_s, adj.event.timecode_s], [124, 129, 125.5]);
+  assert.ok(db.prepare("SELECT 1 FROM cmd_review_actions WHERE target_table='cmd_events' AND target_id=? AND action='clip_adjusted'").get(fixed.event_id));
+  assert.throws(() => setEventClip(db, fixed.event_id, { clip_start_s: 130, clip_end_s: 129 }, admin), /end after the start/);
+});
+
+test('a state adjustment needs a half inning in progress and is audited like any other event', () => {
+  const j5 = makeJob();
+  ourLineup(j5, false); theirLineup(j5);
+  assert.throws(() => appendEvent(db, j5, { event_type: 'state_adjustment', payload: { outs: 1, note: 'nothing has happened yet' } }, admin), /no half inning is in progress/);
+  pa(j5, { pa: { result: 'walk' } });
+  const rp = appendEvent(db, j5, { event_type: 'state_adjustment', payload: { outs: 1, note: 'runner was doubled off on a play we missed' } }, admin);
+  assert.equal(rp.state.outs, 1);
+  assert.ok(rp.issues.some(i => i.code === 'state_adjusted' && i.level === 'info'));
+  assert.ok(db.prepare("SELECT 1 FROM cmd_review_actions WHERE target_table='cmd_events' AND target_id=? AND action='created'").get(rp.event.id));
+});
+
+test('internal metrics on plays: a linked radar reading is matched to our pitcher once; steals and hits can queue timing attempts at the tagged moment', () => {
+  const j6 = makeJob();
+  const feed = db.prepare("INSERT INTO cmd_video_feeds (job_id, label, storage_key, original_name, status, effective_fps, nominal_fps, width, height, duration_s) VALUES (?, 'Behind home', 'k6', 'g6.mp4', 'ready', 60, 60, 1920, 1080, 5400)").run(j6).lastInsertRowid;
+  ourLineup(j6, true);    // we are home: they bat first against Pat
+  theirLineup(j6);
+  const reading = db.prepare("INSERT INTO cmd_radar_readings (job_id, source, velocity, status, created_by) VALUES (?, 'manual', 71, 'unmatched', ?)").run(j6, admin).lastInsertRowid;
+  const foreign = db.prepare("INSERT INTO cmd_radar_readings (job_id, source, velocity, status, created_by) VALUES (?, 'manual', 99, 'unmatched', ?)").run(job, admin).lastInsertRowid;
+  // Their leadoff hitter strikes out; the second pitch carried the radar reading.
+  const rp = pa(j6, { pa: { batter_label: 'Opp #1', result: 'strikeout' }, pitches: [{ result: 'called_strike', pitch_type: 'fastball' }, { result: 'swinging_strike', pitch_type: 'fastball', radar_reading_id: reading }, { result: 'swinging_strike' }], selected_feed_id: feed, timecode_s: 40 });
+  const r = db.prepare('SELECT * FROM cmd_radar_readings WHERE id = ?').get(reading);
+  assert.equal(r.status, 'matched'); assert.equal(r.player_id, P); assert.equal(r.pitch_type, 'fastball'); assert.equal(r.pitch_or_exit, 'pitch');
+  const result = db.prepare("SELECT * FROM cmd_metric_results WHERE evidence_kind='radar_reading' AND evidence_id=? AND superseded_by IS NULL").all(reading);
+  assert.equal(result.length, 1, 'one derived result, through the radar lifecycle'); assert.equal(result[0].value, 71); assert.equal(result[0].player_id, P);
+  const entry = rp.log.find(l => l.id === rp.event_id);
+  assert.equal(entry.pitches.length, 3); assert.equal(entry.pitches[1].velocity, 71); assert.equal(entry.pitches[1].pitch_type, 'fastball');
+  assert.match(entry.text, /71 mph/);
+  // Linking the same reading again to the same pitcher is a no-op; another job's reading is refused.
+  assert.throws(() => pa(j6, { pa: { batter_label: 'Opp #2', result: 'walk' }, pitches: [{ result: 'ball', radar_reading_id: foreign }, { result: 'ball' }, { result: 'ball' }, { result: 'ball' }] }), /reading on this job/);
+  assert.equal(db.prepare("SELECT COUNT(*) c FROM cmd_metric_results WHERE evidence_kind='radar_reading' AND evidence_id=? AND superseded_by IS NULL").get(reading).c, 1);
+  // Bottom 1: we bat. A single with home-to-first timing queued for the batter; then a steal timed for the runner.
+  pa(j6, { pa: { batter_label: 'Opp #2', result: 'groundout' } }); pa(j6, { pa: { batter_label: 'Opp #3', result: 'flyout' } });
+  const hit = pa(j6, { pa: { result: 'single', time_home_to_first: true }, pitches: [{ result: 'in_play', timecode_s: 300.25 }], selected_feed_id: feed });
+  const paRow = db.prepare('SELECT * FROM cmd_events WHERE id = ?').get(hit.event_id);
+  const attemptId = JSON.parse(paRow.payload).attempt_id;
+  assert.ok(attemptId, 'the play remembers its timing attempt');
+  const attempt = db.prepare('SELECT * FROM cmd_events WHERE id = ?').get(attemptId);
+  assert.equal(attempt.event_type, 'running_attempt'); assert.equal(attempt.player_id, SS, 'queued for the batter'); assert.equal(attempt.selected_feed_id, feed); assert.equal(attempt.timecode_s, 300.25);
+  assert.equal(JSON.parse(attempt.payload).attempt_type, 'home_to_first');
+  assert.ok(!('time_home_to_first' in JSON.parse(paRow.payload)), 'the request flag is not stored');
+  const sb = appendEvent(db, j6, { event_type: 'runner', payload: { runner_player_id: SS, from: 1, to: 2, how: 'stolen_base', time_steal: true }, selected_feed_id: feed, timecode_s: 333 }, admin);
+  const stealAttempt = db.prepare('SELECT * FROM cmd_events WHERE id = ?').get(sb.event.payload.attempt_id);
+  assert.equal(JSON.parse(stealAttempt.payload).attempt_type, 'steal'); assert.equal(stealAttempt.player_id, SS); assert.equal(stealAttempt.timecode_s, 333);
+  assert.match(sb.log.find(l => l.id === sb.event.id).text, /timing queued/);
+  // Timing needs footage and one of our players.
+  assert.throws(() => appendEvent(db, j6, { event_type: 'runner', payload: { runner_player_id: SS, from: 2, to: 3, how: 'stolen_base', time_steal: true } }, admin), /needs the footage selected/);
+  assert.throws(() => appendEvent(db, j6, { event_type: 'runner', payload: { runner_player_id: SS, from: 2, to: 3, how: 'stolen_base', attempt_id: 999999 } }, admin), /running attempt on this job/);
 });
 
 test('game-over suggestion follows the ruleset run rule; scoring after final is refused', () => {

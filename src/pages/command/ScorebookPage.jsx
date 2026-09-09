@@ -1,6 +1,8 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { api } from '../../lib/api';
+import FeedPlayer from './FeedPlayer';
+import { formatTimecode } from '../../lib/timecode';
 import { Field, TextInput, Select, PrimaryButton, GhostButton, ErrorNote } from '../../components/admin/ui';
 import { cardStyle } from '../../components/admin/theme';
 
@@ -36,6 +38,7 @@ function countOf(list) {
 const fmtRate = (v, digits = 3) => (v == null ? '—' : digits === 3 ? v.toFixed(3).replace(/^0\./, '.') : v.toFixed(digits));
 
 const refName = r => (r ? (r.name || r.label || (r.player_id ? `#${r.player_id}` : '—')) : '—');
+const refKeyOf = r => (r?.player_id ? `p:${r.player_id}` : `l:${r?.label || ''}`);
 
 // Conventional advancement for a result: what a scorer usually confirms.
 function defaultAdvances(result, bases) {
@@ -76,9 +79,40 @@ export default function ScorebookPage() {
   // log actions
   const [editing, setEditing] = useState(null);         // { event, payload, note }
   const [finalForm, setFinalForm] = useState(null);
+  // video tagging: the selected feed plays beside the scorer and every event is
+  // stamped with the feed and the moment on it (PRD §5 — automatic timecode capture)
+  const [videoFeedId, setVideoFeedId] = useState(null);
+  const [feedDetail, setFeedDetail] = useState(null);
+  const [showVideo, setShowVideo] = useState(true);
+  const [currentFrame, setCurrentFrame] = useState(0);
+  const playerRef = useRef(null);
+  const [fixState, setFixState] = useState(null);        // { outs, us, them, bases: {1,2,3}, next_slot, note }
+  const [disputing, setDisputing] = useState(null);      // event id awaiting a reason
+  const [clipEdit, setClipEdit] = useState(null);        // { id, start, end, t }
+  const [pitchType, setPitchType] = useState('');        // carries forward pitch to pitch until changed
+  const [timeSteals, setTimeSteals] = useState(true);    // queue a steal timing attempt with each SB/CS when the video is on
+  const [pendingSeek, setPendingSeek] = useState(null);   // { seconds, nonce } from a play-by-play row
+  const appliedSeekRef = useRef(null);
 
   const load = useCallback(() => api.commandScorebook(jobId).then(d => { setData(d); return d; }).catch(err => setError(err.message)), [jobId]);
   useEffect(() => { load(); }, [load]);
+  // The first ready feed plays by default; the scorer can switch feeds.
+  const activeFeedId = videoFeedId ?? data?.feeds?.find(f => f.status === 'ready')?.id ?? null;
+  useEffect(() => {
+    if (!activeFeedId) return;
+    api.commandFeed(activeFeedId).then(setFeedDetail).catch(err => setError(err.message));
+  }, [activeFeedId]);
+  const proxy = feedDetail?.feed?.id === activeFeedId ? feedDetail?.renditions?.find(r => r.kind === 'proxy') : null;
+  const fps = proxy?.fps || feedDetail?.feed?.effective_fps || 30;
+  const videoOn = showVideo && !!proxy;
+  const tc = () => Number((currentFrame / fps).toFixed(3));
+  const tag = () => (videoOn ? { selected_feed_id: activeFeedId, timecode_s: tc() } : {});
+  // A jump requested while the player was hidden or loading lands once it is up.
+  useEffect(() => {
+    if (!pendingSeek || pendingSeek.nonce === appliedSeekRef.current || !proxy || !playerRef.current) return;
+    appliedSeekRef.current = pendingSeek.nonce;
+    playerRef.current.seek(pendingSeek.seconds);
+  }, [pendingSeek, proxy]);
 
   const state = data?.state;
   const { b: balls, s: strikeCount } = useMemo(() => countOf(pitches), [pitches]);
@@ -108,7 +142,7 @@ export default function ScorebookPage() {
   // ── pitch handling ────────────────────────────────────────────────────
   function addPitch(result) {
     if (!state || state.final) return;
-    const next = [...pitches, { result }];
+    const next = [...pitches, { result, timecode_s: videoOn ? tc() : undefined, pitch_type: pitchType || undefined }];
     setPitches(next);
     const { b, s } = countOf(next);
     if (result === 'hit_by_pitch') return openResult('hit_by_pitch', next);
@@ -118,7 +152,7 @@ export default function ScorebookPage() {
   }
 
   function openResult(result, pitchList = pitches) {
-    setResultPanel({ result, rbi: null, batted_ball: '', direction: '', fielders: '', error_position: '', error_label: '', error_player_id: '', advances: result ? defaultAdvances(result, state.bases) : {}, pitchList });
+    setResultPanel({ result, rbi: null, batted_ball: '', direction: '', fielders: '', error_position: '', error_label: '', error_player_id: '', time_home_to_first: false, advances: result ? defaultAdvances(result, state.bases) : {}, pitchList });
   }
   function chooseResult(result) {
     setResultPanel(rp => ({ ...rp, result, advances: defaultAdvances(result, state.bases) }));
@@ -140,8 +174,10 @@ export default function ScorebookPage() {
         out_of_order_ok: !!batter || undefined,
         error_player_id: pa.error_player_id ? Number(pa.error_player_id) : undefined,
       },
-      pitches: pitchList.map(p => ({ result: p.result })),
+      pitches: pitchList.map(p => ({ result: p.result, timecode_s: p.timecode_s, pitch_type: p.pitch_type || undefined, radar_reading_id: p.radar_reading_id || undefined })),
       runners,
+      ...tag(),
+      ...(videoOn && pitchList.some(p => p.timecode_s != null) ? { timecode_s: [...pitchList].reverse().find(p => p.timecode_s != null).timecode_s } : {}),
     };
     const d = await run(() => api.commandScorebookPlateAppearance(jobId, body), `${LABELS[pa.result] || pa.result} recorded`);
     if (d) { setPitches([]); setResultPanel(null); setBatterOverride(''); }
@@ -157,6 +193,7 @@ export default function ScorebookPage() {
       fielders: FIELDED_RESULTS.has(rp.result) && rp.fielders ? rp.fielders : undefined,
       error_position: rp.result === 'reach_on_error' && rp.error_position ? Number(rp.error_position) : undefined,
       error_label: rp.error_label || undefined, error_player_id: rp.error_player_id || undefined,
+      time_home_to_first: rp.time_home_to_first && videoOn && data.modules?.home_to_first ? true : undefined,
     }, rp.pitchList, adv);
   }
 
@@ -211,7 +248,7 @@ export default function ScorebookPage() {
       const already = state.lineups[s.side]?.slots.some(x => (payload.player_in_id && x.current?.player_id === payload.player_in_id) || (!payload.player_in_id && x.current?.label === payload.player_in_label));
       if (!already) payload.slot = Number(s.slot);
     }
-    const d = await run(() => api.commandScorebookEvent(jobId, { event_type: 'substitution', payload }), `${s.kind.replace(/_/g, ' ')} recorded`);
+    const d = await run(() => api.commandScorebookEvent(jobId, { event_type: 'substitution', ...tag(), payload }), `${s.kind.replace(/_/g, ' ')} recorded`);
     if (d) setSub(null);
   }
 
@@ -219,7 +256,8 @@ export default function ScorebookPage() {
   async function runnerPlay(base, how, to, out = false) {
     const r = state.bases[base];
     if (!r) return;
-    await run(() => api.commandScorebookEvent(jobId, { event_type: 'runner', payload: { runner_player_id: r.ref.player_id || undefined, runner_label: r.ref.label || undefined, from: base, to: out ? base : to, how, out } }), `${refName(r.ref)}: ${how.replace(/_/g, ' ')}`);
+    const timed = timeSteals && videoOn && data.modules?.steal && r.ref.player_id && (how === 'stolen_base' || how === 'caught_stealing');
+    await run(() => api.commandScorebookEvent(jobId, { event_type: 'runner', ...tag(), payload: { runner_player_id: r.ref.player_id || undefined, runner_label: r.ref.label || undefined, from: base, to: out ? base : to, how, out, time_steal: timed ? true : undefined } }), `${refName(r.ref)}: ${how.replace(/_/g, ' ')}${timed ? ' — steal timing queued' : ''}`);
   }
   // One wild pitch, passed ball or balk moves every runner up a base. The
   // events share a group id so the engine charges the pitcher (or catcher) once.
@@ -231,7 +269,7 @@ export default function ScorebookPage() {
       let d = null;
       for (const b of occupied) {
         const r = state.bases[b];
-        d = await api.commandScorebookEvent(jobId, { event_type: 'runner', payload: { runner_player_id: r.ref.player_id || undefined, runner_label: r.ref.label || undefined, from: b, to: b + 1, how, group } });
+        d = await api.commandScorebookEvent(jobId, { event_type: 'runner', ...tag(), payload: { runner_player_id: r.ref.player_id || undefined, runner_label: r.ref.label || undefined, from: b, to: b + 1, how, group } });
       }
       return d;
     }, `${how.replace(/_/g, ' ')}: ${occupied.length} runner${occupied.length === 1 ? '' : 's'} moved up`);
@@ -296,6 +334,9 @@ export default function ScorebookPage() {
             </div>
           </div>
           <div className="flex items-center gap-2">
+            {!state.final && lineupsReady && state.half && !state.half_complete && (
+              <GhostButton title="Edit outs, score, bases or who is due up when the derived state is wrong — with a reason" onClick={() => setFixState({ outs: state.outs, us: state.score.us, them: state.score.them, bases: { 1: state.bases[1]?.ref ? refKeyOf(state.bases[1].ref) : '', 2: state.bases[2]?.ref ? refKeyOf(state.bases[2].ref) : '', 3: state.bases[3]?.ref ? refKeyOf(state.bases[3].ref) : '' }, next_slot: state.expected_batter?.slot || 1, note: '' })}>Fix state</GhostButton>
+            )}
             {!state.final && lineupsReady && (
               <GhostButton onClick={() => setFinalForm({ reason: state.game_over_suggested?.reason || 'regulation', note: '' })}>Mark final</GhostButton>
             )}
@@ -312,8 +353,41 @@ export default function ScorebookPage() {
               </Select>
             </Field>
             <Field label="Note"><TextInput value={finalForm.note} onChange={e => setFinalForm(f => ({ ...f, note: e.target.value }))} placeholder="1:45 time limit" /></Field>
-            <PrimaryButton disabled={busy} onClick={async () => { const d = await run(() => api.commandScorebookEvent(jobId, { event_type: 'game_final', payload: finalForm }), 'Game marked final — validate the game record from the job page'); if (d) setFinalForm(null); }}>Mark final</PrimaryButton>
+            <PrimaryButton disabled={busy} onClick={async () => { const d = await run(() => api.commandScorebookEvent(jobId, { event_type: 'game_final', ...tag(), payload: finalForm }), 'Game marked final — validate the game record from the job page'); if (d) setFinalForm(null); }}>Mark final</PrimaryButton>
             <GhostButton onClick={() => setFinalForm(null)}>Cancel</GhostButton>
+          </div>
+        )}
+        {fixState && (
+          <div className="mt-3 pt-3 border-t" style={{ borderColor: '#1e3a5f' }} data-testid="fix-state">
+            <p className="text-xs mb-2" style={{ color: '#fbbf24' }}>Only when the derived state is wrong. The adjustment is logged at this point in the game with your reason and shown to reviewers.</p>
+            <div className="flex items-end gap-2 flex-wrap">
+              <Field label="Outs"><Select value={fixState.outs} onChange={e => setFixState(f => ({ ...f, outs: Number(e.target.value) }))}>{[0, 1, 2, 3].map(n => <option key={n} value={n}>{n}</option>)}</Select></Field>
+              <Field label="Us"><TextInput type="number" min="0" value={fixState.us} onChange={e => setFixState(f => ({ ...f, us: e.target.value }))} /></Field>
+              <Field label={data.job.opponent_label || 'Them'}><TextInput type="number" min="0" value={fixState.them} onChange={e => setFixState(f => ({ ...f, them: e.target.value }))} /></Field>
+              {[1, 2, 3].map(b => (
+                <Field key={b} label={`${b}B`}>
+                  <Select value={fixState.bases[b]} onChange={e => setFixState(f => ({ ...f, bases: { ...f.bases, [b]: e.target.value } }))}>
+                    <option value="">empty</option>
+                    {battingRoster.map(p => <option key={p.slot} value={refKeyOf(p)}>{refName(p)}</option>)}
+                  </Select>
+                </Field>
+              ))}
+              <Field label="Due up (slot)"><Select value={fixState.next_slot} onChange={e => setFixState(f => ({ ...f, next_slot: Number(e.target.value) }))}>{battingRoster.map(p => <option key={p.slot} value={p.slot}>{p.slot}. {refName(p)}</option>)}</Select></Field>
+              <Field label="Reason (required)"><TextInput value={fixState.note} onChange={e => setFixState(f => ({ ...f, note: e.target.value }))} placeholder="camera was down for the play" /></Field>
+              <PrimaryButton disabled={busy || fixState.note.trim().length < 3} onClick={async () => {
+                const payload = { note: fixState.note.trim() };
+                if (Number(fixState.outs) !== state.outs) payload.outs = Number(fixState.outs);
+                const score = {}; if (Number(fixState.us) !== state.score.us) score.us = Number(fixState.us); if (Number(fixState.them) !== state.score.them) score.them = Number(fixState.them); if (Object.keys(score).length) payload.score = score;
+                const bases = {};
+                for (const b of [1, 2, 3]) { const cur = state.bases[b]?.ref ? refKeyOf(state.bases[b].ref) : ''; if (fixState.bases[b] !== cur) { const p = battingRoster.find(x => refKeyOf(x) === fixState.bases[b]); bases[b] = fixState.bases[b] ? { player_id: p?.player_id || undefined, label: p?.label || undefined } : null; } }
+                if (Object.keys(bases).length) payload.bases = bases;
+                if (Number(fixState.next_slot) !== (state.expected_batter?.slot || 1)) payload.next_slot = { [battingSide]: Number(fixState.next_slot) };
+                if (!['outs', 'score', 'bases', 'next_slot'].some(k => k in payload)) return setError('Nothing changed');
+                const d = await run(() => api.commandScorebookEvent(jobId, { event_type: 'state_adjustment', ...tag(), payload }), 'State adjusted — logged with your reason');
+                if (d) setFixState(null);
+              }}>Apply</PrimaryButton>
+              <GhostButton onClick={() => setFixState(null)}>Cancel</GhostButton>
+            </div>
           </div>
         )}
         {state.line_score?.innings > 0 && (
@@ -335,12 +409,32 @@ export default function ScorebookPage() {
         {data.issues.length > 0 && (
           <div className="mt-3 pt-3 border-t text-xs" style={{ borderColor: '#1e3a5f' }} data-testid="scorebook-issues">
             {data.issues.slice(0, 6).map((i, n) => (
-              <p key={n} style={{ color: i.level === 'blocking' ? '#f87171' : '#fbbf24' }}>{i.level === 'blocking' ? '⛔' : '⚠'} {i.message}{i.sequence ? <span style={{ color: '#475569' }}> · #{i.sequence}</span> : null}</p>
+              <p key={n} style={{ color: i.level === 'blocking' ? '#f87171' : i.level === 'info' ? '#94a3b8' : '#fbbf24' }}>{i.level === 'blocking' ? '⛔' : i.level === 'info' ? 'ℹ' : '⚠'} {i.message}{i.sequence ? <span style={{ color: '#475569' }}> · #{i.sequence}</span> : null}</p>
             ))}
             {data.issues.length > 6 && <p style={{ color: '#64748b' }}>… {data.issues.length - 6} more in the play-by-play</p>}
           </div>
         )}
       </section>
+
+      {data.feeds?.some(f => f.status === 'ready') && (
+        <section className="rounded-2xl border p-4 mb-4" style={cardStyle} data-testid="video-panel">
+          <div className="flex items-center justify-between gap-3 flex-wrap mb-2">
+            <div className="flex items-center gap-3">
+              <p className="text-[11px] font-bold uppercase tracking-widest" style={{ color: '#94a3b8' }}>Footage</p>
+              <Select value={activeFeedId || ''} onChange={e => setVideoFeedId(Number(e.target.value))}>
+                {data.feeds.filter(f => f.status === 'ready').map(f => <option key={f.id} value={f.id}>{f.label}{f.effective_fps ? ` · ${Number(f.effective_fps.toFixed?.(0) ?? f.effective_fps)} fps` : ''}</option>)}
+              </Select>
+              {videoOn && <span className="text-xs" style={{ color: '#64748b' }}>every play is stamped at <b style={{ color: '#cfe8ff' }}>{formatTimecode(currentFrame / fps)}</b> as you score it</span>}
+            </div>
+            <GhostButton onClick={() => setShowVideo(v => !v)}>{showVideo ? 'Hide video' : 'Show video'}</GhostButton>
+          </div>
+          {showVideo && proxy && (
+            <FeedPlayer ref={playerRef} src={proxy.url} fps={fps} onFrame={setCurrentFrame} captureKeys={!resultPanel && !sub && !finalForm && !editing}
+              markers={data.log.filter(l => l.timecode_s != null && !l.child && l.feed_id === activeFeedId).map(l => ({ id: l.id, t: l.timecode_s, label: l.text, kind: l.type }))} />
+          )}
+          {showVideo && !proxy && <p className="text-xs" style={{ color: '#94a3b8' }}>Loading the review proxy…</p>}
+        </section>
+      )}
 
       {tab === 'score' && !lineupsReady && (
         <section className="rounded-2xl border p-5" style={cardStyle} data-testid="lineup-setup">
@@ -429,6 +523,26 @@ export default function ScorebookPage() {
                     {pitches.length > 0 && <button onClick={() => setPitches([])} className="text-xs cursor-pointer hover:underline" style={{ color: '#64748b' }}>clear (Esc)</button>}
                   </div>
                 </div>
+                {!resultPanel && (data.modules?.radar || data.pitch_types) && (
+                  <div className="flex items-end gap-2 flex-wrap mb-3" data-testid="pitch-detail">
+                    <Field label="Pitch type (carries forward)">
+                      <Select value={pitchType} onChange={e => { const v = e.target.value; setPitchType(v); setPitches(list => list.length ? list.map((p, i) => (i === list.length - 1 ? { ...p, pitch_type: v || undefined } : p)) : list); }}>
+                        <option value="">—</option>{(data.pitch_types || []).map(t => <option key={t} value={t}>{t}</option>)}
+                      </Select>
+                    </Field>
+                    {data.modules?.radar && pitches.length > 0 && battingSide === 'them' && (
+                      <Field label={`Radar reading for the last pitch (${pitches[pitches.length - 1].result.replace(/_/g, ' ')})`}>
+                        <Select value={pitches[pitches.length - 1].radar_reading_id || ''} onChange={e => { const id = e.target.value ? Number(e.target.value) : undefined; setPitches(list => list.map((p, i) => (i === list.length - 1 ? { ...p, radar_reading_id: id } : p))); }}>
+                          <option value="">no reading</option>
+                          {(data.radar_readings || []).filter(r => r.status === 'unmatched' || r.player_id === state.pitcher.us?.player_id).map(r => (
+                            <option key={r.id} value={r.id}>{r.velocity} {r.unit || 'mph'}{r.source_timestamp ? ` · ${r.source_timestamp}` : r.row_index != null ? ` · row ${r.row_index}` : ''}{r.status === 'matched' ? ' · matched' : ''}</option>
+                          ))}
+                        </Select>
+                      </Field>
+                    )}
+                    {data.modules?.radar && battingSide === 'us' && pitches.length > 0 && <span className="text-xs pb-2" style={{ color: '#64748b' }}>Radar readings attach to our pitchers only</span>}
+                  </div>
+                )}
                 {!resultPanel && (
                   <>
                     <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
@@ -501,6 +615,12 @@ export default function ScorebookPage() {
                         )}
                       </div>
                     )}
+                    {resultPanel.result && videoOn && data.modules?.home_to_first && battingSide === 'us' && !['walk', 'intentional_walk', 'hit_by_pitch', 'catcher_interference', 'strikeout', 'strikeout_looking'].includes(resultPanel.result) && (
+                      <label className="flex items-center gap-2 text-xs mb-3 cursor-pointer" style={{ color: '#cfe8ff' }} data-testid="time-home-to-first">
+                        <input type="checkbox" checked={!!resultPanel.time_home_to_first} onChange={e => setResultPanel(rp => ({ ...rp, time_home_to_first: e.target.checked }))} />
+                        Queue home-to-first timing for the batter at this moment ({formatTimecode(tc())})
+                      </label>
+                    )}
                     {resultPanel.result && [3, 2, 1].some(b => state.bases[b]) && (
                       <div className="mb-3">
                         <p className="text-[11px] font-bold uppercase tracking-widest mb-1.5" style={{ color: '#94a3b8' }}>Runners on this play</p>
@@ -545,7 +665,14 @@ export default function ScorebookPage() {
                 {/* between-batter runner plays */}
                 {!resultPanel && [3, 2, 1].some(b => state.bases[b]) && (
                   <div className="mt-4 pt-3 border-t" style={{ borderColor: '#1e3a5f' }}>
-                    <p className="text-[11px] font-bold uppercase tracking-widest mb-1.5" style={{ color: '#94a3b8' }}>Runner plays before the next pitch</p>
+                    <div className="flex items-center justify-between gap-2 mb-1.5">
+                      <p className="text-[11px] font-bold uppercase tracking-widest" style={{ color: '#94a3b8' }}>Runner plays before the next pitch</p>
+                      {videoOn && data.modules?.steal && battingSide === 'us' && (
+                        <label className="flex items-center gap-1.5 text-xs cursor-pointer" style={{ color: '#cfe8ff' }} data-testid="time-steals">
+                          <input type="checkbox" checked={timeSteals} onChange={e => setTimeSteals(e.target.checked)} /> queue steal timing with each SB / CS
+                        </label>
+                      )}
+                    </div>
                     {[3, 2, 1].filter(b => state.bases[b]).map(b => (
                       <div key={b} className="flex items-center gap-1.5 py-1 flex-wrap text-xs">
                         <span className="w-40 truncate" style={{ color: '#cfe8ff' }}>{b}B · {refName(state.bases[b].ref)}</span>
@@ -647,14 +774,34 @@ export default function ScorebookPage() {
                     <td className="px-4 py-2 tabular-nums" style={{ color: '#64748b' }}>{l.sequence}</td>
                     <td className="px-4 py-2 text-xs" style={{ color: '#94a3b8' }}>{l.half ? `${l.half === 'top' ? 'T' : 'B'}${l.inning}` : '—'}</td>
                     <td className="px-4 py-2" style={{ color: '#cfe8ff' }}>
+                      {l.timecode_s != null && (
+                        <button onClick={() => { if (l.feed_id && l.feed_id !== activeFeedId) setVideoFeedId(l.feed_id); setShowVideo(true); setPendingSeek({ seconds: l.timecode_s, nonce: Date.now() }); }}
+                          className="mr-2 text-xs tabular-nums cursor-pointer hover:underline" style={{ color: '#38bdf8' }} title="Jump to this moment in the footage" data-testid={`jump-${l.id}`}>▶ {formatTimecode(l.timecode_s)}</button>
+                      )}
                       {l.text}{disputed ? <span className="ml-2 text-xs font-bold" style={{ color: '#fbbf24' }}>under review</span> : null}
+                      {l.pitches?.some(x => x.velocity != null || x.pitch_type) && (
+                        <span className="ml-2 inline-flex gap-1 flex-wrap align-middle">
+                          {l.pitches.map((x, i) => <span key={i} className="px-1.5 py-0.5 rounded text-[10px]" style={{ backgroundColor: 'rgba(30, 41, 59, 0.9)', color: x.velocity != null ? '#cfe8ff' : '#64748b' }} title={x.result.replace(/_/g, ' ')}>{x.velocity != null ? `${x.velocity} ` : ''}{x.pitch_type ? x.pitch_type.slice(0, 2).toUpperCase() : x.result === 'ball' ? 'B' : 'S'}</span>)}
+                        </span>
+                      )}
+                      {l.attempt_id && <Link to={`/command/jobs/${jobId}/running`} className="ml-2 text-[10px] font-bold uppercase tracking-wider hover:underline" style={{ color: '#4ade80' }}>timing queued →</Link>}
+                      {clipEdit?.id === l.id && (
+                        <div className="mt-2 p-2 rounded-xl border flex items-center gap-2 flex-wrap text-xs" style={{ borderColor: 'rgba(56, 189, 248, 0.4)' }} data-testid="clip-editor">
+                          <span style={{ color: '#94a3b8' }}>moment <b style={{ color: '#cfe8ff' }}>{formatTimecode(clipEdit.t)}</b> · clip <b style={{ color: '#cfe8ff' }}>{formatTimecode(clipEdit.start)}</b> → <b style={{ color: '#cfe8ff' }}>{formatTimecode(clipEdit.end)}</b></span>
+                          <GhostButton onClick={() => setClipEdit(c => ({ ...c, t: tc() }))}>moment = here</GhostButton>
+                          <GhostButton onClick={() => setClipEdit(c => ({ ...c, start: tc() }))}>start = here</GhostButton>
+                          <GhostButton onClick={() => setClipEdit(c => ({ ...c, end: tc() }))}>end = here</GhostButton>
+                          <PrimaryButton disabled={busy || !(clipEdit.end > clipEdit.start)} onClick={async () => { const d = await run(() => api.commandScorebookClip(clipEdit.id, { timecode_s: clipEdit.t, clip_start_s: clipEdit.start, clip_end_s: clipEdit.end }), 'Clip saved'); if (d) setClipEdit(null); }}>Save clip</PrimaryButton>
+                          <GhostButton onClick={() => setClipEdit(null)}>Cancel</GhostButton>
+                        </div>
+                      )}
                       {editing?.event?.id === l.id && (
                         <CorrectionEditor editing={editing} setEditing={setEditing} vocab={data.vocab} busy={busy}
                           onSave={async () => { const d = await run(() => api.commandScorebookCorrect(editing.event.id, editing.payload, editing.note), 'Corrected — every dependent total recalculated'); if (d) setEditing(null); }} />
                       )}
                     </td>
                     <td className="px-4 py-2 text-right whitespace-nowrap">
-                      {ev && ['plate_appearance', 'runner', 'substitution', 'game_final'].includes(ev.event_type) && !editing && (
+                      {ev && ['plate_appearance', 'runner', 'substitution', 'game_final', 'state_adjustment'].includes(ev.event_type) && !editing && (
                         <>
                           {['plate_appearance', 'runner'].includes(ev.event_type) && <GhostButton onClick={() => setEditing({ event: ev, payload: { ...ev.payload }, note: '' })}>Correct</GhostButton>}
                           <span className="inline-block w-1" />
@@ -662,7 +809,21 @@ export default function ScorebookPage() {
                           <span className="inline-block w-1" />
                           {disputed
                             ? <GhostButton onClick={() => run(() => api.commandScorebookResolve(ev.id, ''), 'Resolved — back in the totals')}>Resolve</GhostButton>
-                            : <GhostButton onClick={() => run(() => api.commandScorebookDispute(ev.id, 'flagged by scorer'), 'Under review — excluded from totals until resolved')}>Dispute</GhostButton>}
+                            : disputing === ev.id
+                              ? <span className="inline-flex items-center gap-1 flex-wrap" data-testid="dispute-reasons">
+                                  {['unclear footage', 'scorer judgment', 'possible misidentification', 'needs video review'].map(reason => (
+                                    <button key={reason} onClick={async () => { const d = await run(() => api.commandScorebookDispute(ev.id, reason), `Under review (${reason}) — excluded from totals until resolved`); if (d) setDisputing(null); }}
+                                      className="px-2 py-1 rounded text-xs font-bold cursor-pointer" style={{ backgroundColor: 'rgba(251, 191, 36, 0.15)', color: '#fbbf24' }}>{reason}</button>
+                                  ))}
+                                  <button onClick={() => setDisputing(null)} className="px-2 py-1 rounded text-xs cursor-pointer" style={{ color: '#64748b' }}>cancel</button>
+                                </span>
+                              : <GhostButton onClick={() => setDisputing(ev.id)}>Dispute</GhostButton>}
+                          {videoOn && l.timecode_s != null && (
+                            <>
+                              <span className="inline-block w-1" />
+                              <GhostButton onClick={() => setClipEdit(clipEdit?.id === ev.id ? null : { id: ev.id, start: l.clip?.[0] ?? Math.max(0, l.timecode_s - 4), end: l.clip?.[1] ?? l.timecode_s + 8, t: l.timecode_s })}>Clip</GhostButton>
+                            </>
+                          )}
                         </>
                       )}
                     </td>

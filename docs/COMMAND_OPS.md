@@ -486,6 +486,36 @@ and surfaced as a QA flag until resolved. If the game record was already
 released, a correction re-releases it immediately so the profile never shows
 a superseded value.
 
+Tagging from footage: when the job has a ready feed, the review proxy plays
+above the scorer (the same frame-accurate player as the running queue: ←/→
+frames, J/L seconds, space to play). Every event the scorer saves — each
+pitch, the play, its runner plays, substitutions, the final — is stamped with
+the selected feed and the moment on it, and gets a default clip around it
+(4 s before, 8 s after; `PUT /api/command/scorebook/events/:id/clip` to
+adjust, audited as `clip_adjusted`). Tagged plays show as markers above the
+scrubber and as ▶ timecodes in the play-by-play; clicking either seeks the
+player. Corrections keep the footage link. A feed must belong to the job.
+
+Exception controls (PRD §5.5): **Fix state** on the scoreboard edits outs,
+score, bases or who is due up when the derived state is wrong — a reason is
+required, the adjustment is a `state_adjustment` event applied at that point
+in the game, and reviewers see it as an ℹ issue (`state_adjusted`) and in the
+play-by-play. **Dispute** asks for a reason (unclear footage, scorer
+judgment, possible misidentification, needs video review) before the play
+goes under review. **Clip** on a tagged play sets its moment, start and end
+from the player's current position.
+
+Internal metrics on plays (PRD §5.1 "when known"): a **pitch type** carries
+forward pitch to pitch until changed; a **radar reading** can be attached to
+the last pitch while our pitcher is on the mound — the reading is matched to
+that pitcher through the radar lifecycle (one derived result, published once,
+correctable in the radar queue), and the play-by-play shows the velocity on
+the pitch. With the video on, a hit or in-play out can **queue home-to-first
+timing** for the batter and each SB/CS **queues steal timing** for the runner,
+both as running attempts at the tagged moment on the selected feed — the
+running queue measures them as usual. Only modules the order activated are
+offered; opponents are labels and cannot be timed or matched.
+
 Publishing: the scorebook is the job's `live_internal` game-record source.
 It validates once the game is final with no blocking issues, and releases
 through the same **Game record → validated → released** path as an import.

@@ -9,6 +9,10 @@
 //   half_inning       { inning, half: 'top'|'bottom', auto? }
 //   plate_appearance  { batter_player_id?, batter_label?, pitcher_player_id?, pitcher_label?, result, rbi?, batted_ball?, direction?, fielders?: [6,3], error_player_id?, error_label?, error_position?, unearned?, out_of_order_ok?, pitch_count?, note? }
 //   pitch             { result: ball|called_strike|swinging_strike|foul|foul_tip|foul_bunt|check_swing_strike|in_play|hit_by_pitch|intentional_ball, pitch_type?, radar_reading_id? }
+//                     — a linked radar reading is matched to the pitcher of record (our pitchers only) through the
+//                       radar lifecycle, so the velocity publishes once, from one row (PRD §5.1 "when known").
+//   plate_appearance  … time_home_to_first?: true queues a home-to-first timing attempt for the batter at the play's moment
+//   runner            … time_steal?: true queues a steal timing attempt for the runner; attempt_id? links an existing one
 //   runner            { runner_player_id?, runner_label?, from: 1|2|3, to: 1|2|3|4, how, out?, fielders?, unearned?, group?, error_player_id?, error_label?, error_position?, note? }
 //
 // The calculation contract is the Metric Recipe Appendix, "V1 Scorekeeping and
@@ -18,10 +22,15 @@
 // and scorer judgment for earned runs (uncertain → needs review, never a guess).
 //   substitution      { kind, side, slot?, base?, player_in_id?, player_in_label?, player_out_id?, player_out_label?, position? }
 //   game_final        { reason: regulation|run_rule|time_limit|forfeit|darkness|other, note? }
+//   state_adjustment  { outs?, score?: {us?, them?}, bases?: {1|2|3: {player_id?|label?}|null}, next_slot?: {us?, them?}, note }
+//                     — PRD §5.5 "edit count/outs/bases/score only when the derived state is incorrect; correction reason".
+//                     Applied at its point in the log and surfaced to reviewers as an info issue; never silent.
 import { commandRoster } from './commandRoster.js';
+import { classifyReading, PITCH_TYPES } from './radarImport.js';
+import { createAttempt } from './measurementLogic.js';
 
 export const SCOREBOOK_VERSION = 'CMD_SCOREBOOK_V1';
-export const EVENT_TYPES = ['lineup', 'half_inning', 'plate_appearance', 'pitch', 'runner', 'substitution', 'game_final'];
+export const EVENT_TYPES = ['lineup', 'half_inning', 'plate_appearance', 'pitch', 'runner', 'substitution', 'game_final', 'state_adjustment'];
 export const PA_RESULTS = [
   'single', 'double', 'triple', 'home_run',
   'walk', 'intentional_walk', 'hit_by_pitch', 'catcher_interference',
@@ -130,15 +139,21 @@ export function validatePayload(type, p = {}) {
       if (p.batted_ball) need(BATTED_BALLS.includes(p.batted_ball), `batted_ball must be one of ${BATTED_BALLS.join(', ')}`);
       if (p.direction) need(DIRECTIONS.includes(p.direction), `direction must be one of ${DIRECTIONS.join(', ')}`);
       if (p.pitch_count != null) need(Number.isInteger(p.pitch_count) && p.pitch_count >= 0, 'pitch_count must be a whole number');
+      if (p.time_home_to_first != null) need(typeof p.time_home_to_first === 'boolean', 'time_home_to_first must be true or false');
+      if (p.attempt_id != null) need(Number.isInteger(p.attempt_id) && p.attempt_id > 0, 'attempt_id must be a running attempt id');
       return;
     case 'pitch':
       need(PITCH_RESULTS.includes(p.result), `pitch result must be one of ${PITCH_RESULTS.join(', ')}`);
+      if (p.pitch_type != null && p.pitch_type !== '') need(PITCH_TYPES.includes(p.pitch_type), `pitch_type must be one of ${PITCH_TYPES.join(', ')}`);
+      if (p.radar_reading_id != null) need(Number.isInteger(p.radar_reading_id) && p.radar_reading_id > 0, 'radar_reading_id must be a reading id');
       return;
     case 'runner':
       need([1, 2, 3].includes(p.from), 'runner.from must be 1, 2 or 3');
       need([1, 2, 3, 4].includes(p.to), 'runner.to must be 1–4 (4 = home)');
       need(RUNNER_HOWS.includes(p.how), `how must be one of ${RUNNER_HOWS.join(', ')}`);
       if (!p.out) need(p.to > p.from || p.how === 'out', 'a runner who is not out must advance');
+      if (p.attempt_id != null) need(Number.isInteger(p.attempt_id) && p.attempt_id > 0, 'attempt_id must be a running attempt id');
+      if (p.time_steal != null) need(typeof p.time_steal === 'boolean', 'time_steal must be true or false');
       return;
     case 'substitution':
       need(SUB_KINDS.includes(p.kind), `kind must be one of ${SUB_KINDS.join(', ')}`);
@@ -150,6 +165,15 @@ export function validatePayload(type, p = {}) {
     case 'game_final':
       need(FINAL_REASONS.includes(p.reason), `reason must be one of ${FINAL_REASONS.join(', ')}`);
       return;
+    case 'state_adjustment': {
+      need(typeof p.note === 'string' && p.note.trim().length >= 3, 'a state adjustment needs a reason (note)');
+      need(['outs', 'score', 'bases', 'next_slot'].some(k => p[k] !== undefined), 'a state adjustment must change outs, score, bases or the batting-order pointer');
+      if (p.outs !== undefined) need(Number.isInteger(p.outs) && p.outs >= 0 && p.outs <= 3, 'outs must be 0–3');
+      if (p.score !== undefined) { need(p.score && typeof p.score === 'object', 'score must be { us?, them? }'); for (const side of ['us', 'them']) if (p.score[side] !== undefined) need(Number.isInteger(p.score[side]) && p.score[side] >= 0, `score.${side} must be a whole number`); }
+      if (p.bases !== undefined) { need(p.bases && typeof p.bases === 'object', 'bases must be { 1?, 2?, 3? }'); for (const b of Object.keys(p.bases)) { need(['1', '2', '3'].includes(b), 'bases keys are 1, 2, 3'); const r = p.bases[b]; need(r === null || (r && typeof r === 'object' && (r.player_id || r.label)), `bases.${b} must be null or a player`); } }
+      if (p.next_slot !== undefined) { need(p.next_slot && typeof p.next_slot === 'object', 'next_slot must be { us?, them? }'); for (const side of ['us', 'them']) if (p.next_slot[side] !== undefined) need(Number.isInteger(p.next_slot[side]) && p.next_slot[side] >= 1, `next_slot.${side} must be a batting-order number`); }
+      return;
+    }
     default:
       throw err(`Unknown scorebook event type ${type}`);
   }
@@ -315,7 +339,8 @@ export function replay(events, { ruleset = {}, disputed = new Set() } = {}) {
   for (const e of events) {
     const p = e.payload || {};
     const dis = isDisputed(e);
-    const entry = { id: e.id, sequence: e.sequence, type: e.event_type, inning: state.inning, half: state.half, outs_before: state.outs, disputed: dis, text: '' };
+    const entry = { id: e.id, sequence: e.sequence, type: e.event_type, inning: state.inning, half: state.half, outs_before: state.outs, disputed: dis, text: '',
+      timecode_s: e.timecode_s ?? null, feed_id: e.selected_feed_id ?? null, clip: e.clip_start_s != null ? [e.clip_start_s, e.clip_end_s] : null };
     switch (e.event_type) {
       case 'lineup': {
         const slots = (p.slots || []).map(s => {
@@ -509,7 +534,10 @@ export function replay(events, { ruleset = {}, disputed = new Set() } = {}) {
           state.next_slot[side] = (slotNo % lu.slots.length) + 1;
         }
         state.open_pa = null;
-        entry.text = `${batter.label || `#${batter.player_id}`}: ${res.replace(/_/g, ' ')}${(p.rbi ?? rbi) ? `, ${p.rbi ?? rbi} RBI` : ''}${pitchCount ? ` (${pitchCount} pitch${pitchCount === 1 ? '' : 'es'})` : ''}`;
+        entry.pitches = pitches.map(k => ({ id: k.id, result: k.payload?.result, pitch_type: k.payload?.pitch_type || null, radar_reading_id: k.payload?.radar_reading_id || null, velocity: k.velocity ?? null, timecode_s: k.timecode_s ?? null }));
+        const velos = entry.pitches.map(x => x.velocity).filter(v => v != null);
+        entry.attempt_id = p.attempt_id || null;
+        entry.text = `${batter.label || `#${batter.player_id}`}: ${res.replace(/_/g, ' ')}${(p.rbi ?? rbi) ? `, ${p.rbi ?? rbi} RBI` : ''}${pitchCount ? ` (${pitchCount} pitch${pitchCount === 1 ? '' : 'es'}${velos.length ? `, ${Math.max(...velos)} mph` : ''})` : ''}`;
         endHalfIfDone(e);
         break;
       }
@@ -533,12 +561,37 @@ export function replay(events, { ruleset = {}, disputed = new Set() } = {}) {
           if (out) { recordOut(e); endHalfIfDone(e); }
           else if (rp.to === 4) scoreRun(runner, null, rp.how, e);
           else state.bases[rp.to] = { ...runner, unearned: runner.unearned || rp.how === 'error' };
-          entry.text = `${runner.ref.label || runner.ref.player_id}: ${rp.how.replace(/_/g, ' ')} ${rp.from}B → ${rp.to === 4 ? 'home' : `${rp.to}B`}${rp.out ? ' (out)' : ''}`;
+          entry.attempt_id = rp.attempt_id || null;
+          entry.text = `${runner.ref.label || runner.ref.player_id}: ${rp.how.replace(/_/g, ' ')} ${rp.from}B → ${rp.to === 4 ? 'home' : `${rp.to}B`}${rp.out ? ' (out)' : ''}${rp.attempt_id ? ' · timing queued' : ''}`;
         } else {
           entry.text = e.event_type === 'pitch' ? `pitch: ${p.result.replace(/_/g, ' ')}` : `runner: ${p.how}`;
           entry.child = true;
         }
         break;
+      case 'state_adjustment': {
+        if (!state.half) { issue('no_half_inning', 'blocking', e, 'State adjustment before any half inning'); break; }
+        const changes = [];
+        if (p.outs !== undefined && p.outs !== state.outs) { changes.push(`outs ${state.outs}→${p.outs}`); state.outs = p.outs; }
+        if (p.score) for (const side of ['us', 'them']) if (p.score[side] !== undefined && p.score[side] !== state.score[side]) {
+          const delta = p.score[side] - state.score[side];
+          changes.push(`${side} runs ${state.score[side]}→${p.score[side]}`);
+          state.score[side] = p.score[side]; state.team[side].r += delta;
+          const ls = state.line_score[side]; while (ls.length < state.inning) ls.push(0); ls[state.inning - 1] = Math.max(0, ls[state.inning - 1] + delta);
+        }
+        if (p.bases) for (const b of [1, 2, 3]) if (p.bases[b] !== undefined) {
+          const was = state.bases[b];
+          if (p.bases[b] === null) { if (was) { changes.push(`${b}B cleared`); state.bases[b] = null; } }
+          else {
+            const ref = mkRef(state.batting, p.bases[b].player_id, p.bases[b].label);
+            if (!was || refKey(was.ref) !== refKey(ref)) { changes.push(`${b}B → ${ref.label || `#${ref.player_id}`}`); state.bases[b] = { ref, responsible: state.pitcher[fieldingSide()], unearned: false, reached: 'adjustment' }; names.set(refKey(ref), ref); }
+          }
+        }
+        if (p.next_slot) for (const side of ['us', 'them']) if (p.next_slot[side] !== undefined && p.next_slot[side] !== state.next_slot[side]) { changes.push(`${side} next batter slot ${state.next_slot[side]}→${p.next_slot[side]}`); state.next_slot[side] = p.next_slot[side]; }
+        entry.text = `State adjusted${changes.length ? `: ${changes.join(', ')}` : ' (no change)'} — ${p.note}`;
+        issue('state_adjusted', 'info', e, `Scorer adjusted the derived state (${changes.join(', ') || 'no change'}): ${p.note}`);
+        endHalfIfDone(e);
+        break;
+      }
       case 'game_final':
         state.final = { reason: p.reason, note: p.note || '', event_id: e.id };
         if (!state.half_complete && state.outs > 0 && state.outs < 3 && p.reason === 'regulation') issue('final_mid_inning', 'warning', e, 'Game marked final mid-inning');
@@ -598,7 +651,7 @@ export function replay(events, { ruleset = {}, disputed = new Set() } = {}) {
 // ── Persistence helpers ────────────────────────────────────────────────────
 export function loadEvents(db, jobId) {
   return db.prepare(
-    "SELECT * FROM cmd_events WHERE job_id = ? AND event_type IN ('lineup','half_inning','plate_appearance','pitch','runner','substitution','game_final') AND status IN ('active','needs_review') ORDER BY sequence, id"
+    "SELECT * FROM cmd_events WHERE job_id = ? AND event_type IN ('lineup','half_inning','plate_appearance','pitch','runner','substitution','game_final','state_adjustment') AND status IN ('active','needs_review') ORDER BY sequence, id"
   ).all(jobId).map(e => ({ ...e, payload: safeJson(e.payload) }));
 }
 const safeJson = s => { try { return typeof s === 'string' ? JSON.parse(s || '{}') : (s || {}); } catch { return {}; } };
@@ -613,6 +666,11 @@ export function replayJob(db, jobId) {
   const job = db.prepare('SELECT * FROM cmd_jobs WHERE id = ?').get(jobId);
   if (!job) throw err('Job not found', 404);
   const events = loadEvents(db, jobId);
+  const readingIds = events.filter(e => e.event_type === 'pitch' && e.payload?.radar_reading_id).map(e => e.payload.radar_reading_id);
+  if (readingIds.length) {
+    const rows = new Map(db.prepare(`SELECT id, velocity, status FROM cmd_radar_readings WHERE id IN (${readingIds.map(() => '?').join(',')})`).all(...readingIds).map(r => [r.id, r]));
+    for (const e of events) if (e.event_type === 'pitch' && e.payload?.radar_reading_id) { const r = rows.get(e.payload.radar_reading_id); if (r && r.status !== 'invalid') e.velocity = r.velocity; }
+  }
   const disputed = new Set(events.filter(e => e.status === 'needs_review').map(e => e.id));
   const result = replay(events, { ruleset: rulesetFor(db, job), disputed });
   // Decorate tallies with names for our players.
@@ -696,19 +754,61 @@ function describeForAudit(type, p) {
 // Append one event, auto-open the first half inning and auto-advance halves
 // on the third out, keep the live source fresh. Returns the new event plus
 // the replayed state.
-export function appendEvent(db, jobId, { event_type, parent_event_id = null, payload = {}, selected_feed_id = null, timecode_s = null }, actorId) {
+// Video tagging (PRD §5: the event record captures the timecode and selected
+// feed automatically; approved events get a default surrounding clip the
+// analyst can adjust). The feed must belong to the job; the clip defaults to
+// a few seconds before the moment and a few after.
+const DEFAULT_CLIP = { before_s: 4, after_s: 8 };
+function tagFor(db, jobId, { selected_feed_id = null, timecode_s = null, clip_start_s = null, clip_end_s = null } = {}) {
+  const feed = selected_feed_id == null || selected_feed_id === '' ? null : Number(selected_feed_id);
+  if (feed != null && (!Number.isInteger(feed) || !db.prepare('SELECT 1 FROM cmd_video_feeds WHERE id = ? AND job_id = ?').get(feed, jobId))) throw err('selected_feed_id must be a feed attached to this job');
+  const t = timecode_s == null || timecode_s === '' ? null : Number(timecode_s);
+  if (t != null && !(Number.isFinite(t) && t >= 0)) throw err('timecode_s must be a non-negative number of seconds');
+  let c0 = clip_start_s == null || clip_start_s === '' ? null : Number(clip_start_s);
+  let c1 = clip_end_s == null || clip_end_s === '' ? null : Number(clip_end_s);
+  if ((c0 != null || c1 != null) && !(Number.isFinite(c0) && Number.isFinite(c1) && c0 >= 0 && c1 > c0)) throw err('clip_start_s and clip_end_s must be seconds with the end after the start');
+  if (t != null && c0 == null) { c0 = Math.max(0, t - DEFAULT_CLIP.before_s); c1 = t + DEFAULT_CLIP.after_s; }
+  return { feed, t, c0, c1 };
+}
+// A pitch may carry the radar reading that measured it. The reading must be
+// this job's; if the pitcher of record is one of ours the reading is matched to
+// them (with the pitch type) through the radar lifecycle, so velocity keeps
+// one source of truth and publishes exactly once.
+function linkReadingToPitch(db, jobId, pitchPayload, pitcherRef, actorId) {
+  const id = pitchPayload.radar_reading_id;
+  if (!id) return;
+  const reading = db.prepare('SELECT * FROM cmd_radar_readings WHERE id = ? AND job_id = ?').get(id, jobId);
+  if (!reading) throw err('radar_reading_id must be a reading on this job');
+  if (reading.status === 'invalid') throw err(`Reading ${id} is marked invalid — restore it in the radar queue before linking it to a pitch`);
+  const pitcherId = pitcherRef?.player_id || null;
+  if (reading.status === 'matched' && reading.player_id && pitcherId && reading.player_id !== pitcherId) throw err(`Reading ${id} is matched to another player — reassign it in the radar queue first`);
+  if (pitcherId && (reading.status !== 'matched' || reading.player_id !== pitcherId || (pitchPayload.pitch_type && reading.pitch_type !== pitchPayload.pitch_type))) {
+    classifyReading(db, id, { player_id: pitcherId, pitch_or_exit: 'pitch', pitch_type: pitchPayload.pitch_type || reading.pitch_type || 'unknown', status: 'matched', note: reading.note || 'linked from the scorebook' }, actorId);
+  }
+}
+// A timing attempt queued from the scorebook (home-to-first or steal) at the
+// play's moment on the selected feed — the running queue picks it up.
+function queueAttempt(db, jobId, { attempt_type, player_id, tag }, actorId) {
+  if (!player_id) throw err(`Only our players can be timed — ${attempt_type.replace(/_/g, ' ')} needs a rostered runner`);
+  if (!tag.feed || tag.t == null) throw err(`Queueing a ${attempt_type.replace(/_/g, ' ')} attempt needs the footage selected and the moment on it`);
+  const created = createAttempt(db, jobId, { attempt_type, player_id, feed_id: tag.feed, timecode_s: tag.t }, actorId);
+  return typeof created === 'object' && created !== null ? (created.id ?? created.attempt?.id) : created;   // the attempt id, whatever shape createAttempt returns
+}
+const INSERT_EVENT = `INSERT INTO cmd_events (job_id, sequence, event_type, parent_event_id, player_id, payload, selected_feed_id, timecode_s, clip_start_s, clip_end_s, created_by)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
+
+export function appendEvent(db, jobId, { event_type, parent_event_id = null, payload = {}, selected_feed_id = null, timecode_s = null, clip_start_s = null, clip_end_s = null }, actorId) {
   if (!EVENT_TYPES.includes(event_type)) throw err(`event_type must be one of ${EVENT_TYPES.join(', ')}`);
   validatePayload(event_type, payload);
   const job = db.prepare('SELECT * FROM cmd_jobs WHERE id = ?').get(jobId);
   if (!job) throw err('Job not found', 404);
   const before = replayJob(db, jobId);
   if (before.state.final && event_type !== 'game_final') throw err('Game is final — void the final event to keep scoring', 409);
+  if (event_type === 'state_adjustment' && (!before.state.half || before.state.half_complete)) throw err('Nothing to adjust — no half inning is in progress', 409);
+  const tag = tagFor(db, jobId, { selected_feed_id, timecode_s, clip_start_s, clip_end_s });
 
   const run = db.transaction(() => {
-    const ins = db.prepare(
-      `INSERT INTO cmd_events (job_id, sequence, event_type, parent_event_id, player_id, payload, selected_feed_id, timecode_s, created_by)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
-    );
+    const ins = db.prepare(INSERT_EVENT);
     let parent = parent_event_id;
     // A plate appearance or between-batter runner event needs an open half inning.
     if (['plate_appearance', 'runner'].includes(event_type) && !parent) {
@@ -717,21 +817,25 @@ export function appendEvent(db, jobId, { event_type, parent_event_id = null, pay
       if (!half || before.state.half_complete) {
         if (before.state.us_is_home == null) throw err('Enter our lineup (with home/away) before scoring a plate appearance');
         const nextHalf = half ? (before.state.half === 'top' ? { inning: before.state.inning, half: 'bottom' } : { inning: before.state.inning + 1, half: 'top' }) : { inning: 1, half: 'top' };
-        const hid = ins.run(jobId, nextSequence(db, jobId), 'half_inning', null, null, JSON.stringify({ ...nextHalf, auto: true }), null, null, actorId).lastInsertRowid;
+        const hid = ins.run(jobId, nextSequence(db, jobId), 'half_inning', null, null, JSON.stringify({ ...nextHalf, auto: true }), null, null, null, null, actorId).lastInsertRowid;
         audit(db, 'cmd_events', hid, actorId, 'created', `${nextHalf.half} ${nextHalf.inning} (auto)`);
         half = { id: hid };
       }
       if (event_type === 'plate_appearance' || (event_type === 'runner' && !parent)) parent = half.id;
     }
     if (event_type === 'pitch' && !parent) throw err('A pitch needs its plate appearance (parent_event_id)');
+    if (event_type === 'runner') {
+      if (payload.attempt_id && !db.prepare("SELECT 1 FROM cmd_events WHERE id = ? AND job_id = ? AND event_type = 'running_attempt'").get(payload.attempt_id, jobId)) throw err('attempt_id must be a running attempt on this job');
+      if (payload.time_steal) { const { time_steal: _requested, ...rest } = payload; payload = { ...rest, attempt_id: queueAttempt(db, jobId, { attempt_type: 'steal', player_id: payload.runner_player_id, tag }, actorId) }; }
+    }
     const playerId = payload.batter_player_id || payload.runner_player_id || payload.player_in_id || null;
-    const id = ins.run(jobId, nextSequence(db, jobId), event_type, parent, playerId, JSON.stringify(payload), selected_feed_id, timecode_s, actorId).lastInsertRowid;
+    const id = ins.run(jobId, nextSequence(db, jobId), event_type, parent, playerId, JSON.stringify(payload), tag.feed, tag.t, tag.c0, tag.c1, actorId).lastInsertRowid;
     audit(db, 'cmd_events', id, actorId, 'created', describeForAudit(event_type, payload));
     // Third out → next half, automatically, so the scorer never has to.
     const after = replayJob(db, jobId);
     if (after.state.half_complete && !after.state.final && !after.state.game_over_suggested) {
       const nextHalf = after.state.half === 'top' ? { inning: after.state.inning, half: 'bottom' } : { inning: after.state.inning + 1, half: 'top' };
-      const hid = ins.run(jobId, nextSequence(db, jobId), 'half_inning', null, null, JSON.stringify({ ...nextHalf, auto: true }), null, null, actorId).lastInsertRowid;
+      const hid = ins.run(jobId, nextSequence(db, jobId), 'half_inning', null, null, JSON.stringify({ ...nextHalf, auto: true }), null, null, null, null, actorId).lastInsertRowid;
       audit(db, 'cmd_events', hid, actorId, 'created', `${nextHalf.half} ${nextHalf.inning} (auto)`);
     }
     refreshLiveSource(db, jobId, actorId);
@@ -746,40 +850,55 @@ export function appendEvent(db, jobId, { event_type, parent_event_id = null, pay
 // the PA row first, then children parented to it (lead runner first so a
 // batter never lands on an occupied base), then the half auto-advances if the
 // play made the third out. This is what the scorer's "save" button calls.
-export function appendPlateAppearance(db, jobId, { pa, pitches = [], runners = [], selected_feed_id = null, timecode_s = null }, actorId) {
+export function appendPlateAppearance(db, jobId, { pa, pitches = [], runners = [], selected_feed_id = null, timecode_s = null, clip_start_s = null, clip_end_s = null }, actorId) {
   validatePayload('plate_appearance', pa || {});
   for (const r of runners) validatePayload('runner', r);
-  for (const x of pitches) validatePayload('pitch', x);
+  for (const x of pitches) {
+    validatePayload('pitch', x);
+    if (x.timecode_s != null && !(Number.isFinite(Number(x.timecode_s)) && Number(x.timecode_s) >= 0)) throw err('pitch timecode_s must be a non-negative number of seconds');
+  }
   const job = db.prepare('SELECT * FROM cmd_jobs WHERE id = ?').get(jobId);
   if (!job) throw err('Job not found', 404);
   const before = replayJob(db, jobId);
   if (before.state.final) throw err('Game is final — void the final event to keep scoring', 409);
   if (before.state.us_is_home == null) throw err('Enter our lineup (with home/away) before scoring a plate appearance');
+  // The play's moment defaults to its last pitch; the runner plays share it.
+  const lastPitchT = [...pitches].reverse().find(x => x.timecode_s != null)?.timecode_s ?? null;
+  const tag = tagFor(db, jobId, { selected_feed_id, timecode_s: timecode_s ?? lastPitchT, clip_start_s, clip_end_s });
 
   const run = db.transaction(() => {
-    const ins = db.prepare(
-      `INSERT INTO cmd_events (job_id, sequence, event_type, parent_event_id, player_id, payload, selected_feed_id, timecode_s, created_by)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
-    );
+    const ins = db.prepare(INSERT_EVENT);
     let half = before.events.filter(e => e.event_type === 'half_inning').at(-1) || null;
     if (!half || before.state.half_complete) {
       const nextHalf = half ? (before.state.half === 'top' ? { inning: before.state.inning, half: 'bottom' } : { inning: before.state.inning + 1, half: 'top' }) : { inning: 1, half: 'top' };
-      const hid = ins.run(jobId, nextSequence(db, jobId), 'half_inning', null, null, JSON.stringify({ ...nextHalf, auto: true }), null, null, actorId).lastInsertRowid;
+      const hid = ins.run(jobId, nextSequence(db, jobId), 'half_inning', null, null, JSON.stringify({ ...nextHalf, auto: true }), null, null, null, null, actorId).lastInsertRowid;
       audit(db, 'cmd_events', hid, actorId, 'created', `${nextHalf.half} ${nextHalf.inning} (auto)`);
       half = { id: hid };
     }
-    const paPayload = { ...pa, pitch_count: pitches.length || pa.pitch_count || 0 };
-    const paId = ins.run(jobId, nextSequence(db, jobId), 'plate_appearance', half.id, pa.batter_player_id || null, JSON.stringify(paPayload), selected_feed_id, timecode_s, actorId).lastInsertRowid;
+    const { time_home_to_first, ...paFields } = pa;
+    const paPayload = { ...paFields, pitch_count: pitches.length || pa.pitch_count || 0 };
+    // Who is pitching and batting right now decides the radar match and the timing candidate.
+    const batting = before.state.upcoming?.batting || before.state.batting;
+    const fielding = batting === 'us' ? 'them' : 'us';
+    const pitcherRef = pa.pitcher_player_id || pa.pitcher_label ? { player_id: pa.pitcher_player_id || null, label: pa.pitcher_label || '' } : before.state.pitcher[fielding];
+    const batterRef = pa.batter_player_id ? { player_id: pa.batter_player_id } : before.state.expected_batter;
+    if (time_home_to_first) paPayload.attempt_id = queueAttempt(db, jobId, { attempt_type: 'home_to_first', player_id: batterRef?.player_id, tag }, actorId);
+    const paId = ins.run(jobId, nextSequence(db, jobId), 'plate_appearance', half.id, pa.batter_player_id || null, JSON.stringify(paPayload), tag.feed, tag.t, tag.c0, tag.c1, actorId).lastInsertRowid;
     audit(db, 'cmd_events', paId, actorId, 'created', describeForAudit('plate_appearance', paPayload));
-    for (const x of pitches) ins.run(jobId, nextSequence(db, jobId), 'pitch', paId, null, JSON.stringify(x), null, null, actorId);
+    for (const x of pitches) {
+      const { timecode_s: pt, ...payload } = x;
+      if (payload.pitch_type === '') delete payload.pitch_type;
+      linkReadingToPitch(db, jobId, payload, pitcherRef, actorId);
+      ins.run(jobId, nextSequence(db, jobId), 'pitch', paId, null, JSON.stringify(payload), tag.feed, pt == null ? null : Number(pt), null, null, actorId);
+    }
     for (const r of [...runners].sort((a, b) => b.from - a.from)) {
-      const rid = ins.run(jobId, nextSequence(db, jobId), 'runner', paId, r.runner_player_id || null, JSON.stringify(r), null, null, actorId).lastInsertRowid;
+      const rid = ins.run(jobId, nextSequence(db, jobId), 'runner', paId, r.runner_player_id || null, JSON.stringify(r), tag.feed, tag.t, tag.c0, tag.c1, actorId).lastInsertRowid;
       audit(db, 'cmd_events', rid, actorId, 'created', describeForAudit('runner', r));
     }
     const after = replayJob(db, jobId);
     if (after.state.half_complete && !after.state.final && !after.state.game_over_suggested) {
       const nextHalf = after.state.half === 'top' ? { inning: after.state.inning, half: 'bottom' } : { inning: after.state.inning + 1, half: 'top' };
-      const hid = ins.run(jobId, nextSequence(db, jobId), 'half_inning', null, null, JSON.stringify({ ...nextHalf, auto: true }), null, null, actorId).lastInsertRowid;
+      const hid = ins.run(jobId, nextSequence(db, jobId), 'half_inning', null, null, JSON.stringify({ ...nextHalf, auto: true }), null, null, null, null, actorId).lastInsertRowid;
       audit(db, 'cmd_events', hid, actorId, 'created', `${nextHalf.half} ${nextHalf.inning} (auto)`);
     }
     refreshLiveSource(db, jobId, actorId);
@@ -796,10 +915,7 @@ export function correctEvent(db, eventId, { payload }, actorId, note = '') {
   if (!old) throw err('Event not found or already superseded', 404);
   validatePayload(old.event_type, payload);
   const run = db.transaction(() => {
-    const id = db.prepare(
-      `INSERT INTO cmd_events (job_id, sequence, event_type, parent_event_id, player_id, payload, selected_feed_id, timecode_s, created_by)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
-    ).run(old.job_id, old.sequence, old.event_type, old.parent_event_id, payload.batter_player_id || payload.runner_player_id || payload.player_in_id || old.player_id, JSON.stringify(payload), old.selected_feed_id, old.timecode_s, actorId).lastInsertRowid;
+    const id = db.prepare(INSERT_EVENT).run(old.job_id, old.sequence, old.event_type, old.parent_event_id, payload.batter_player_id || payload.runner_player_id || payload.player_in_id || old.player_id, JSON.stringify(payload), old.selected_feed_id, old.timecode_s, old.clip_start_s, old.clip_end_s, actorId).lastInsertRowid;
     db.prepare("UPDATE cmd_events SET status = 'superseded', superseded_by = ? WHERE id = ?").run(id, old.id);
     db.prepare('UPDATE cmd_events SET parent_event_id = ? WHERE parent_event_id = ?').run(id, old.id);
     audit(db, 'cmd_events', id, actorId, 'corrected', note || `${describeForAudit(old.event_type, safeJson(old.payload))} → ${describeForAudit(old.event_type, payload)}`, String(old.payload).slice(0, 600), JSON.stringify(payload).slice(0, 600));
@@ -808,6 +924,23 @@ export function correctEvent(db, eventId, { payload }, actorId, note = '') {
   });
   const id = run();
   return { event_id: id, superseded_id: old.id, ...replayJob(db, old.job_id) };
+}
+
+// Re-point an event at the footage: feed, moment, clip bounds. Stats do not
+// change, so no re-release; the change is audited.
+export function setEventClip(db, eventId, { selected_feed_id, timecode_s, clip_start_s, clip_end_s } = {}, actorId) {
+  const ev = db.prepare("SELECT * FROM cmd_events WHERE id = ? AND status IN ('active','needs_review')").get(eventId);
+  if (!ev) throw err('Event not found or already superseded', 404);
+  const tag = tagFor(db, ev.job_id, {
+    selected_feed_id: selected_feed_id === undefined ? ev.selected_feed_id : selected_feed_id,
+    timecode_s: timecode_s === undefined ? ev.timecode_s : timecode_s,
+    clip_start_s, clip_end_s,
+  });
+  db.prepare('UPDATE cmd_events SET selected_feed_id = ?, timecode_s = ?, clip_start_s = ?, clip_end_s = ? WHERE id = ?').run(tag.feed, tag.t, tag.c0, tag.c1, eventId);
+  audit(db, 'cmd_events', eventId, actorId, 'clip_adjusted',
+    `${describeForAudit(ev.event_type, safeJson(ev.payload))} — feed ${tag.feed ?? '—'} at ${tag.t ?? '—'}s, clip ${tag.c0 ?? '—'}–${tag.c1 ?? '—'}s`,
+    JSON.stringify({ feed: ev.selected_feed_id, t: ev.timecode_s, clip: [ev.clip_start_s, ev.clip_end_s] }), JSON.stringify({ feed: tag.feed, t: tag.t, clip: [tag.c0, tag.c1] }));
+  return { event: db.prepare('SELECT * FROM cmd_events WHERE id = ?').get(eventId), ...replayJob(db, ev.job_id) };
 }
 
 // Void: supersede with no replacement (children too). History stays.

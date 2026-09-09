@@ -2,7 +2,7 @@
 // replay — no database — so every rule is a small, readable scenario.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { replay, countAfter, ratesFor, normalizeFielders } from './scorebook.js';
+import { replay, countAfter, ratesFor, normalizeFielders, validatePayload } from './scorebook.js';
 
 let seq = 0;
 const ev = (type, payload, parent = null) => { seq += 1; return { id: seq, sequence: seq, event_type: type, parent_event_id: parent, status: 'active', payload }; };
@@ -222,4 +222,34 @@ test('fielders notation normalises and rejects nonsense', () => {
   assert.deepEqual(normalizeFielders('6-3'), [6, 3]); assert.deepEqual(normalizeFielders('643'), [6, 4, 3]); assert.deepEqual(normalizeFielders([8]), [8]);
   assert.equal(normalizeFielders(''), undefined);
   assert.throws(() => normalizeFielders([0]), /1–9/);
+});
+
+test('state adjustment: the scorer can correct outs, score, bases and the batting-order pointer with a reason; it is applied at that point and surfaced to reviewers', () => {
+  const g = game(); const h = g.half(1, 'top');
+  g.pa(h, { result: 'single' });                       // Our1 on first
+  g.pa(h, { result: 'strikeout' });
+  // The scorer knows there were two outs and Our1 was actually on second, and the next batter is slot 5.
+  const adj = ev('state_adjustment', { outs: 2, bases: { 1: null, 2: { player_id: 1, label: 'Our1' } }, next_slot: { us: 5 }, score: { us: 1 }, note: 'missed a play while the camera was down' });
+  g.events.push(adj);
+  g.pa(h, { result: 'single' }, [], [{ from: 2, to: 4, how: 'scored_on_play' }]);
+  const rp = g.run();
+  assert.equal(rp.state.outs, 2);
+  assert.equal(rp.state.score.us, 2, 'the adjusted run plus the one that scored afterwards');
+  assert.deepEqual(rp.state.line_score.away.runs, [2]);
+  assert.equal(S(rp, 'p:5').bs_h, 1, 'slot 5 batted next as the scorer said');
+  assert.equal(S(rp, 'p:1').bs_r, 1, 'Our1 came around from the adjusted base');
+  const info = rp.issues.find(i => i.code === 'state_adjusted');
+  assert.ok(info && info.level === 'info' && /outs 1→2/.test(info.message) && /2B → Our1/.test(info.message) && /camera was down/.test(info.message));
+  assert.ok(rp.log.some(l => l.type === 'state_adjustment' && /State adjusted: outs 1→2/.test(l.text)));
+  // setting three outs ends the half like a third out would
+  const g2 = game(); const h2 = g2.half(1, 'top');
+  g2.pa(h2, { result: 'single' });
+  g2.events.push(ev('state_adjustment', { outs: 3, note: 'inning ended on a play the log missed' }));
+  const rp2 = g2.run();
+  assert.equal(rp2.state.half_complete, true); assert.equal(rp2.state.line_score.away.lob, 1);
+  // validation: a reason and at least one change are required
+  assert.throws(() => validatePayload('state_adjustment', { outs: 1 }), /needs a reason/);
+  assert.throws(() => validatePayload('state_adjustment', { note: 'just because' }), /must change/);
+  assert.throws(() => validatePayload('state_adjustment', { outs: 4, note: 'four outs' }), /0–3/);
+  assert.throws(() => validatePayload('state_adjustment', { bases: { 4: null }, note: 'fourth base' }), /1, 2, 3/);
 });
