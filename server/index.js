@@ -477,10 +477,17 @@ function buildProfilePayload(player) {
   // "pending" rather than an empty box score (roadmap §6.2).
   const games = db.prepare(
     `SELECT g.id, g.game_date, g.game_type, g.opponent, g.location, g.notes,
-            CASE WHEN g.command_job_id IS NOT NULL AND j.game_record_status NOT IN ('released', 'not_ordered') THEN 1 ELSE 0 END AS box_score_pending
-       FROM games g LEFT JOIN cmd_jobs j ON j.id = g.command_job_id
+            CASE WHEN g.command_job_id IS NOT NULL AND j.game_record_status NOT IN ('released', 'not_ordered') THEN 1 ELSE 0 END AS box_score_pending,
+            CASE WHEN j.game_record_status = 'released' THEN r.us_runs END AS result_us,
+            CASE WHEN j.game_record_status = 'released' THEN r.them_runs END AS result_them,
+            CASE WHEN j.game_record_status = 'released' THEN r.winner END AS result_winner
+       FROM games g LEFT JOIN cmd_jobs j ON j.id = g.command_job_id LEFT JOIN cmd_game_results r ON r.job_id = g.command_job_id
       WHERE g.player_id = ? ORDER BY g.game_date ASC, g.id ASC`
-  ).all(player.id);
+  ).all(player.id).map(({ result_us, result_them, result_winner, ...g }) => ({
+    ...g,
+    // The published game result (from a validated live scorebook): W 5–3 from the player's side.
+    result: result_us == null ? null : { us: result_us, them: result_them, outcome: result_winner === 'us' ? 'W' : result_winner === 'them' ? 'L' : 'T' },
+  }));
   const entries = db.prepare(
     `SELECT s.metric_key, s.value, g.game_date, g.id AS game_id FROM stat_entries s
      JOIN games g ON g.id = s.game_id

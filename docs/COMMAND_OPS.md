@@ -516,6 +516,22 @@ both as running attempts at the tagged moment on the selected feed — the
 running queue measures them as usual. Only modules the order activated are
 offered; opponents are labels and cannot be timed or matched.
 
+Innings pitched are stored as **outs** (`bs_outs`, appendix rule) on the
+profile and in imports — "5.2" in a GameChanger export becomes 17 outs — and
+displayed in thirds again (`IP 5.2`). Season innings therefore add up
+correctly (4.2 + 4.2 = 9.1, not 9.4). Older `bs_ip` rows convert once at boot
+(`stat_entries_ip_to_outs`). The profile's Game Summary groups the stored
+fields into batting / pitching / fielding with the appendix rates (AVG, OBP,
+SLG, OPS; ERA, WHIP, K/9, BB/9; FPCT), three decimals, blank when there is
+nothing to divide by.
+
+The game itself publishes with the record: when a validated live scorebook is
+among the sources and the game is final, the release writes
+`cmd_game_results` (score, winner, final reason, line score, team R/H/E/LOB),
+rewritten on every re-release. The player profile shows it as `W 5–3` on the
+game row; the job page shows the final. Import-only records carry player
+lines only, so they publish no result.
+
 Publishing: the scorebook is the job's `live_internal` game-record source.
 It validates once the game is final with no blocking issues, and releases
 through the same **Game record → validated → released** path as an import.
@@ -560,6 +576,32 @@ the half and the scorer has not ruled, the run is flagged
 `er_needs_judgment` and that pitcher's ER is **withheld from the live record
 until ruled** (`unearned: true|false` on the run) — a value under review is
 never published as a guess.
+
+### 3.16 Phase 2 acceptance matrix
+
+Roadmap Phase 2 gate: *ordinary game corrections are auditable; scorebook-derived
+stats are clearly distinguished from measured/estimated metrics.* The
+reviewer's four bullets map onto it as below. Each row names the automated
+test that pins the behaviour and how to see it in Command.
+
+| Requirement | Where it lives | Automated test | See it in Command |
+|---|---|---|---|
+| Full-game tagging workspace: lineups, inning/count/outs/base state, pitch and play outcomes, substitutions, runner events | `server/scorebook.js` replay; `ScorebookPage` | `scorebook.test.js` "scoring through the API", "inherited runners", "courtesy runner and re-entry"; `phase1Acceptance.test.js` §7.7b | Job → **Scorebook →**: lineups, pitch keys, result panel, runner plays, Substitution |
+| Corrections are auditable | supersede in place, children re-parented, audit prev/new | `scorebook.test.js` "correction", "void"; `phase1Acceptance.test.js` §7.6 | Play by play → Correct / Void; job page Audit trail rows `corrected` / `voided` |
+| Needs-review flags exclude disputed plays | `needs_review` status, `unresolved_scoring_judgment` QA flag | `scorebook.test.js` "dispute" | Play by play → Dispute (with reason) → box score drops the play; Resolve restores it |
+| Engine: batting, pitching, fielding, team and game totals with rules and edge cases | appendix contract in the engine | `scorebookContract.test.js` (11 rules) | Box score tab: batting / pitching / fielding tables with rates; line score on the scoreboard |
+| Count rebuilt from pitches; disagreements flagged, never fixed silently | `countAfter`, `count_mismatch` | `scorebookContract.test.js` "count mismatches are flagged" | Issues under the scoreboard |
+| Earned-run judgment withheld until ruled | `er_needs_judgment`, ER held from the live record | `scorebook.test.js` "an earned run awaiting the scorer's ruling…" | ER shows `1?` until the run is ruled earned/unearned |
+| Two releases: verified metrics publish before the box score; corrections reconcile | metric release vs `live_internal` game record; re-release on correction | `scorebook.test.js` "the live scorebook validates only when final…", "the game result publishes…" | Job page: Metrics → released while Game record → pending; correction after release re-releases |
+| Scorebook-derived stats clearly distinguished | `method = 'scorebook_derived'` on every entry; profile game rows | `gameRecord.test.js`, `phase1Acceptance.test.js` §7.9b | Profile Game Summary vs Key Metrics; job page Game record sources |
+| Link tagged events to video evidence | feed + moment + clip on every event; markers; ▶ jump; clip editor | `scorebook.test.js` "tagging: plays carry feed, moment and a default clip…" | Scorebook with a ready feed: Footage panel, play-by-play ▶ times, Clip |
+| Link tagged events to internal metrics | radar reading on a pitch → matched to the pitcher; timing attempts from plays | `scorebook.test.js` "internal metrics on plays…" | Pitch type / reading selects; "queue home-to-first timing"; SB → steal timing; running queue |
+| Derived state can be corrected with a reason | `state_adjustment` event, `state_adjusted` info issue | `scorebookContract.test.js` "state adjustment…", `scorebook.test.js` "a state adjustment needs a half inning…" | Scoreboard → Fix state |
+| Public-profile correction propagation (item 4) | resync clears synthetic jobs' values; boot reconciliation | `syntheticProfile.test.js`, `resultLifecycle.test.js` | Radar queue: invalidate → profile value gone at once; restore → back once |
+| Innings stored as outs; season totals add correctly | `bs_outs`, catalog `display: 'innings'` | `gameRecord.test.js` parser ("4.2 innings are fourteen outs"), `aggregates.test.js` | Profile Game Summary IP column and pitching rates |
+| Game result published with the record | `cmd_game_results` | `scorebook.test.js` "the game result publishes with the record…" | Profile game row `W 5–3`; job page "Final · …" |
+
+Run everything with `node --test server/*.test.js`. Prod verification after each deploy uses the synthetic job (badge on the job page); nothing it publishes reaches a profile.
 
 ---
 

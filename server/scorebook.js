@@ -537,7 +537,7 @@ export function replay(events, { ruleset = {}, disputed = new Set() } = {}) {
         entry.pitches = pitches.map(k => ({ id: k.id, result: k.payload?.result, pitch_type: k.payload?.pitch_type || null, radar_reading_id: k.payload?.radar_reading_id || null, velocity: k.velocity ?? null, timecode_s: k.timecode_s ?? null }));
         const velos = entry.pitches.map(x => x.velocity).filter(v => v != null);
         entry.attempt_id = p.attempt_id || null;
-        entry.text = `${batter.label || `#${batter.player_id}`}: ${res.replace(/_/g, ' ')}${(p.rbi ?? rbi) ? `, ${p.rbi ?? rbi} RBI` : ''}${pitchCount ? ` (${pitchCount} pitch${pitchCount === 1 ? '' : 'es'}${velos.length ? `, ${Math.max(...velos)} mph` : ''})` : ''}`;
+        entry.text = `${batter.label || `#${batter.player_id}`}: ${res.replace(/_/g, ' ')}${(p.rbi ?? rbi) ? `, ${p.rbi ?? rbi} RBI` : ''}${pitchCount ? ` (${pitchCount} pitch${pitchCount === 1 ? '' : 'es'}${velos.length ? `, ${Math.max(...velos)} mph` : ''})` : ''}${p.attempt_id ? ' · timing queued' : ''}`;
         endHalfIfDone(e);
         break;
       }
@@ -711,7 +711,8 @@ export function liveRecordReport(db, jobId) {
   const rows = rp.tallies.filter(t => t.player_id).map(t => {
     // Publish what the log supports: non-zero box-score fields (PA always), and
     // never an earned-run figure the scorer has not ruled on yet.
-    const stats = Object.fromEntries(Object.entries(t.stats).filter(([k, v]) => (k.startsWith('bs_') && v !== 0 || k === 'bs_pa') && !(k === 'bs_er' && t.er_uncertain)));
+    const stats = Object.fromEntries(Object.entries(t.stats).filter(([k, v]) => (k.startsWith('bs_') && v !== 0 || k === 'bs_pa') && k !== 'bs_ip' && !(k === 'bs_er' && t.er_uncertain)));
+    if (t.outs_pitched > 0) stats.bs_outs = t.outs_pitched;   // innings are stored as outs; the display shows thirds
     return { key: `live:${t.player_id}`, group: 'scorebook', row: null, jersey: rosterById.get(t.player_id)?.jersey || '', name: t.name || t.label, stats, player_id: t.player_id, player_name: t.name || t.label, resolved_by: 'scorebook', skipped: false };
   });
   const blocking = rp.issues.filter(i => i.level === 'blocking');

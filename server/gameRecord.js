@@ -13,7 +13,7 @@
 // could not place instead of guessing.
 import { resyncPublishedRollups } from './releaseLogic.js';
 import { commandRoster } from './commandRoster.js';
-import { liveRecordReport, setGameRecordReleaseHook } from './scorebook.js';
+import { liveRecordReport, setGameRecordReleaseHook, replayJob, refreshLiveSource } from './scorebook.js';
 
 const norm = s => String(s ?? '').trim();
 const key = s => norm(s).toLowerCase().replace(/[^a-z0-9#%/+-]+/g, '');
@@ -21,17 +21,31 @@ const key = s => norm(s).toLowerCase().replace(/[^a-z0-9#%/+-]+/g, '');
 // Column aliases → box-score metric keys, per stat group. Labels that appear
 // in more than one group (H, R, BB, SO) resolve by the block's group.
 const BATTING = {
-  pa: 'bs_pa', ab: 'bs_ab', r: 'bs_r', runs: 'bs_r', h: 'bs_h', hits: 'bs_h', '2b': 'bs_2b', doubles: 'bs_2b',
-  '3b': 'bs_3b', triples: 'bs_3b', hr: 'bs_hr', rbi: 'bs_rbi', bb: 'bs_bb', walks: 'bs_bb', so: 'bs_k', k: 'bs_k',
-  strikeouts: 'bs_k', hbp: 'bs_hbp', sb: 'bs_sb',
+  pa: 'bs_pa', ab: 'bs_ab', r: 'bs_r', runs: 'bs_r', h: 'bs_h', hits: 'bs_h', '1b': 'bs_1b', '2b': 'bs_2b', doubles: 'bs_2b',
+  '3b': 'bs_3b', triples: 'bs_3b', hr: 'bs_hr', tb: 'bs_tb', rbi: 'bs_rbi', bb: 'bs_bb', walks: 'bs_bb', ibb: 'bs_ibb', so: 'bs_k', k: 'bs_k',
+  strikeouts: 'bs_k', hbp: 'bs_hbp', sac: 'bs_sh', sh: 'bs_sh', sf: 'bs_sf', roe: 'bs_roe', fc: 'bs_fc', lob: 'bs_lob', sb: 'bs_sb', cs: 'bs_cs', pik: 'bs_pk',
 };
+// Innings pitched arrive in thirds notation ("5.2"); they are stored as outs
+// (appendix: "IP … must be stored as outs internally, not a decimal innings value").
 const PITCHING = {
-  ip: 'bs_ip', bf: 'bs_bf', h: 'bs_ha', r: 'bs_ra', er: 'bs_er', bb: 'bs_bba', so: 'bs_kp', k: 'bs_kp', hr: 'bs_hra',
-  '#p': 'bs_pitches', p: 'bs_pitches', pitches: 'bs_pitches', np: 'bs_pitches',
+  ip: 'bs_outs', bf: 'bs_bf', h: 'bs_ha', r: 'bs_ra', er: 'bs_er', bb: 'bs_bba', ibb: 'bs_ibba', hbp: 'bs_hbpa', so: 'bs_kp', k: 'bs_kp', hr: 'bs_hra',
+  '#p': 'bs_pitches', p: 'bs_pitches', pitches: 'bs_pitches', np: 'bs_pitches', gs: 'bs_gs', wp: 'bs_wp', bk: 'bs_bk', ir: 'bs_ir', irs: 'bs_irs',
 };
-const FIELDING = { e: 'bs_e', errors: 'bs_e' };
+const FIELDING = { e: 'bs_e', errors: 'bs_e', po: 'bs_po', a: 'bs_a', dp: 'bs_dp', pb: 'bs_pb' };
 const IDENTITY = new Set(['number', 'no', 'no.', '#', 'jersey', 'last', 'first', 'player', 'name', 'lastname', 'firstname']);
+// Rates and records derive from the counts; they are never imported. Count
+// columns that only mean something in one block (TB in a pitching block, A in
+// a batting block) fall through to this list too, so they read as ignored
+// rather than unknown.
 const DERIVED_IGNORED = new Set(['gp', 'gs', 'avg', 'obp', 'ops', 'slg', 'era', 'whip', 'w', 'l', 'sv', 'svo', 'bs', 'hld', 'tb', 'xbh', 'lob', 'qab', 'ps', 'ps/pa', 'c%', 'sb%', 'fpct', 'ab/hr', 'bb/k', 'k-l', 'sac', 'sf', 'roe', 'fc', 'cs', 'pik', 'gidp', 'gitp', '1b', 'ts', 'tc', 'a', 'po', 'dp', 'tp', 'bb%', 'k%', 'babip', 'ip/gs']);
+
+// "5.2" (five and two thirds) → 17 outs. Decimal innings (5.67) land on the
+// same count; anything past two thirds is clamped, never rounded up an inning.
+export function ipToOuts(ip) {
+  const whole = Math.floor(ip);
+  const frac = Math.round((ip - whole) * 10);
+  return whole * 3 + Math.min(Math.max(frac, 0), 2);
+}
 
 function splitCsvLine(line) {
   const out = [];
@@ -103,7 +117,7 @@ export function parseBoxScoreCsv(content) {
         else identity.name = norm(v);
       } else if (col.kind === 'stat') {
         const n = parseStat(v);
-        if (n != null) { stats[col.key] = (stats[col.key] ?? 0) + n; anyStat = true; }
+        if (n != null) { stats[col.key] = (stats[col.key] ?? 0) + (col.key === 'bs_outs' ? ipToOuts(n) : n); anyStat = true; }
       }
     });
     if (!identity.jersey && !identity.last && !identity.name) continue;
@@ -126,9 +140,6 @@ function blockColumns(block) {
   return map;
 }
 
-// Innings pitched arrive as "5.2" (5 and two thirds) in GameChanger exports —
-// keep the notation as-is for bs_ip (the catalog documents thirds); every
-// other stat is an integer count.
 function parseStat(v) {
   const s = norm(v);
   if (s === '' || s === '-') return null;
@@ -251,6 +262,11 @@ export function gameRecordPlan(db, jobId) {
 export function releaseGameRecord(db, jobId, actorId = null) {
   const job = db.prepare('SELECT * FROM cmd_jobs WHERE id = ?').get(jobId);
   if (!job) throw Object.assign(new Error('Job not found'), { status: 404 });
+  // A live scorebook's stored report is a snapshot taken at the last event or
+  // validation. A release must publish the replay as it is now — including
+  // fields the engine learned since — so refresh it first. (A reopened game
+  // drops back to validating and simply stops being a source.)
+  if (db.prepare("SELECT 1 FROM cmd_game_record_sources WHERE job_id = ? AND source_kind = 'live_internal'").get(jobId)) refreshLiveSource(db, jobId, actorId);
   const { sources, players } = gameRecordPlan(db, jobId);
   if (sources.length === 0) throw Object.assign(new Error('No validated game-record source on this job — validate a GameChanger export or manual box score first'), { status: 400 });
   const synthetic = !!db.prepare('SELECT synthetic FROM cmd_orders WHERE id = ?').get(job.order_id)?.synthetic;
@@ -290,9 +306,25 @@ export function releaseGameRecord(db, jobId, actorId = null) {
     } else {
       for (const p of players) for (const [k, v] of Object.entries(p.stats)) written.push({ player_id: p.player_id, metric_key: k, value: v, withheld: 'synthetic' });
     }
+    // The game itself: score, line score and team totals come from the live
+    // scorebook when it is one of the validated sources and the game is final.
+    // Imports carry player lines only, so a record without a scorebook has no
+    // published result. Rewritten on every release; withheld for synthetic jobs.
+    const liveSource = sources.find(src => src.source_kind === 'live_internal');
+    const rp = liveSource ? replayJob(db, jobId) : null;
+    if (!synthetic && rp?.state.final) {
+      const st = rp.state;
+      db.prepare(`INSERT INTO cmd_game_results (job_id, source_id, us_runs, them_runs, winner, final_reason, line_score, team, released_at)
+                  VALUES (?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+                  ON CONFLICT (job_id) DO UPDATE SET source_id = excluded.source_id, us_runs = excluded.us_runs, them_runs = excluded.them_runs, winner = excluded.winner,
+                    final_reason = excluded.final_reason, line_score = excluded.line_score, team = excluded.team, released_at = excluded.released_at`)
+        .run(jobId, liveSource.id, st.score.us, st.score.them, st.result.winner, st.final.reason, JSON.stringify(st.line_score), JSON.stringify(st.team));
+    } else {
+      db.prepare('DELETE FROM cmd_game_results WHERE job_id = ?').run(jobId);
+    }
     db.prepare(
       "INSERT INTO cmd_review_actions (target_table, target_id, actor_id, action, note, prev_state, new_state) VALUES ('cmd_jobs', ?, ?, 'game_record_released', ?, '', 'released')"
-    ).run(jobId, actorId, `${written.length} box-score entr${written.length === 1 ? 'y' : 'ies'} for ${players.length} player${players.length === 1 ? '' : 's'} from ${sources.length} validated source${sources.length === 1 ? '' : 's'}${synthetic ? ' — withheld from profiles (synthetic job)' : ''}`);
+    ).run(jobId, actorId, `${written.length} box-score entr${written.length === 1 ? 'y' : 'ies'} for ${players.length} player${players.length === 1 ? '' : 's'} from ${sources.length} validated source${sources.length === 1 ? '' : 's'}${rp?.state.final && !synthetic ? ` · final ${rp.state.score.us}–${rp.state.score.them}` : ''}${synthetic ? ' — withheld from profiles (synthetic job)' : ''}`);
   });
   run();
   // Metric rollups are untouched by design; resync is a no-op unless something drifted.

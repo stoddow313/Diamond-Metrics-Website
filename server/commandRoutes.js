@@ -109,7 +109,8 @@ export function mountCommandRoutes(app, { db, requireInternal }) {
       const { parsed_report: _pr, resolutions: _rs, ...rest } = g;
       return { ...rest, report, has_content: g.source_kind === 'live_internal' || !!(g.raw_import && String(g.raw_import).trim()) };   // the live scorebook's content is the event log
     });
-    return { ...job, requirements, audit: auditTrail, notifications, game_record_sources: gameRecordSources };
+    const gameResult = db.prepare('SELECT * FROM cmd_game_results WHERE job_id = ?').get(id) || null;
+    return { ...job, requirements, audit: auditTrail, notifications, game_record_sources: gameRecordSources, game_result: gameResult ? { ...gameResult, line_score: JSON.parse(gameResult.line_score || '{}'), team: JSON.parse(gameResult.team || '{}') } : null };
   }
 
   app.get('/api/command/jobs/:id', requireInternal, (req, res) => {

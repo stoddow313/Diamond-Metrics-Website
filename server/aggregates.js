@@ -153,7 +153,10 @@ export function deriveRates(box) {
     k_bb_pitching: div(box.bs_kp, box.bs_bba),      // pitching K per BB
     runs_scored: box.bs_r, runs_allowed: box.bs_ra,
     stolen_bases: box.bs_sb, errors: box.bs_e,
-    pa: box.bs_pa, ab: box.bs_ab, ip: box.bs_ip, bf: box.bs_bf,
+    pa: box.bs_pa, ab: box.bs_ab, bf: box.bs_bf,
+    ip: box.bs_outs == null ? null : box.bs_outs / 3,                              // stored as outs (appendix)
+    era: box.bs_outs ? div(9 * (box.bs_er ?? 0), box.bs_outs / 3) : null,
+    whip: box.bs_outs ? div((box.bs_bba ?? 0) + (box.bs_ha ?? 0), box.bs_outs / 3) : null,
   };
 }
 

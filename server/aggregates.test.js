@@ -70,7 +70,7 @@ before(() => {
   addGame(P.slugger, '2026-06-10', { bs_pa: 4, bs_ab: 4, bs_h: 2, bs_hr: 2, bs_k: 2, avg_exit_velo: 92, max_exit_velo: 103 });
   addGame(P.slugger, '2026-06-11', { bs_pa: 3, bs_ab: 3, bs_h: 0, bs_k: 2, avg_exit_velo: 85, max_exit_velo: 97 });
   addGame(P.guest, '2026-06-10', { bs_pa: 4, bs_ab: 4, bs_h: 2, avg_exit_velo: 86, max_exit_velo: 94, home_to_first: 4.10 });
-  addGame(P.pitcher, '2026-06-11', { bs_ip: 4, bs_kp: 6, bs_bba: 1, strike_pct: 68, max_velo: 84, avg_velo: 80 });
+  addGame(P.pitcher, '2026-06-11', { bs_outs: 12, bs_kp: 6, bs_bba: 1, strike_pct: 68, max_velo: 84, avg_velo: 80 });
   // Pro Day inside the window — must stay out of game aggregates.
   addGame(P.hitter, '2026-06-11', { max_exit_velo: 105 }, 'pro_day');
   // Out-of-window game (season, not tournament).
