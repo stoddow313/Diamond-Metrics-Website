@@ -537,7 +537,7 @@ export function replay(events, { ruleset = {}, disputed = new Set() } = {}) {
         entry.pitches = pitches.map(k => ({ id: k.id, result: k.payload?.result, pitch_type: k.payload?.pitch_type || null, radar_reading_id: k.payload?.radar_reading_id || null, velocity: k.velocity ?? null, timecode_s: k.timecode_s ?? null }));
         const velos = entry.pitches.map(x => x.velocity).filter(v => v != null);
         entry.attempt_id = p.attempt_id || null;
-        entry.text = `${batter.label || `#${batter.player_id}`}: ${res.replace(/_/g, ' ')}${(p.rbi ?? rbi) ? `, ${p.rbi ?? rbi} RBI` : ''}${pitchCount ? ` (${pitchCount} pitch${pitchCount === 1 ? '' : 'es'}${velos.length ? `, ${Math.max(...velos)} mph` : ''})` : ''}`;
+        entry.text = `${batter.label || `#${batter.player_id}`}: ${res.replace(/_/g, ' ')}${(p.rbi ?? rbi) ? `, ${p.rbi ?? rbi} RBI` : ''}${pitchCount ? ` (${pitchCount} pitch${pitchCount === 1 ? '' : 'es'}${velos.length ? `, ${Math.max(...velos)} mph` : ''})` : ''}${p.attempt_id ? ' · timing queued' : ''}`;
         endHalfIfDone(e);
         break;
       }
