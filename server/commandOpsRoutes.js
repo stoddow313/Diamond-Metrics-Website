@@ -158,6 +158,7 @@ export function mountCommandOpsRoutes(app, { db, requireInternal, createJob }) {
           tournament_game_id: p.tournament_game_id,
           event_label: tournament.name,
           package_key: b.package_key,
+          regulation_innings: b.regulation_innings,
           addon_codes: b.addon_codes,
           assigned_to: b.assigned_to,
           due_date: b.due_date,

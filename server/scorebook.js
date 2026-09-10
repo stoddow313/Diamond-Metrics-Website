@@ -128,6 +128,7 @@ export function validatePayload(type, p = {}) {
       need(Array.isArray(p.slots) && p.slots.length >= 1, 'lineup needs at least one slot');
       p.slots.forEach((s, i) => need(Number.isInteger(s.slot) && s.slot >= 1, `slot ${i + 1} needs a batting-order number`));
       if (p.side === 'us') need(typeof p.us_is_home === 'boolean', 'the us lineup must say whether we are home (us_is_home)');
+      if (p.pitcher_unknown_reason != null) need(typeof p.pitcher_unknown_reason === 'string' && p.pitcher_unknown_reason.trim().length >= 3, 'pitcher_unknown_reason needs a few words');
       return;
     case 'half_inning':
       need(Number.isInteger(p.inning) && p.inning >= 1, 'half_inning.inning must be a positive integer');
@@ -161,9 +162,11 @@ export function validatePayload(type, p = {}) {
       if (['pinch_hitter', 'defensive', 're_entry'].includes(p.kind)) need(Number.isInteger(p.slot), `${p.kind} needs the lineup slot`);
       if (['pinch_runner', 'courtesy_runner'].includes(p.kind)) need([1, 2, 3].includes(p.base), `${p.kind} needs the base (1–3)`);
       need(p.player_in_id || p.player_in_label, 'substitution needs the incoming player');
+      if (p.side === 'us') need(Number.isInteger(p.player_in_id) && p.player_in_id > 0, 'Our substitutions must name a rostered player (guests included) — labels are for the opponent');
       return;
     case 'game_final':
       need(FINAL_REASONS.includes(p.reason), `reason must be one of ${FINAL_REASONS.join(', ')}`);
+      if (p.reason !== 'regulation') need(typeof p.note === 'string' && p.note.trim().length >= 3, `Ending a game by ${p.reason.replace(/_/g, ' ')} needs an audit note`);
       return;
     case 'state_adjustment': {
       need(typeof p.note === 'string' && p.note.trim().length >= 3, 'a state adjustment needs a reason (note)');
@@ -221,7 +224,9 @@ export function replay(events, { ruleset = {}, disputed = new Set() } = {}) {
     team: { us: { r: 0, h: 0, e: 0, lob: 0 }, them: { r: 0, h: 0, e: 0, lob: 0 } },
     half_misplay: null,                                                 // first error / passed ball by the defense this half
     pitching_started: { us: false, them: false },                       // GS bookkeeping
+    pitcher_unknown_reason: null,                                       // audited exception when our starter is not identified
   };
+  let pitcherFlagged = false;
   const tallies = new Map();
   const names = new Map();
   const erUncertain = new Set();   // pitchers with a run whose earned status awaits scorer judgment
@@ -296,6 +301,7 @@ export function replay(events, { ruleset = {}, disputed = new Set() } = {}) {
     const ls = state.line_score[state.batting];
     while (ls.length < state.inning) ls.push(0);
     ls[state.inning - 1] += 1;
+    refreshGameOver();   // a walk-off ends the game mid-half
     if (isDisputed(e)) return;
     tally(runner.ref).bs_r += 1;
     if (runner.responsible) {
@@ -318,21 +324,42 @@ export function replay(events, { ruleset = {}, disputed = new Set() } = {}) {
     const p = state.pitcher[fieldingSide()];
     if (p && !isDisputed(e)) tally(p).outs_pitched += 1;
   };
+  // Has the scheduled length been played out? Regulation is reached when the
+  // final (or an extra) inning is complete with a leader, when the home team
+  // leads after the top of the final inning (no bottom needed), or on a
+  // walk-off: the home team takes the lead in the bottom of the final inning.
+  const regulationStatus = () => {
+    const homeSide = state.us_is_home ? 'us' : 'them';
+    const awaySide = homeSide === 'us' ? 'them' : 'us';
+    const lead = state.score[homeSide] - state.score[awaySide];
+    if (!state.half || state.inning < innings) return { reached: false, why: `${innings} innings scheduled — ${state.half ? `${state.half} ${state.inning}` : 'not started'}` };
+    if (state.half === 'top') {
+      if (state.half_complete && lead > 0) return { reached: true, why: 'home team leads after the top of the final inning' };
+      return { reached: false, why: state.half_complete ? `bottom of the ${state.inning}${state.inning > innings ? ' (extra inning)' : ''} still to play` : `top ${state.inning} in progress` };
+    }
+    if (lead > 0) return { reached: true, why: state.half_complete ? `${state.inning} innings complete` : 'walk-off — home team took the lead in the final half' };
+    if (state.half_complete) return lead < 0 ? { reached: true, why: `${state.inning} innings complete` } : { reached: false, why: `tied after ${state.inning} innings — extra innings` };
+    return { reached: false, why: `bottom ${state.inning} in progress` };
+  };
+  // Suggestions only: the scorer decides and documents the end of the game.
+  const refreshGameOver = () => {
+    const homeSide = state.us_is_home ? 'us' : 'them';
+    const awaySide = homeSide === 'us' ? 'them' : 'us';
+    const lead = state.score[homeSide] - state.score[awaySide];
+    const completedInning = state.half === 'bottom' && state.half_complete ? state.inning : state.inning - 1;
+    const rr = state.half_complete ? (ruleset.run_rule || []).find(r => completedInning >= r.after_inning && Math.abs(lead) >= r.margin && (state.half === 'bottom' || lead < 0)) : null;
+    const reg = regulationStatus();
+    if (rr) state.game_over_suggested = { reason: 'run_rule', detail: `${Math.abs(lead)}-run margin after ${completedInning} innings — confirm the event's run rule and document it` };
+    else if (reg.reached) state.game_over_suggested = { reason: 'regulation', detail: reg.why };
+    else state.game_over_suggested = null;
+  };
   const endHalfIfDone = () => {
     if (state.outs >= 3) {
       state.half_complete = true;
       state.team[state.batting].lob += runnersOn();
       state.bases = { 1: null, 2: null, 3: null };
       if (state.half === 'bottom') state.innings_completed = state.inning;
-      // game-over suggestions from the ruleset
-      const homeSide = state.us_is_home ? 'us' : 'them';
-      const awaySide = homeSide === 'us' ? 'them' : 'us';
-      const lead = state.score[homeSide] - state.score[awaySide];
-      const completedInning = state.half === 'bottom' ? state.inning : state.inning - 1;
-      const rr = (ruleset.run_rule || []).find(r => completedInning >= r.after_inning && Math.abs(lead) >= r.margin && (state.half === 'bottom' || lead < 0));
-      if (rr) state.game_over_suggested = { reason: 'run_rule', detail: `${Math.abs(lead)}-run margin after ${completedInning} innings` };
-      else if (state.half === 'bottom' && state.inning >= innings && lead !== 0) state.game_over_suggested = { reason: 'regulation', detail: `${state.inning} innings complete` };
-      else if (state.half === 'top' && state.inning >= innings && lead > 0) state.game_over_suggested = { reason: 'regulation', detail: 'home team leads after the top of the final inning' };
+      refreshGameOver();
     }
   };
 
@@ -349,7 +376,7 @@ export function replay(events, { ruleset = {}, disputed = new Set() } = {}) {
         });
         state.lineups[p.side] = { slots, dh: !!p.dh };
         for (const s of slots) { state.starters[p.side].add(refKey(s.starter)); state.used[p.side].add(refKey(s.starter)); names.set(refKey(s.starter), s.starter); tally(s.starter).bs_g = 1; }
-        if (p.side === 'us') state.us_is_home = !!p.us_is_home;
+        if (p.side === 'us') { state.us_is_home = !!p.us_is_home; state.pitcher_unknown_reason = p.pitcher_unknown_reason?.trim() || null; }
         if (p.pitcher_player_id || p.pitcher_label) state.pitcher[p.side] = mkRef(p.side, p.pitcher_player_id, p.pitcher_label);
         else { const pit = slots.find(s => (s.position || '').toUpperCase() === 'P'); if (pit) state.pitcher[p.side] = pit.starter; }
         entry.text = `${p.side === 'us' ? 'Our' : 'Their'} lineup: ${slots.length} slots${state.pitcher[p.side] ? `, ${state.pitcher[p.side].label || 'pitcher'} pitching` : ''}`;
@@ -363,7 +390,14 @@ export function replay(events, { ruleset = {}, disputed = new Set() } = {}) {
         const awaySide = state.us_is_home ? 'them' : 'us';
         state.batting = p.half === 'top' ? awaySide : (awaySide === 'us' ? 'them' : 'us');
         if (!state.lineups[state.batting]) issue('lineup_missing', 'blocking', e, `${state.batting === 'us' ? 'Our' : 'Their'} lineup is missing`);
-        if (!state.pitcher[fieldingSide()]) issue('pitcher_missing', 'warning', e, `No pitcher set for ${fieldingSide() === 'us' ? 'us' : 'them'} — pitching stats cannot be attributed`);
+        if (!state.pitcher[fieldingSide()]) {
+          if (fieldingSide() === 'them') issue('pitcher_missing', 'warning', e, 'No pitcher set for them — their pitching line will not be kept');
+          else if (!pitcherFlagged) {
+            pitcherFlagged = true;
+            if (state.pitcher_unknown_reason) issue('pitcher_unknown_excepted', 'warning', e, `Our pitcher is not identified — audited exception: ${state.pitcher_unknown_reason}. No pitching statistics will publish for us`);
+            else issue('pitcher_unknown', 'blocking', e, 'Our starting pitcher is not identified — set the pitcher (it applies to every pitch already scored) or record an audited unknown-pitcher exception before the record can be finalized');
+          }
+        }
         // extra-inning tiebreaker: runner on second
         if (p.inning > innings && ruleset.tiebreaker === 'runner_on_second') {
           const lu = state.lineups[state.batting];
@@ -592,11 +626,14 @@ export function replay(events, { ruleset = {}, disputed = new Set() } = {}) {
         endHalfIfDone(e);
         break;
       }
-      case 'game_final':
+      case 'game_final': {
         state.final = { reason: p.reason, note: p.note || '', event_id: e.id };
-        if (!state.half_complete && state.outs > 0 && state.outs < 3 && p.reason === 'regulation') issue('final_mid_inning', 'warning', e, 'Game marked final mid-inning');
+        const reg = regulationStatus();
+        if (p.reason === 'regulation' && !reg.reached) issue('final_before_regulation', 'blocking', e, `Marked final as regulation but the scheduled length was not reached: ${reg.why}`);
+        if (p.reason !== 'regulation' && !(p.note && p.note.trim().length >= 3)) issue('final_reason_undocumented', 'blocking', e, `Ended by ${p.reason.replace(/_/g, ' ')} without an audit note`);
         entry.text = `Final — ${p.reason.replace(/_/g, ' ')}${p.note ? `: ${p.note}` : ''}`;
         break;
+      }
       default:
         entry.text = e.event_type;
     }
@@ -626,6 +663,7 @@ export function replay(events, { ruleset = {}, disputed = new Set() } = {}) {
     upcoming,
     pitching_started: undefined,
     result: state.final ? { us: state.score.us, them: state.score.them, winner: state.score.us === state.score.them ? 'tie' : (state.score.us > state.score.them ? 'us' : 'them') } : null,
+    regulation: { innings, ...regulationStatus() },
     line_score: {
       innings: Math.max(state.line_score.us.length, state.line_score.them.length, state.inning || 0),
       away: { side: awaySide, runs: state.line_score[awaySide], ...state.team[awaySide] },
@@ -659,7 +697,10 @@ const safeJson = s => { try { return typeof s === 'string' ? JSON.parse(s || '{}
 export function rulesetFor(db, job) {
   const row = job.ruleset_id ? db.prepare('SELECT config FROM rulesets WHERE id = ?').get(job.ruleset_id)
     : db.prepare("SELECT config FROM rulesets WHERE key = 'baseball_default'").get();
-  return safeJson(row?.config);
+  const cfg = safeJson(row?.config);
+  // The job's scheduled length (set at job setup) wins over the ruleset default.
+  const scheduled = Number(job.regulation_innings);
+  return { ...cfg, innings: Number.isInteger(scheduled) && scheduled > 0 ? scheduled : (cfg.innings || 7) };
 }
 
 export function replayJob(db, jobId) {
@@ -682,6 +723,8 @@ export function replayJob(db, jobId) {
     if (lu) for (const s of lu.slots) for (const k of ['current', 'starter']) if (s[k]?.player_id) s[k].name = names.get(s[k].player_id) || s[k].label;
   }
   if (result.state.expected_batter?.player_id) result.state.expected_batter.name = names.get(result.state.expected_batter.player_id) || '';
+  for (const side of ['us', 'them']) { const pr = result.state.pitcher[side]; if (pr?.player_id) pr.name = names.get(pr.player_id) || pr.label; }
+  for (const b of [1, 2, 3]) { const r = result.state.bases[b]; if (r?.ref?.player_id) r.ref.name = names.get(r.ref.player_id) || r.ref.label; }
   return { job, events, ...result };
 }
 
@@ -806,6 +849,7 @@ export function appendEvent(db, jobId, { event_type, parent_event_id = null, pay
   const before = replayJob(db, jobId);
   if (before.state.final && event_type !== 'game_final') throw err('Game is final — void the final event to keep scoring', 409);
   if (event_type === 'state_adjustment' && (!before.state.half || before.state.half_complete)) throw err('Nothing to adjust — no half inning is in progress', 409);
+  if (event_type === 'game_final' && payload.reason === 'regulation' && !before.state.regulation?.reached) throw err(`Regulation length not reached (${before.state.regulation?.why || 'game in progress'}) — choose the reason the game ended early and add a note`, 409);
   const tag = tagFor(db, jobId, { selected_feed_id, timecode_s, clip_start_s, clip_end_s });
 
   const run = db.transaction(() => {
@@ -942,6 +986,30 @@ export function setEventClip(db, eventId, { selected_feed_id, timecode_s, clip_s
     `${describeForAudit(ev.event_type, safeJson(ev.payload))} — feed ${tag.feed ?? '—'} at ${tag.t ?? '—'}s, clip ${tag.c0 ?? '—'}–${tag.c1 ?? '—'}s`,
     JSON.stringify({ feed: ev.selected_feed_id, t: ev.timecode_s, clip: [ev.clip_start_s, ev.clip_end_s] }), JSON.stringify({ feed: tag.feed, t: tag.t, clip: [tag.c0, tag.c1] }));
   return { event: db.prepare('SELECT * FROM cmd_events WHERE id = ?').get(eventId), ...replayJob(db, ev.job_id) };
+}
+
+// Our starting pitcher, set (or excepted) after scoring began: a correction of
+// the lineup event, so every pitch already scored re-attributes on replay and a
+// released record re-releases. The audit row carries the reason.
+export function setStartingPitcher(db, jobId, { player_id = null, unknown_reason = '' } = {}, actorId) {
+  const lineup = db.prepare("SELECT * FROM cmd_events WHERE job_id = ? AND event_type = 'lineup' AND status IN ('active','needs_review') AND payload LIKE '%\"side\":\"us\"%' ORDER BY sequence DESC LIMIT 1").get(jobId);
+  if (!lineup) throw err('Enter our lineup first', 409);
+  const payload = { ...safeJson(lineup.payload) };
+  let note;
+  if (player_id) {
+    const job = db.prepare('SELECT * FROM cmd_jobs WHERE id = ?').get(jobId);
+    const p = commandRoster(db, job).find(x => x.id === Number(player_id));
+    if (!p) throw err("The starting pitcher must be on this job's roster (guests included)");
+    payload.pitcher_player_id = p.id;
+    delete payload.pitcher_unknown_reason;
+    note = `starting pitcher set: ${p.first_name} ${p.last_name}`;
+  } else {
+    if (typeof unknown_reason !== 'string' || unknown_reason.trim().length < 3) throw err('An unknown-pitcher exception needs a reason');
+    payload.pitcher_unknown_reason = unknown_reason.trim();
+    delete payload.pitcher_player_id;
+    note = `unknown-pitcher exception: ${unknown_reason.trim()}`;
+  }
+  return correctEvent(db, lineup.id, { payload }, actorId, note);
 }
 
 // Void: supersede with no replacement (children too). History stays.

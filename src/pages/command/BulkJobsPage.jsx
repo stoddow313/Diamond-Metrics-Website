@@ -13,7 +13,7 @@ export default function BulkJobsPage() {
   const navigate = useNavigate();
   const [boot, setBoot] = useState(null);
   const [form, setForm] = useState({
-    tournament_id: '', package_key: 'rookie', assigned_to: '', due_date: '',
+    tournament_id: '', package_key: 'rookie', regulation_innings: 7, assigned_to: '', due_date: '',
     contact_email: '', sharing_scope: 'customer', media_consent: true, synthetic: false,
   });
   const [teamIds, setTeamIds] = useState([]);
@@ -46,6 +46,7 @@ export default function BulkJobsPage() {
   const body = () => ({
     tournament_id: Number(form.tournament_id),
     package_key: form.package_key,
+    regulation_innings: form.regulation_innings,
     team_ids: teamIds,
     assigned_to: form.assigned_to ? Number(form.assigned_to) : null,
     due_date: form.due_date || null,
@@ -113,6 +114,11 @@ export default function BulkJobsPage() {
             <Select value={form.assigned_to} onChange={e => setForm(f => ({ ...f, assigned_to: e.target.value }))}>
               <option value="">— unassigned —</option>
               {boot.analysts.map(a => <option key={a.id} value={a.id}>{a.name} ({a.role})</option>)}
+            </Select>
+          </Field>
+          <Field label="Regulation length">
+            <Select value={form.regulation_innings} onChange={e => setForm(f => ({ ...f, regulation_innings: Number(e.target.value) }))} title="Applies to every job in this batch; 7 unless the event's rules say otherwise">
+              {[5, 6, 7, 8, 9].map(n => <option key={n} value={n}>{n} innings{n === 7 ? ' (default)' : ''}</option>)}
             </Select>
           </Field>
           <Field label="Due date">

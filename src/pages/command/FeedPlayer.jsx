@@ -16,7 +16,9 @@ import { formatTimecode, parseSeek } from '../../lib/timecode';
 // play-by-play row); markers [{t, label, kind}] draw tagged events above the
 // scrubber and seek when clicked.
 
-const FeedPlayer = forwardRef(function FeedPlayer({ src, fps, onFrame, captureKeys = true, markers = [] }, ref) {
+// compact: the scorebook workspace — a shorter video, one control row, no help text — so
+// player, timeline, state and tagging controls share one laptop viewport.
+const FeedPlayer = forwardRef(function FeedPlayer({ src, fps, onFrame, captureKeys = true, markers = [], compact = false }, ref) {
   const videoRef = useRef(null);
   const rvfcRef = useRef(0);
   const frameRef = useRef(0);
@@ -108,6 +110,8 @@ const FeedPlayer = forwardRef(function FeedPlayer({ src, fps, onFrame, captureKe
   }
 
   const btn = { borderColor: '#334155', color: '#cfe8ff' };
+  const stepCls = compact ? 'px-2 py-1 rounded-md border text-xs font-bold cursor-pointer hover:bg-slate-800' : 'px-3 py-2 rounded-lg border text-sm font-bold cursor-pointer hover:bg-slate-800';
+  const jumpCls = compact ? 'px-2 py-1 rounded-md border text-xs font-bold cursor-pointer hover:bg-slate-800' : 'px-2.5 py-2 rounded-lg border text-xs font-bold cursor-pointer hover:bg-slate-800';
   const jumps = [['-1m', -60], ['-10s', -10], ['-1s', -1], ['+1s', 1], ['+10s', 10], ['+1m', 60]];
 
   return (
@@ -117,7 +121,7 @@ const FeedPlayer = forwardRef(function FeedPlayer({ src, fps, onFrame, captureKe
           ref={videoRef}
           src={src}
           className="w-full block"
-          style={{ maxHeight: '56vh', backgroundColor: '#000' }}
+          style={{ maxHeight: compact ? '40vh' : '56vh', backgroundColor: '#000' }}
           playsInline
           preload="auto"
           onLoadedMetadata={e => setDuration(e.target.duration || 0)}
@@ -165,23 +169,21 @@ const FeedPlayer = forwardRef(function FeedPlayer({ src, fps, onFrame, captureKe
         </div>
       </div>
 
-      <div className="flex items-center gap-2 mt-3 flex-wrap">
+      <div className={`flex items-center ${compact ? 'gap-1.5 mt-1.5 flex-nowrap overflow-hidden' : 'gap-2 mt-3 flex-wrap'}`} title={compact ? '← / → step 1 frame · shift+← / → step 10 · J / L jump one second · space or K play/pause' : undefined} data-testid="player-controls">
         {[['-10', -10], ['-1', -1], ['+1', 1], ['+10', 10]].map(([label, d]) => (
-          <button key={label} onClick={() => stepFrames(d)}
-            className="px-3 py-2 rounded-lg border text-sm font-bold cursor-pointer hover:bg-slate-800" style={btn}>
+          <button key={label} onClick={() => stepFrames(d)} className={stepCls} style={btn}>
             {label}
           </button>
         ))}
         <span className="w-px h-6 mx-1" style={{ backgroundColor: '#334155' }} />
-        {jumps.map(([label, secs]) => (
-          <button key={label} onClick={() => stepFrames(Math.round(secs * fps))}
-            className="px-2.5 py-2 rounded-lg border text-xs font-bold cursor-pointer hover:bg-slate-800" style={btn}>
+        {(compact ? jumps.filter(([, secs]) => Math.abs(secs) === 10) : jumps).map(([label, secs]) => (
+          <button key={label} onClick={() => stepFrames(Math.round(secs * fps))} className={jumpCls} style={btn}>
             {label}
           </button>
         ))}
         <button
           onClick={() => { const v = videoRef.current; if (v) { if (v.paused) v.play(); else v.pause(); } }}
-          className="px-3.5 py-2 rounded-lg text-sm font-bold cursor-pointer"
+          className={compact ? 'px-3 py-1 rounded-md text-xs font-bold cursor-pointer' : 'px-3.5 py-2 rounded-lg text-sm font-bold cursor-pointer'}
           style={{ backgroundColor: '#38bdf8', color: '#06122b' }}
         >
           {paused ? 'Play' : 'Pause'}
@@ -191,24 +193,26 @@ const FeedPlayer = forwardRef(function FeedPlayer({ src, fps, onFrame, captureKe
           <input
             value={jumpTo}
             onChange={e => setJumpTo(e.target.value)}
-            placeholder="1:23:45 or #12345"
-            className="px-2.5 py-1.5 rounded-lg border text-sm w-40"
+            placeholder={compact ? '1:23:45' : '1:23:45 or #12345'}
+            className={compact ? 'px-2 py-1 rounded-md border text-xs w-24' : 'px-2.5 py-1.5 rounded-lg border text-sm w-40'}
             style={{ borderColor: '#334155', backgroundColor: 'rgba(15,23,42,0.9)', color: '#f8fafc' }}
             data-testid="jump-input"
           />
-          <button type="submit" className="px-3 py-1.5 rounded-lg border text-sm font-bold cursor-pointer hover:bg-slate-800" style={btn}>
+          <button type="submit" className={compact ? 'px-2 py-1 rounded-md border text-xs font-bold cursor-pointer hover:bg-slate-800' : 'px-3 py-1.5 rounded-lg border text-sm font-bold cursor-pointer hover:bg-slate-800'} style={btn}>
             Go
           </button>
-          <span className="text-right ml-2">
-            <span className="text-2xl font-black tabular-nums" style={{ color: '#38bdf8' }} data-testid="frame-counter">{frame}</span>
+          <span className="text-right ml-2 whitespace-nowrap">
+            <span className={`${compact ? 'text-base' : 'text-2xl'} font-black tabular-nums`} style={{ color: '#38bdf8' }} data-testid="frame-counter">{frame}</span>
             <span className="text-[10px] font-bold uppercase tracking-widest ml-1.5" style={{ color: '#64748b' }}>frame</span>
           </span>
         </form>
       </div>
       {jumpError && <p className="text-xs mt-1.5" style={{ color: '#f87171' }}>{jumpError}</p>}
-      <p className="text-[10px] mt-2" style={{ color: '#475569' }}>
-        ← / → step 1 frame · shift+← / → step 10 · J / L jump one second · space or K play/pause
-      </p>
+      {!compact && (
+        <p className="text-[10px] mt-2" style={{ color: '#475569' }}>
+          ← / → step 1 frame · shift+← / → step 10 · J / L jump one second · space or K play/pause
+        </p>
+      )}
     </div>
   );
 });

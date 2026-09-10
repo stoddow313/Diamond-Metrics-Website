@@ -841,6 +841,9 @@ addColumnIfMissing('cmd_game_record_sources', 'parsed_report', 'parsed_report TE
 addColumnIfMissing('cmd_game_record_sources', 'resolutions', 'resolutions TEXT');
 addColumnIfMissing('cmd_game_record_sources', 'validated_at', 'validated_at TEXT');
 addColumnIfMissing('stat_entries', 'game_record_source_id', 'game_record_source_id INTEGER');
+// Scheduled regulation length for the game (innings). Set at job setup; the
+// scorebook will not accept a 'regulation' final before it is reached.
+addColumnIfMissing('cmd_jobs', 'regulation_innings', 'regulation_innings INTEGER NOT NULL DEFAULT 7');
 // Job-scoped guest / unknown-player placeholders (roadmap §4.2). The player
 // row is real but never public; the link says which job it stands in for.
 db.exec(`

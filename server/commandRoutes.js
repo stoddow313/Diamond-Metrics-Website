@@ -7,6 +7,9 @@ import { validateGameRecordSource, releaseGameRecord, gameRecordPlan } from './g
 import { emitJobEvent } from './notifications.js';
 import { computeQaFlags, releaseMetrics, resyncPublishedRollups } from './releaseLogic.js';
 
+
+// Scheduled game lengths the scorer may pick (innings); 7 is the youth default.
+export const REGULATION_LENGTHS = [5, 6, 7, 8, 9];
 export function mountCommandRoutes(app, { db, requireInternal }) {
   const audit = (targetTable, targetId, actorId, action, { note = '', prev = '', next = '' } = {}) =>
     db.prepare(
@@ -132,6 +135,12 @@ export function mountCommandRoutes(app, { db, requireInternal }) {
     }
     if ('blocker_reason' in b) updates.push(['blocker_reason', String(b.blocker_reason || ''), 'blocked']);
     if ('due_date' in b) updates.push(['due_date', b.due_date || null, 'due_date_changed']);
+    if ('regulation_innings' in b) {
+      const n = Number(b.regulation_innings);
+      if (!REGULATION_LENGTHS.includes(n)) return res.status(400).json({ error: `regulation_innings must be one of ${REGULATION_LENGTHS.join(', ')}` });
+      if (db.prepare("SELECT 1 FROM cmd_events WHERE job_id = ? AND event_type = 'game_final' AND status IN ('active','needs_review')").get(job.id)) return res.status(409).json({ error: 'The game is already final — reopen it before changing the scheduled length' });
+      updates.push(['regulation_innings', n, 'regulation_changed']);
+    }
     // The synthetic flag lives on the order and must be settable after the
     // fact: test jobs already exist, and a flag you cannot apply to them
     // does not isolate anything.
@@ -170,6 +179,9 @@ export function mountCommandRoutes(app, { db, requireInternal }) {
     if (b.assigned_to && !db.prepare('SELECT 1 FROM admins WHERE id = ?').get(b.assigned_to)) {
       fail('assigned_to must reference an internal account');
     }
+    // Scheduled regulation length: 7 for a normal youth game unless the event's rules say otherwise.
+    const regulation = b.regulation_innings == null || b.regulation_innings === '' ? 7 : Number(b.regulation_innings);
+    if (!REGULATION_LENGTHS.includes(regulation)) fail(`regulation_innings must be one of ${REGULATION_LENGTHS.join(', ')}`);
     let tournamentId = b.tournament_id ?? null;
     if (b.tournament_game_id) {
       const tg = db.prepare('SELECT id, tournament_id FROM tournament_games WHERE id = ?').get(b.tournament_game_id);
@@ -212,11 +224,11 @@ export function mountCommandRoutes(app, { db, requireInternal }) {
 
     const jobId = db.prepare(
       `INSERT INTO cmd_jobs (sport_id, ruleset_id, team_id, opponent_label, tournament_id, tournament_game_id,
-                             event_label, game_date, game_type, order_id, assigned_to, due_date, created_by)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+                             event_label, game_date, game_type, order_id, assigned_to, due_date, regulation_innings, created_by)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     ).run(baseball, ruleset?.id ?? null, teamRow.id, String(b.opponent_label || ''), tournamentId, b.tournament_game_id ?? null,
       String(b.event_label || ''), b.game_date, b.game_type === 'pro_day' ? 'pro_day' : 'game',
-      orderId, b.assigned_to ?? null, b.due_date || null, actorId).lastInsertRowid;
+      orderId, b.assigned_to ?? null, b.due_date || null, regulation, actorId).lastInsertRowid;
 
     db.prepare('INSERT INTO cmd_consent (job_id, media_consent, sharing_scope, recorded_by) VALUES (?, ?, ?, ?)')
       .run(jobId, b.media_consent ? 1 : 0, ['internal', 'customer', 'public'].includes(b.sharing_scope) ? b.sharing_scope : 'internal', actorId);
