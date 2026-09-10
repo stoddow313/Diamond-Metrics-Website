@@ -414,6 +414,7 @@ test('pitcher safeguard: scoring may start without our pitcher, but the record c
   // Set the pitcher after the fact: every pitch already scored re-attributes.
   rp = setStartingPitcher(db, j12, { player_id: P }, admin);
   assert.ok(!rp.issues.some(i => i.code === 'pitcher_unknown'));
+  assert.equal(rp.state.pitcher.us.name, 'Pat Pitcher', 'the pitcher set after the fact shows by name');
   const pat = rp.tallies.find(t => t.player_id === P).stats;
   assert.equal(pat.bs_bf, 3); assert.equal(pat.bs_kp, 1); assert.equal(pat.bs_pitches, 3); assert.equal(pat.bs_gs, 1);
   assert.equal(liveRecordReport(db, j12).status, 'validated');

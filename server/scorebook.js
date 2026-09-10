@@ -723,6 +723,8 @@ export function replayJob(db, jobId) {
     if (lu) for (const s of lu.slots) for (const k of ['current', 'starter']) if (s[k]?.player_id) s[k].name = names.get(s[k].player_id) || s[k].label;
   }
   if (result.state.expected_batter?.player_id) result.state.expected_batter.name = names.get(result.state.expected_batter.player_id) || '';
+  for (const side of ['us', 'them']) { const pr = result.state.pitcher[side]; if (pr?.player_id) pr.name = names.get(pr.player_id) || pr.label; }
+  for (const b of [1, 2, 3]) { const r = result.state.bases[b]; if (r?.ref?.player_id) r.ref.name = names.get(r.ref.player_id) || r.ref.label; }
   return { job, events, ...result };
 }
 
