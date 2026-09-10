@@ -21,12 +21,23 @@ import {
   relayTokenValid, relayConfig, httpError, MASTER_PART_SIZE, newId,
 } from './liveLogic.js';
 
-// Who may fetch a playback URL. Defaults to requiring a session: an open
-// endpoint hands anyone with a stream id a viewable link to a youth game.
-const PLAYBACK_ACCESS = process.env.DM_LIVE_PLAYBACK_ACCESS || 'authenticated';
-
 export function mountLiveRoutes(app, { db, requireInternal, currentUser }) {
   const r = express.Router();
+
+  // A testing switch, not a policy. With DM_LIVE_CONSOLE_OPEN=1 every staff route
+  // here — issuing, listing, ending, and the stream keys those responses carry —
+  // is open to anyone who finds the URL. It opens staff routes only: the relay's
+  // hooks and the phone's stream-key checks are unaffected. Read at mount so it
+  // cannot drift, and reported by /health so the console says so on screen.
+  const consoleOpen = process.env.DM_LIVE_CONSOLE_OPEN === '1';
+  const staff = consoleOpen ? (_req, _res, next) => next() : requireInternal;
+
+  // Who may fetch a playback URL. Defaults to requiring a session: an open
+  // endpoint hands anyone with a stream id a viewable link to a youth game. An
+  // open console implies open playback, or its own player could not work.
+  const PLAYBACK_ACCESS = consoleOpen
+    ? 'public'
+    : (process.env.DM_LIVE_PLAYBACK_ACCESS || 'authenticated');
 
   // ── who is calling ────────────────────────────────────────────────────────
 
@@ -60,22 +71,22 @@ export function mountLiveRoutes(app, { db, requireInternal, currentUser }) {
 
   // ── Command: issuing and managing streams ─────────────────────────────────
 
-  r.post('/streams', requireInternal, (req, res) => {
+  r.post('/streams', staff, (req, res) => {
     const stream = createStream(db, req.body || {});
     log('info', 'live_stream_created', { stream_id: stream.id, job_id: stream.job_id });
     res.status(201).json(stream);
   });
 
-  r.get('/streams', requireInternal, (req, res) => {
+  r.get('/streams', staff, (req, res) => {
     res.json(listStreams(db, { jobId: req.query.job_id }).map((s) => withUrls(s)));
   });
 
-  r.post('/streams/:id/end', requireInternal, (req, res) => {
+  r.post('/streams/:id/end', staff, (req, res) => {
     res.json(withUrls(endStream(db, req.params.id)));
   });
 
   // Full detail, keys included — staff only.
-  r.get('/streams/:id', requireInternal, (req, res) => {
+  r.get('/streams/:id', staff, (req, res) => {
     const stream = getStream(db, req.params.id);
     if (!stream) throw httpError(404, 'stream not found');
     res.json({
@@ -153,7 +164,7 @@ export function mountLiveRoutes(app, { db, requireInternal, currentUser }) {
   // Relay liveness comes from Caddy's /healthz, not MediaMTX's API — that stays
   // on loopback and is not reachable from here, which is the point. What is
   // publishing comes from our own event table, which is the honest source anyway.
-  r.get('/health', requireInternal, async (_req, res) => {
+  r.get('/health', staff, async (_req, res) => {
     const streams = listStreams(db);
     let relay = { reachable: false, error: 'not checked' };
     const base = process.env.DM_PLAYBACK_BASE;
@@ -173,12 +184,16 @@ export function mountLiveRoutes(app, { db, requireInternal, currentUser }) {
     }
     relay.publishing = streams.filter((s) => s.status === 'live').length;
     relay.readers = null;   // not knowable without the relay's API
-    res.json({ api: { ok: true, streams: streams.length }, relay, config: relayConfig() });
+    res.json({
+      api: { ok: true, streams: streams.length, console_open: consoleOpen },
+      relay,
+      config: relayConfig(),
+    });
   });
 
   // Both recordings of one event. The relay ships its live copy straight to R2,
   // so this lists rather than serves — the bytes never pass through here.
-  r.get('/streams/:id/event', requireInternal, async (req, res, next) => {
+  r.get('/streams/:id/event', staff, async (req, res, next) => {
     try {
       const stream = getStream(db, req.params.id);
       if (!stream) throw httpError(404, 'stream not found');
@@ -289,7 +304,8 @@ export function mountLiveRoutes(app, { db, requireInternal, currentUser }) {
   });
 
   app.use('/api/live', r);
-  log('info', 'live_routes_mounted', { playback_access: PLAYBACK_ACCESS, storage: storageMode });
+  log(consoleOpen ? 'warn' : 'info', 'live_routes_mounted',
+    { console_open: consoleOpen, playback_access: PLAYBACK_ACCESS, storage: storageMode });
 }
 
 // ── helpers ─────────────────────────────────────────────────────────────────
