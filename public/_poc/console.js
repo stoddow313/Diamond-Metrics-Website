@@ -41,6 +41,7 @@ async function pollHealth() {
   try {
     state.health = await api('/health');
     setDot('dot-api', true);
+    $('open-warning').hidden = !state.health.api?.console_open;
     const relay = state.health.relay;
     setDot('dot-relay', relay.reachable);
     $('relay-counts').textContent = relay.reachable
