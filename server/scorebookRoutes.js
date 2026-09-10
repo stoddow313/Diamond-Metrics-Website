@@ -1,7 +1,7 @@
 // Phase 2 scorebook routes. Everything reads back the replayed state so the
 // client never keeps its own copy of the truth.
 import { replayJob, appendEvent, appendPlateAppearance, correctEvent, voidEvent, disputeEvent, resolveEvent, rulesetFor, refreshLiveSource,
-         EVENT_TYPES, PA_RESULTS, PITCH_RESULTS, RUNNER_HOWS, SUB_KINDS, FINAL_REASONS, BATTED_BALLS, DIRECTIONS, POSITION_NUMBERS, setEventClip } from './scorebook.js';
+         EVENT_TYPES, PA_RESULTS, PITCH_RESULTS, RUNNER_HOWS, SUB_KINDS, FINAL_REASONS, BATTED_BALLS, DIRECTIONS, POSITION_NUMBERS, setEventClip, setStartingPitcher } from './scorebook.js';
 import { PITCH_TYPES } from './radarImport.js';
 import { requirementEnabled, METRIC_BY_ATTEMPT } from './measurementLogic.js';
 import { commandRoster } from './commandRoster.js';
@@ -11,7 +11,7 @@ export function mountScorebookRoutes(app, { db, requireInternal }) {
     const job = rp.job;
     const source = db.prepare("SELECT id, validation_status, validated_at FROM cmd_game_record_sources WHERE job_id = ? AND source_kind = 'live_internal' ORDER BY id LIMIT 1").get(jobId) || null;
     return {
-      job: { id: job.id, game_date: job.game_date, opponent_label: job.opponent_label, game_record_status: job.game_record_status, metric_release_status: job.metric_release_status },
+      job: { id: job.id, game_date: job.game_date, opponent_label: job.opponent_label, game_record_status: job.game_record_status, metric_release_status: job.metric_release_status, regulation_innings: job.regulation_innings },
       ruleset: rulesetFor(db, job),
       roster: commandRoster(db, job),
       source,
@@ -70,6 +70,12 @@ export function mountScorebookRoutes(app, { db, requireInternal }) {
   // Footage link: feed, moment and clip bounds for a tagged play.
   app.put('/api/command/scorebook/events/:id/clip', requireInternal, (req, res) => {
     try { res.json(setEventClip(db, Number(req.params.id), req.body || {}, req.internal.id)); }
+    catch (err) { res.status(err.status || 500).json({ error: err.message }); }
+  });
+
+  // Our starting pitcher, after the fact (retroactive on replay) — or an audited unknown-pitcher exception.
+  app.post('/api/command/jobs/:id/scorebook/starting-pitcher', requireInternal, (req, res) => {
+    try { res.json(setStartingPitcher(db, Number(req.params.id), req.body || {}, req.internal.id)); }
     catch (err) { res.status(err.status || 500).json({ error: err.message }); }
   });
 }

@@ -418,7 +418,7 @@ export function NewJobPage() {
   const [busy, setBusy] = useState(false);
   const [form, setForm] = useState({
     package_key: 'rookie', team_id: '', opponent_label: '', tournament_game_id: '',
-    game_date: '', game_type: 'game', event_label: '', assigned_to: '', due_date: '',
+    game_date: '', game_type: 'game', event_label: '', assigned_to: '', due_date: '', regulation_innings: 7,
     media_consent: true, sharing_scope: 'internal', notes: '', contact_email: '', synthetic: false,
   });
   const navigate = useNavigate();
@@ -493,6 +493,11 @@ export function NewJobPage() {
             </Field>
             <Field label="Game date">
               <TextInput type="date" value={form.game_date} onChange={e => setForm(f => ({ ...f, game_date: e.target.value }))} required />
+            </Field>
+            <Field label="Regulation length">
+              <Select value={form.regulation_innings} onChange={e => setForm(f => ({ ...f, regulation_innings: Number(e.target.value) }))} data-testid="regulation-innings" title="7 innings for a normal youth game; pick another only when the tournament, league or event rules require it — the scorebook will not accept a regulation final before it is reached">
+                {[5, 6, 7, 8, 9].map(n => <option key={n} value={n}>{n} innings{n === 7 ? ' (default)' : ''}</option>)}
+              </Select>
             </Field>
             <Field label="Session type">
               <Select value={form.game_type} onChange={e => setForm(f => ({ ...f, game_type: e.target.value }))}>
@@ -715,7 +720,7 @@ export function JobDetailPage() {
             {job.team_name}{job.opponent_label ? ` vs ${job.opponent_label}` : ''}
           </h1>
           <p className="text-sm" style={{ color: '#94a3b8' }}>
-            {job.game_date} · {job.order_label}{job.tournament_name ? ` · ${job.tournament_name}` : ''}{job.game_type === 'pro_day' ? ' · Pro Day session' : ''}
+            {job.game_date} · {job.order_label}{job.tournament_name ? ` · ${job.tournament_name}` : ''}{job.game_type === 'pro_day' ? ' · Pro Day session' : ` · ${job.regulation_innings || 7}-inning game`}
             {job.media_consent ? '' : ' · no media consent'}
           </p>
         </div>
@@ -857,6 +862,21 @@ export function JobDetailPage() {
                 >
                   <option value="">— unassigned —</option>
                   {(boot?.analysts || []).map(a => <option key={a.id} value={a.id}>{a.name} ({a.role})</option>)}
+                </Select>
+              </Field>
+              <Field label="Regulation length">
+                <Select
+                  value={job.regulation_innings || 7}
+                  onChange={async e => {
+                    try {
+                      const { job: updated } = await api.commandUpdateJob(job.id, { regulation_innings: Number(e.target.value) });
+                      setJob(updated);
+                    } catch (err) { setError(err.message); }
+                  }}
+                  title="Scheduled innings for this game; the scorebook only accepts a regulation final once it is reached"
+                  data-testid="job-regulation"
+                >
+                  {[5, 6, 7, 8, 9].map(n => <option key={n} value={n}>{n} innings{n === 7 ? ' (default)' : ''}</option>)}
                 </Select>
               </Field>
               <Field label="Blocker reason">

@@ -532,6 +532,36 @@ rewritten on every re-release. The player profile shows it as `W 5–3` on the
 game row; the job page shows the final. Import-only records carry player
 lines only, so they publish no result.
 
+Safeguards (reviewer items, 2026-09-10):
+
+- **Scheduled length.** Every job carries `regulation_innings` (default 7; 5, 6,
+  8 or 9 when the tournament, league or event rules require it), set on the new
+  job form, the bulk form, the job page or the scorebook's lineup setup, and
+  audited (`regulation_changed`). The engine reports `state.regulation`
+  (innings, reached, why). A **regulation** final is accepted only once the
+  length is reached — the final inning complete with a leader, the home team
+  ahead after the top of the final inning (no bottom needed), or a walk-off —
+  and is refused before that; a tie goes to extra innings. Ending early needs an
+  explicit reason (time limit, run rule, forfeit, darkness/weather, other) **and
+  an audit note**; the run rule is a suggestion from the ruleset, never an
+  automatic end — the analyst selects and documents it.
+- **Starting pitcher.** Our lineup names a starting pitcher (a rostered
+  player, guests included) or records an audited **unknown-pitcher exception**.
+  Scoring may begin without one, but the scorebook shows it as incomplete
+  (`pitcher_unknown`, blocking) and the record cannot validate or publish
+  pitching statistics until the pitcher is set — retroactively, through a
+  correction of the lineup event, so every pitch already scored re-attributes —
+  or the exception is recorded (`pitcher_unknown_excepted`, a warning; no
+  pitching statistics publish for us). Our substitutions must name a rostered
+  player; opponents stay labels.
+- **Workspace layout.** On the Score tab the footage player (compact: video,
+  scrubber with markers, frame/second steps, play, jump), the scoreboard strip
+  (score, inning, outs, count, bases, regulation and pitcher status) and the
+  active tagging controls share one laptop viewport (1366×768 and 1440×900
+  checked); the line score and non-blocking issues sit behind **Details**,
+  lineups and substitutions under a collapsed section, box score and play-by-play
+  behind tabs, audit history on the job page.
+
 Publishing: the scorebook is the job's `live_internal` game-record source.
 It validates once the game is final with no blocking issues, and releases
 through the same **Game record → validated → released** path as an import.
@@ -600,6 +630,9 @@ test that pins the behaviour and how to see it in Command.
 | Public-profile correction propagation (item 4) | resync clears synthetic jobs' values; boot reconciliation | `syntheticProfile.test.js`, `resultLifecycle.test.js` | Radar queue: invalidate → profile value gone at once; restore → back once |
 | Innings stored as outs; season totals add correctly | `bs_outs`, catalog `display: 'innings'` | `gameRecord.test.js` parser ("4.2 innings are fourteen outs"), `aggregates.test.js` | Profile Game Summary IP column and pitching rates |
 | Game result published with the record | `cmd_game_results` | `scorebook.test.js` "the game result publishes with the record…" | Profile game row `W 5–3`; job page "Final · …" |
+| Regulation final only at the scheduled length; early ends documented | `regulation_innings` on the job; `state.regulation`; `final_before_regulation` / `final_reason_undocumented` | `scorebook.test.js` "regulation safeguard…" | Scoreboard "Reg 7 · reached/not reached"; Mark final form gates the reason and requires the note |
+| Identified starting pitcher before the record finalizes | `pitcher_unknown` (blocking) / `pitcher_unknown_excepted`; `setStartingPitcher` | `scorebook.test.js` "pitcher safeguard…" | Lineup setup pitcher field; scoreboard "⛔ starting pitcher not identified" → Set pitcher / Record exception |
+| One-viewport tagging workspace | Score tab layout; compact `FeedPlayer` | — (layout, checked in the browser at 1366×768 / 1440×900) | Score tab with a ready feed |
 
 Run everything with `node --test server/*.test.js`. Prod verification after each deploy uses the synthetic job (badge on the job page); nothing it publishes reaches a profile.
 

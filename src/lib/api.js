@@ -151,6 +151,7 @@ export const api = {
   commandScorebookDispute: (eventId, note) => request(`/api/command/scorebook/events/${eventId}/dispute`, { method: 'POST', body: { note } }),
   commandScorebookResolve: (eventId, note) => request(`/api/command/scorebook/events/${eventId}/resolve`, { method: 'POST', body: { note } }),
   commandScorebookClip: (eventId, body) => request(`/api/command/scorebook/events/${eventId}/clip`, { method: 'PUT', body }),
+  commandScorebookStartingPitcher: (jobId, body) => request(`/api/command/jobs/${jobId}/scorebook/starting-pitcher`, { method: 'POST', body }),
   commandEmailTest: (to) => request('/api/command/email/test', { method: 'POST', body: { to } }),
   commandBackupVerify: () => request('/api/command/backups/verify', { method: 'POST' }),
   commandRadarQueue: (jobId) => request(`/api/command/jobs/${jobId}/radar`),

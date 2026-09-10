@@ -14,7 +14,7 @@ process.env.DM_LOG_SILENT = '1';
 
 const { db } = await import('./db.js');
 const { PACKAGES } = await import('./commandLogic.js');
-const { replay, appendEvent, appendPlateAppearance, correctEvent, voidEvent, disputeEvent, resolveEvent, replayJob, ipFromOuts, liveRecordReport, setEventClip } = await import('./scorebook.js');
+const { replay, appendEvent, appendPlateAppearance, correctEvent, voidEvent, disputeEvent, resolveEvent, replayJob, ipFromOuts, liveRecordReport, setEventClip, setStartingPitcher } = await import('./scorebook.js');
 const { validateGameRecordSource, releaseGameRecord } = await import('./gameRecord.js');
 const { computeQaFlags } = await import('./releaseLogic.js');
 
@@ -334,7 +334,7 @@ test('the game result publishes with the record from the live scorebook, follows
   const outs = () => { for (let i = 0; i < 3; i += 1) pa(j7, { pa: { result: 'strikeout' } }); };
   outs();                                                         // top 1: they go quietly
   pa(j7, { pa: { result: 'home_run' } }); outs();                 // bottom 1: we score once
-  appendEvent(db, j7, { event_type: 'game_final', payload: { reason: 'time_limit' } }, admin);
+  appendEvent(db, j7, { event_type: 'game_final', payload: { reason: 'time_limit', note: '1:45 limit' } }, admin);
   const src = db.prepare("SELECT id FROM cmd_game_record_sources WHERE job_id = ? AND source_kind = 'live_internal'").get(j7);
   validateGameRecordSource(db, src.id, admin);
   db.prepare("UPDATE cmd_jobs SET game_record_status = 'validated' WHERE id = ?").run(j7);
@@ -363,6 +363,75 @@ test('the game result publishes with the record from the live scorebook, follows
   assert.equal(db.prepare('SELECT COUNT(*) c FROM cmd_game_results WHERE job_id = ?').get(j8).c, 0);
 });
 
+test('regulation safeguard: a regulation final needs the scheduled length; the home team skips the bottom when ahead; a walk-off ends it; ties go to extras; early ends need a documented reason', () => {
+  const quiet = (j, batter = null) => { for (let i = 0; i < 3; i += 1) pa(j, { pa: { ...(batter ? { batter_label: batter } : {}), result: 'strikeout' } }); };
+  const j9 = makeJob();
+  ourLineup(j9, true);   // we are home
+  theirLineup(j9);
+  quiet(j9, 'Opp #1'); quiet(j9);                      // inning 1
+  assert.throws(() => appendEvent(db, j9, { event_type: 'game_final', payload: { reason: 'regulation' } }, admin), /Regulation length not reached/);
+  assert.throws(() => appendEvent(db, j9, { event_type: 'game_final', payload: { reason: 'time_limit' } }, admin), /needs an audit note/);
+  for (let inning = 2; inning <= 6; inning += 1) { quiet(j9, 'Opp #1'); quiet(j9); }
+  // top 7: they go quietly; we lead 0-0? no — tied, so the bottom must be played
+  quiet(j9, 'Opp #1');
+  let rp = replayJob(db, j9);
+  assert.equal(rp.state.regulation.reached, false); assert.match(rp.state.regulation.why, /bottom (of the )?7/);
+  // walk-off: our homer in the bottom of the 7th ends it at once
+  rp = pa(j9, { pa: { result: 'home_run' } });
+  assert.equal(rp.state.regulation.reached, true); assert.match(rp.state.regulation.why, /walk-off/);
+  assert.equal(rp.state.game_over_suggested?.reason, 'regulation');
+  const fin = appendEvent(db, j9, { event_type: 'game_final', payload: { reason: 'regulation' } }, admin);
+  assert.ok(!fin.issues.some(i => i.code === 'final_before_regulation'));
+  // A tie after regulation is not over; a home lead after the top of the last inning is
+  const j10 = makeJob();
+  db.prepare('UPDATE cmd_jobs SET regulation_innings = 5 WHERE id = ?').run(j10);
+  ourLineup(j10, true); theirLineup(j10);
+  for (let inning = 1; inning <= 4; inning += 1) { quiet(j10, 'Opp #1'); if (inning === 1) { pa(j10, { pa: { result: 'home_run' } }); } quiet(j10); }
+  quiet(j10, 'Opp #1');   // top 5 done, we lead 1-0
+  rp = replayJob(db, j10);
+  assert.equal(rp.state.regulation.innings, 5, 'the job\'s scheduled length applies');
+  assert.equal(rp.state.regulation.reached, true); assert.match(rp.state.regulation.why, /home team leads after the top/);
+  appendEvent(db, j10, { event_type: 'game_final', payload: { reason: 'regulation' } }, admin);
+  // and an early end with a documented reason is fine at any point
+  const j11 = makeJob(); ourLineup(j11, false); theirLineup(j11); quiet(j11);
+  const early = appendEvent(db, j11, { event_type: 'game_final', payload: { reason: 'darkness', note: 'lights failed at 8:40pm' } }, admin);
+  assert.ok(!early.issues.some(i => i.level === 'blocking'));
+});
+
+test('pitcher safeguard: scoring may start without our pitcher, but the record cannot finalize until the pitcher is set (retroactively) or an unknown-pitcher exception is audited', () => {
+  const j12 = makeJob();
+  appendEvent(db, j12, { event_type: 'lineup', payload: { side: 'us', us_is_home: true, slots: [
+    { slot: 1, player_id: SS, label: 'Sam Short', position: 'SS' }, { slot: 2, player_id: LF, label: 'Lee Left', position: 'LF' }, { slot: 3, player_id: DH, label: 'Dee Hitter', position: 'DH' },
+  ] } }, admin);   // nobody listed at P
+  theirLineup(j12);
+  let rp = pa(j12, { pa: { batter_label: 'Opp #1', result: 'strikeout' }, pitches: [{ result: 'called_strike' }, { result: 'called_strike' }, { result: 'called_strike' }] });
+  assert.ok(rp.issues.some(i => i.code === 'pitcher_unknown' && i.level === 'blocking'), 'visibly incomplete from the first pitch');
+  assert.equal(rp.tallies.filter(t => t.player_id && t.stats.bs_bf > 0).length, 0, 'no pitching line for anyone');
+  pa(j12, { pa: { batter_label: 'Opp #2', result: 'groundout' } }); pa(j12, { pa: { batter_label: 'Opp #3', result: 'flyout' } });
+  for (let i = 0; i < 3; i += 1) pa(j12, { pa: { result: 'strikeout' } });
+  appendEvent(db, j12, { event_type: 'game_final', payload: { reason: 'time_limit', note: 'smoke' } }, admin);
+  assert.equal(liveRecordReport(db, j12).status, 'validating', 'blocked until the pitcher question is settled');
+  // Set the pitcher after the fact: every pitch already scored re-attributes.
+  rp = setStartingPitcher(db, j12, { player_id: P }, admin);
+  assert.ok(!rp.issues.some(i => i.code === 'pitcher_unknown'));
+  const pat = rp.tallies.find(t => t.player_id === P).stats;
+  assert.equal(pat.bs_bf, 3); assert.equal(pat.bs_kp, 1); assert.equal(pat.bs_pitches, 3); assert.equal(pat.bs_gs, 1);
+  assert.equal(liveRecordReport(db, j12).status, 'validated');
+  assert.ok(db.prepare("SELECT 1 FROM cmd_review_actions WHERE target_table='cmd_events' AND action='corrected' AND note LIKE 'starting pitcher set: Pat Pitcher%'").get());
+  // The exception path on another job: documented, visible, and nothing publishes for our pitching
+  const j13 = makeJob();
+  appendEvent(db, j13, { event_type: 'lineup', payload: { side: 'us', us_is_home: true, slots: [{ slot: 1, player_id: SS, label: 'Sam Short', position: 'SS' }] } }, admin);
+  theirLineup(j13);
+  pa(j13, { pa: { batter_label: 'Opp #1', result: 'strikeout' } });
+  assert.throws(() => setStartingPitcher(db, j13, { unknown_reason: 'no' }, admin), /needs a reason/);
+  rp = setStartingPitcher(db, j13, { unknown_reason: 'pitcher not on the roster sheet; coach could not confirm' }, admin);
+  assert.ok(rp.issues.some(i => i.code === 'pitcher_unknown_excepted' && i.level === 'warning'));
+  assert.ok(!rp.issues.some(i => i.level === 'blocking'));
+  assert.ok(!liveRecordReport(db, j13).report.rows.some(r => r.stats.bs_bf), 'no pitching statistics for us');
+  // our substitutions must be identified players
+  assert.throws(() => appendEvent(db, j13, { event_type: 'substitution', payload: { kind: 'pitching_change', side: 'us', player_in_label: 'Somebody' } }, admin), /rostered player/);
+});
+
 test('game-over suggestion follows the ruleset run rule; scoring after final is refused', () => {
   const j2 = makeJob();
   ourLineup(j2, true);   // we are home
@@ -379,7 +448,7 @@ test('game-over suggestion follows the ruleset run rule; scoring after final is 
   // 15 runs after 3 complete innings is not yet a completed bottom half; finish it.
   rp = pa(j2, { pa: { result: 'flyout' } }); rp = pa(j2, { pa: { result: 'flyout' } }); rp = pa(j2, { pa: { result: 'flyout' } });
   assert.equal(rp.state.game_over_suggested?.reason, 'run_rule', JSON.stringify(rp.state.game_over_suggested));
-  appendEvent(db, j2, { event_type: 'game_final', payload: { reason: 'run_rule' } }, admin);
+  appendEvent(db, j2, { event_type: 'game_final', payload: { reason: 'run_rule', note: 'tournament 15-after-3 rule' } }, admin);
   assert.throws(() => pa(j2, { pa: { result: 'single' } }), /final/);
   const live = liveRecordReport(db, j2);
   assert.equal(live.status, 'validated');

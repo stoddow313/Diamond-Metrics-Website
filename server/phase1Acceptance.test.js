@@ -198,14 +198,14 @@ test('5. radar ambiguity: suggestions follow confirmed neighbours in time or seq
 // §7.6 Full-game correction: changed defensive judgment recalculates dependent rollups without duplicates.
 test('6. full-game correction: a changed defensive judgment (error → hit) recalculates dependent rollups without duplicates, through to the released box score', () => {
   const job = makeJob();
-  appendEvent(db, job, { event_type: 'lineup', payload: { side: 'us', us_is_home: false, slots: [{ slot: 1, player_id: pitcher, label: 'Pat' }, { slot: 2, player_id: runner, label: 'Rae' }, { slot: 3, player_id: other, label: 'Sam' }] } }, admin);
+  appendEvent(db, job, { event_type: 'lineup', payload: { side: 'us', us_is_home: false, slots: [{ slot: 1, player_id: pitcher, position: 'P', label: 'Pat' }, { slot: 2, player_id: runner, label: 'Rae' }, { slot: 3, player_id: other, label: 'Sam' }] } }, admin);
   appendEvent(db, job, { event_type: 'lineup', payload: { side: 'them', slots: [{ slot: 1, label: 'Opp P', position: 'P' }, { slot: 2, label: 'Opp SS' }] } }, admin);
   appendPlateAppearance(db, job, { pa: { result: 'reach_on_error', error_label: 'Opp SS' } }, admin);
   appendPlateAppearance(db, job, { pa: { result: 'single' }, runners: [{ from: 1, to: 3, how: 'advance' }] }, admin);
   appendPlateAppearance(db, job, { pa: { result: 'sacrifice_fly' }, runners: [{ from: 3, to: 4, how: 'scored_on_play' }] }, admin);
   appendPlateAppearance(db, job, { pa: { result: 'strikeout' } }, admin);
   appendPlateAppearance(db, job, { pa: { result: 'groundout' } }, admin);
-  appendEvent(db, job, { event_type: 'game_final', payload: { reason: 'time_limit' } }, admin);
+  appendEvent(db, job, { event_type: 'game_final', payload: { reason: 'time_limit', note: '1:45 limit' } }, admin);
   const src = db.prepare("SELECT id FROM cmd_game_record_sources WHERE job_id = ? AND source_kind = 'live_internal'").get(job);
   assert.equal(validateGameRecordSource(db, src.id, {}, admin).status, 'validated');
   releaseGameRecord(db, job, admin);

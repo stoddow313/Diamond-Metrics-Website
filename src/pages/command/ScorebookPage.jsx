@@ -90,6 +90,9 @@ export default function ScorebookPage() {
   const [disputing, setDisputing] = useState(null);      // event id awaiting a reason
   const [clipEdit, setClipEdit] = useState(null);        // { id, start, end, t }
   const [pitchType, setPitchType] = useState('');        // carries forward pitch to pitch until changed
+  const [showDetails, setShowDetails] = useState(false); // line score + non-blocking issues, behind a toggle in the workspace
+  const [showLineups, setShowLineups] = useState(false); // lineups & substitutions live below the workspace
+  const [pitcherPanel, setPitcherPanel] = useState(null); // { player_id, reason } — set our starting pitcher after the fact
   const [timeSteals, setTimeSteals] = useState(true);    // queue a steal timing attempt with each SB/CS when the video is on
   const [pendingSeek, setPendingSeek] = useState(null);   // { seconds, nonce } from a play-by-play row
   const appliedSeekRef = useRef(null);
@@ -221,12 +224,24 @@ export default function ScorebookPage() {
   // ── lineup setup ──────────────────────────────────────────────────────
   function startSetup() {
     const ours = (data.roster || []).slice(0, 9).map((p, i) => ({ slot: i + 1, player_id: p.id, label: `${p.first_name} ${p.last_name}`, position: p.primary_position || '' }));
-    setSetup({ us_is_home: false, dh: false, ours, theirs: [1, 2, 3, 4, 5, 6, 7, 8, 9].map(n => ({ slot: n, label: `#${n}`, position: n === 1 ? 'P' : '' })), theirPitcher: '#1' });
+    const pitcherSlot = ours.find(s => (s.position || '').toUpperCase() === 'P');
+    setSetup({ us_is_home: false, dh: false, ours, theirs: [1, 2, 3, 4, 5, 6, 7, 8, 9].map(n => ({ slot: n, label: `#${n}`, position: n === 1 ? 'P' : '' })), theirPitcher: '#1',
+      regulation: data.job.regulation_innings || 7, pitcher: pitcherSlot ? String(pitcherSlot.player_id) : '', pitcherReason: '' });
   }
   async function saveLineups() {
     const ours = setup.ours.filter(s => s.player_id);
     if (ours.length < 1) return setError('Pick at least one of our players');
-    const d1 = await run(() => api.commandScorebookEvent(jobId, { event_type: 'lineup', payload: { side: 'us', us_is_home: setup.us_is_home, dh: setup.dh, slots: ours.map((s, i) => ({ slot: i + 1, player_id: s.player_id, label: s.label, position: s.position })) } }));
+    if (!setup.pitcher) return setError('Name our starting pitcher, or record an unknown-pitcher exception — pitching statistics cannot publish without one');
+    if (setup.pitcher === 'unknown' && setup.pitcherReason.trim().length < 3) return setError('An unknown-pitcher exception needs a reason');
+    if (Number(setup.regulation) !== (data.job.regulation_innings || 7)) {
+      setError('');
+      try { await api.commandUpdateJob(jobId, { regulation_innings: Number(setup.regulation) }); } catch (err) { return setError(err.message); }
+    }
+    const d1 = await run(() => api.commandScorebookEvent(jobId, { event_type: 'lineup', payload: {
+      side: 'us', us_is_home: setup.us_is_home, dh: setup.dh, slots: ours.map((s, i) => ({ slot: i + 1, player_id: s.player_id, label: s.label, position: s.position })),
+      pitcher_player_id: setup.pitcher !== 'unknown' ? Number(setup.pitcher) : undefined,
+      pitcher_unknown_reason: setup.pitcher === 'unknown' ? setup.pitcherReason.trim() : undefined,
+    } }));
     if (!d1) return;
     const theirs = setup.theirs.filter(s => s.label.trim());
     await run(() => api.commandScorebookEvent(jobId, { event_type: 'lineup', payload: { side: 'them', slots: theirs.map((s, i) => ({ slot: i + 1, label: s.label.trim(), position: s.position })), pitcher_label: setup.theirPitcher || undefined } }), 'Lineups saved — score the first pitch');
@@ -281,14 +296,36 @@ export default function ScorebookPage() {
   const homeLabel = state.us_is_home ? 'us' : 'them';
   const awayLabel = state.us_is_home ? 'them' : 'us';
 
+  // The footage panel: compact inside the scoring workspace (player, timeline and
+  // tagging controls share one laptop viewport), full width on the other tabs.
+  const videoPanel = data.feeds?.some(f => f.status === 'ready') ? (
+        <section className={`rounded-2xl border ${tab === 'score' ? 'p-3' : 'p-4 mb-4'}`} style={cardStyle} data-testid="video-panel">
+          <div className={`flex items-center justify-between gap-3 ${tab === 'score' ? 'flex-nowrap mb-1.5' : 'flex-wrap mb-2'}`}>
+            <div className="flex items-center gap-3 min-w-0">
+              <p className="text-[11px] font-bold uppercase tracking-widest" style={{ color: '#94a3b8' }}>Footage</p>
+              <Select value={activeFeedId || ''} onChange={e => setVideoFeedId(Number(e.target.value))}>
+                {data.feeds.filter(f => f.status === 'ready').map(f => <option key={f.id} value={f.id}>{f.label}{f.effective_fps ? ` · ${Number(f.effective_fps.toFixed?.(0) ?? f.effective_fps)} fps` : ''}</option>)}
+              </Select>
+              {videoOn && <span className="text-xs whitespace-nowrap" style={{ color: '#64748b' }}>stamping at <b style={{ color: '#cfe8ff' }}>{formatTimecode(currentFrame / fps)}</b></span>}
+            </div>
+            <GhostButton onClick={() => setShowVideo(v => !v)}>{showVideo ? 'Hide video' : 'Show video'}</GhostButton>
+          </div>
+          {showVideo && proxy && (
+            <FeedPlayer ref={playerRef} src={proxy.url} fps={fps} onFrame={setCurrentFrame} captureKeys={!resultPanel && !sub && !finalForm && !editing && !fixState && !pitcherPanel} compact={tab === 'score'}
+              markers={data.log.filter(l => l.timecode_s != null && !l.child && l.feed_id === activeFeedId).map(l => ({ id: l.id, t: l.timecode_s, label: l.text, kind: l.type }))} />
+          )}
+          {showVideo && !proxy && <p className="text-xs" style={{ color: '#94a3b8' }}>Loading the review proxy…</p>}
+        </section>
+  ) : null;
+
   return (
     <div>
       <Link to={`/command/jobs/${jobId}`} className="text-xs hover:underline" style={{ color: '#64748b' }}>← Job</Link>
-      <div className="flex items-center justify-between gap-3 mt-1 mb-4 flex-wrap">
-        <div>
-          <h1 className="text-2xl font-bold text-white">Scorebook</h1>
-          <p className="text-sm mt-1" style={{ color: '#94a3b8' }}>
-            Keyboard first: <b style={{ color: '#cfe8ff' }}>B</b> ball · <b style={{ color: '#cfe8ff' }}>C</b> called strike · <b style={{ color: '#cfe8ff' }}>S</b> swinging · <b style={{ color: '#cfe8ff' }}>F</b> foul · <b style={{ color: '#cfe8ff' }}>H</b> HBP · <b style={{ color: '#cfe8ff' }}>I</b> in play. Four balls or three strikes resolve the at-bat on their own. Everything here is replayed from the event log.
+      <div className="flex items-center justify-between gap-3 mt-1 mb-3 flex-wrap">
+        <div className="flex items-center gap-3 flex-wrap">
+          <h1 className="text-xl font-bold text-white">Scorebook</h1>
+          <p className="text-xs" style={{ color: '#64748b' }} title="Four balls or three strikes resolve the at-bat on their own. Everything here is replayed from the event log.">
+            <b style={{ color: '#94a3b8' }}>B</b> ball · <b style={{ color: '#94a3b8' }}>C</b> called · <b style={{ color: '#94a3b8' }}>S</b> swinging · <b style={{ color: '#94a3b8' }}>F</b> foul · <b style={{ color: '#94a3b8' }}>H</b> HBP · <b style={{ color: '#94a3b8' }}>I</b> in play
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -305,40 +342,55 @@ export default function ScorebookPage() {
       {notice && <p className="text-sm mb-3 px-4 py-2 rounded-xl border" style={{ borderColor: 'rgba(74, 222, 128, 0.35)', backgroundColor: 'rgba(74, 222, 128, 0.08)', color: '#4ade80' }}>{notice}</p>}
 
       {/* scoreboard */}
-      <section className="rounded-2xl border p-4 mb-4" style={cardStyle} data-testid="scoreboard">
-        <div className="flex items-center justify-between gap-4 flex-wrap">
-          <div className="flex items-center gap-6">
-            <div>
-              <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: '#64748b' }}>Away · {awayLabel === 'us' ? 'us' : (data.job.opponent_label || 'them')}</p>
-              <p className="text-3xl font-black tabular-nums text-white">{state.score[awayLabel]}</p>
+      <section className="rounded-2xl border px-4 py-2 mb-3" style={cardStyle} data-testid="scoreboard">
+        <div className="flex items-center justify-between gap-3 flex-wrap lg:flex-nowrap">
+          <div className="flex items-center gap-4 min-w-0">
+            <div className="flex items-baseline gap-1.5">
+              <p className="text-[10px] font-bold uppercase tracking-widest max-w-[110px] truncate" style={{ color: '#64748b' }} title={`Away · ${awayLabel === 'us' ? 'us' : (data.job.opponent_label || 'them')}`}>{awayLabel === 'us' ? 'Us' : (data.job.opponent_label || 'Them')}</p>
+              <p className="text-2xl font-black tabular-nums text-white">{state.score[awayLabel]}</p>
             </div>
-            <div>
-              <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: '#64748b' }}>Home · {homeLabel === 'us' ? 'us' : (data.job.opponent_label || 'them')}</p>
-              <p className="text-3xl font-black tabular-nums text-white">{state.score[homeLabel]}</p>
+            <div className="flex items-baseline gap-1.5">
+              <p className="text-[10px] font-bold uppercase tracking-widest max-w-[110px] truncate" style={{ color: '#64748b' }} title={`Home · ${homeLabel === 'us' ? 'us' : (data.job.opponent_label || 'them')}`}>{homeLabel === 'us' ? 'Us' : (data.job.opponent_label || 'Them')}</p>
+              <p className="text-2xl font-black tabular-nums text-white">{state.score[homeLabel]}</p>
             </div>
-            <div className="text-sm" style={{ color: '#cfe8ff' }}>
+            <div className="text-sm whitespace-nowrap" style={{ color: '#cfe8ff' }}>
               {state.final ? <span className="font-bold" style={{ color: '#4ade80' }}>FINAL · {state.final.reason.replace(/_/g, ' ')}</span>
                 : state.upcoming ? <><span style={{ color: '#94a3b8' }}>{state.half ? `${state.half === 'top' ? 'Top' : 'Bot'} ${state.inning} complete · ` : ''}next up</span> <span className="font-bold">{state.upcoming.half === 'top' ? 'Top' : 'Bot'} {state.upcoming.inning}</span></>
                 : state.half ? <><span className="font-bold">{state.half === 'top' ? 'Top' : 'Bot'} {state.inning}</span> · {state.outs} out{state.outs === 1 ? '' : 's'}{pitches.length ? ` · ${balls}-${strikeCount}` : ''}</>
                 : <span style={{ color: '#94a3b8' }}>Not started</span>}
               {state.game_over_suggested && !state.final && (
-                <span className="ml-3 text-xs font-bold" style={{ color: '#fbbf24' }}>Game over by {state.game_over_suggested.reason.replace(/_/g, ' ')} ({state.game_over_suggested.detail}) — mark final</span>
+                <span className="ml-2 text-xs font-bold" style={{ color: '#fbbf24' }} title={state.game_over_suggested.detail}>game over by {state.game_over_suggested.reason.replace(/_/g, ' ')} — mark final</span>
               )}
             </div>
+            {state.regulation && (
+              <span className="text-[11px] tabular-nums" style={{ color: state.regulation.reached ? '#4ade80' : '#94a3b8' }} title={state.regulation.why} data-testid="regulation-status">
+                Reg {state.regulation.innings} · {state.final ? state.final.reason.replace(/_/g, ' ') : state.regulation.reached ? 'reached' : 'not reached'}
+              </span>
+            )}
+            {lineupsReady && !state.pitcher.us && (
+              <button onClick={() => setPitcherPanel(p => (p ? null : { player_id: '', reason: '' }))} className="text-[11px] font-bold px-2 py-1 rounded cursor-pointer"
+                style={state.pitcher_unknown_reason ? { backgroundColor: 'rgba(251, 191, 36, 0.15)', color: '#fbbf24' } : { backgroundColor: 'rgba(248, 113, 113, 0.15)', color: '#f87171' }} data-testid="pitcher-status"
+                title={state.pitcher_unknown_reason ? `Unknown pitcher — audited exception: ${state.pitcher_unknown_reason}` : 'Our starting pitcher is not identified: the record cannot finalize and no pitching statistics publish until it is set or excepted'}>
+                {state.pitcher_unknown_reason ? '⚠ pitcher unknown (exception)' : '⛔ starting pitcher not identified'}
+              </button>
+            )}
           </div>
           {/* bases */}
-          <div className="flex items-center gap-3">
-            <Diamond bases={state.bases} />
-            <div className="text-xs" style={{ color: '#94a3b8' }}>
-              {[3, 2, 1].map(b => <p key={b}>{b}B: <span style={{ color: state.bases[b] ? '#f8fafc' : '#475569' }}>{state.bases[b] ? refName(state.bases[b].ref) : 'empty'}</span></p>)}
-            </div>
-          </div>
           <div className="flex items-center gap-2">
+            <Diamond bases={state.bases} />
+            <p className="text-[11px] leading-4" style={{ color: '#94a3b8' }}>
+              {[1, 2, 3].map(b => <span key={b} className="mr-2">{b}B <span style={{ color: state.bases[b] ? '#f8fafc' : '#475569' }}>{state.bases[b] ? refName(state.bases[b].ref) : '—'}</span></span>)}
+            </p>
+          </div>
+          <div className="flex items-center gap-1.5 whitespace-nowrap">
+            {(data.issues.length > 0 || state.line_score?.innings > 0) && (
+              <GhostButton onClick={() => setShowDetails(v => !v)}>{showDetails ? 'Hide details' : `Details${data.issues.length ? ` · ${data.issues.length}` : ''}`}</GhostButton>
+            )}
             {!state.final && lineupsReady && state.half && !state.half_complete && (
               <GhostButton title="Edit outs, score, bases or who is due up when the derived state is wrong — with a reason" onClick={() => setFixState({ outs: state.outs, us: state.score.us, them: state.score.them, bases: { 1: state.bases[1]?.ref ? refKeyOf(state.bases[1].ref) : '', 2: state.bases[2]?.ref ? refKeyOf(state.bases[2].ref) : '', 3: state.bases[3]?.ref ? refKeyOf(state.bases[3].ref) : '' }, next_slot: state.expected_batter?.slot || 1, note: '' })}>Fix state</GhostButton>
             )}
             {!state.final && lineupsReady && (
-              <GhostButton onClick={() => setFinalForm({ reason: state.game_over_suggested?.reason || 'regulation', note: '' })}>Mark final</GhostButton>
+              <GhostButton onClick={() => setFinalForm({ reason: state.regulation?.reached ? 'regulation' : (state.game_over_suggested?.reason || ''), note: '' })}>Mark final</GhostButton>
             )}
             {state.final && (
               <GhostButton onClick={() => run(() => api.commandScorebookVoid(state.final.event_id, 'reopened for corrections'), 'Game reopened')}>Reopen</GhostButton>
@@ -346,15 +398,26 @@ export default function ScorebookPage() {
           </div>
         </div>
         {finalForm && (
-          <div className="flex items-end gap-2 mt-3 pt-3 border-t flex-wrap" style={{ borderColor: '#1e3a5f' }}>
-            <Field label="Why did the game end?">
-              <Select value={finalForm.reason} onChange={e => setFinalForm(f => ({ ...f, reason: e.target.value }))}>
-                {data.vocab.final_reasons.map(r => <option key={r} value={r}>{r.replace(/_/g, ' ')}</option>)}
-              </Select>
-            </Field>
-            <Field label="Note"><TextInput value={finalForm.note} onChange={e => setFinalForm(f => ({ ...f, note: e.target.value }))} placeholder="1:45 time limit" /></Field>
-            <PrimaryButton disabled={busy} onClick={async () => { const d = await run(() => api.commandScorebookEvent(jobId, { event_type: 'game_final', ...tag(), payload: finalForm }), 'Game marked final — validate the game record from the job page'); if (d) setFinalForm(null); }}>Mark final</PrimaryButton>
-            <GhostButton onClick={() => setFinalForm(null)}>Cancel</GhostButton>
+          <div className="mt-3 pt-3 border-t" style={{ borderColor: '#1e3a5f' }} data-testid="final-form">
+            <p className="text-xs mb-2" style={{ color: state.regulation?.reached ? '#4ade80' : '#fbbf24' }}>
+              {state.regulation?.reached
+                ? `Regulation length reached (${state.regulation.why}).`
+                : `Regulation length not reached — ${state.regulation?.why}. Ending now needs the reason and an audit note; the run rule is the event's to confirm.`}
+            </p>
+            <div className="flex items-end gap-2 flex-wrap">
+              <Field label="Why did the game end?">
+                <Select value={finalForm.reason} onChange={e => setFinalForm(f => ({ ...f, reason: e.target.value }))}>
+                  <option value="">— choose —</option>
+                  {data.vocab.final_reasons.map(r => <option key={r} value={r} disabled={r === 'regulation' && !state.regulation?.reached}>{r.replace(/_/g, ' ')}{r === 'regulation' && !state.regulation?.reached ? ' (not reached)' : ''}</option>)}
+                </Select>
+              </Field>
+              <Field label={finalForm.reason && finalForm.reason !== 'regulation' ? 'Audit note (required)' : 'Note'}>
+                <TextInput value={finalForm.note} onChange={e => setFinalForm(f => ({ ...f, note: e.target.value }))} placeholder={finalForm.reason === 'run_rule' ? 'tournament rule: 15 after 3' : finalForm.reason === 'time_limit' ? '1:45 limit at 8:12pm' : 'why the game ended'} />
+              </Field>
+              <PrimaryButton disabled={busy || !finalForm.reason || (finalForm.reason !== 'regulation' && finalForm.note.trim().length < 3) || (finalForm.reason === 'regulation' && !state.regulation?.reached)}
+                onClick={async () => { const d = await run(() => api.commandScorebookEvent(jobId, { event_type: 'game_final', ...tag(), payload: { reason: finalForm.reason, note: finalForm.note.trim() || undefined } }), 'Game marked final — validate the game record from the job page'); if (d) setFinalForm(null); }}>Mark final</PrimaryButton>
+              <GhostButton onClick={() => setFinalForm(null)}>Cancel</GhostButton>
+            </div>
           </div>
         )}
         {fixState && (
@@ -390,7 +453,21 @@ export default function ScorebookPage() {
             </div>
           </div>
         )}
-        {state.line_score?.innings > 0 && (
+        {pitcherPanel && (
+          <div className="mt-3 pt-3 border-t flex items-end gap-2 flex-wrap" style={{ borderColor: '#1e3a5f' }} data-testid="pitcher-panel">
+            <Field label="Our starting pitcher (applies to every pitch already scored)">
+              <Select value={pitcherPanel.player_id} onChange={e => setPitcherPanel(p => ({ ...p, player_id: e.target.value }))}>
+                <option value="">—</option>{data.roster.map(p => <option key={p.id} value={p.id}>{p.jersey ? `#${p.jersey} ` : ''}{p.first_name} {p.last_name}{p.is_guest ? ' · guest' : ''}</option>)}
+              </Select>
+            </Field>
+            <PrimaryButton disabled={busy || !pitcherPanel.player_id} onClick={async () => { const d = await run(() => api.commandScorebookStartingPitcher(jobId, { player_id: Number(pitcherPanel.player_id) }), 'Starting pitcher set — every pitch re-attributed'); if (d) setPitcherPanel(null); }}>Set pitcher</PrimaryButton>
+            <span className="text-xs pb-2" style={{ color: '#64748b' }}>or</span>
+            <Field label="Unknown-pitcher exception (reason, audited)"><TextInput value={pitcherPanel.reason} onChange={e => setPitcherPanel(p => ({ ...p, reason: e.target.value }))} placeholder="not on the roster sheet; coach could not confirm" /></Field>
+            <GhostButton disabled={busy || pitcherPanel.reason.trim().length < 3} onClick={async () => { const d = await run(() => api.commandScorebookStartingPitcher(jobId, { unknown_reason: pitcherPanel.reason.trim() }), 'Exception recorded — no pitching statistics will publish for us'); if (d) setPitcherPanel(null); }}>Record exception</GhostButton>
+            <GhostButton onClick={() => setPitcherPanel(null)}>Cancel</GhostButton>
+          </div>
+        )}
+        {showDetails && state.line_score?.innings > 0 && (
           <div className="mt-3 pt-3 border-t overflow-x-auto" style={{ borderColor: '#1e3a5f' }} data-testid="line-score">
             <table className="text-xs tabular-nums">
               <thead><tr style={{ color: '#64748b' }}><th className="text-left pr-3 font-normal"></th>{Array.from({ length: state.line_score.innings }, (_, i) => <th key={i} className="px-1.5 font-normal">{i + 1}</th>)}<th className="pl-3 px-1.5">R</th><th className="px-1.5">H</th><th className="px-1.5">E</th><th className="px-1.5">LOB</th></tr></thead>
@@ -406,35 +483,17 @@ export default function ScorebookPage() {
             </table>
           </div>
         )}
-        {data.issues.length > 0 && (
+        {data.issues.some(i => i.level === 'blocking' || showDetails) && (
           <div className="mt-3 pt-3 border-t text-xs" style={{ borderColor: '#1e3a5f' }} data-testid="scorebook-issues">
-            {data.issues.slice(0, 6).map((i, n) => (
+            {data.issues.filter(i => i.level === 'blocking' || showDetails).slice(0, showDetails ? 12 : 3).map((i, n) => (
               <p key={n} style={{ color: i.level === 'blocking' ? '#f87171' : i.level === 'info' ? '#94a3b8' : '#fbbf24' }}>{i.level === 'blocking' ? '⛔' : i.level === 'info' ? 'ℹ' : '⚠'} {i.message}{i.sequence ? <span style={{ color: '#475569' }}> · #{i.sequence}</span> : null}</p>
             ))}
-            {data.issues.length > 6 && <p style={{ color: '#64748b' }}>… {data.issues.length - 6} more in the play-by-play</p>}
+            {!showDetails && data.issues.some(i => i.level !== 'blocking') && <p style={{ color: '#64748b' }}>… {data.issues.filter(i => i.level !== 'blocking').length} more under Details</p>}
           </div>
         )}
       </section>
 
-      {data.feeds?.some(f => f.status === 'ready') && (
-        <section className="rounded-2xl border p-4 mb-4" style={cardStyle} data-testid="video-panel">
-          <div className="flex items-center justify-between gap-3 flex-wrap mb-2">
-            <div className="flex items-center gap-3">
-              <p className="text-[11px] font-bold uppercase tracking-widest" style={{ color: '#94a3b8' }}>Footage</p>
-              <Select value={activeFeedId || ''} onChange={e => setVideoFeedId(Number(e.target.value))}>
-                {data.feeds.filter(f => f.status === 'ready').map(f => <option key={f.id} value={f.id}>{f.label}{f.effective_fps ? ` · ${Number(f.effective_fps.toFixed?.(0) ?? f.effective_fps)} fps` : ''}</option>)}
-              </Select>
-              {videoOn && <span className="text-xs" style={{ color: '#64748b' }}>every play is stamped at <b style={{ color: '#cfe8ff' }}>{formatTimecode(currentFrame / fps)}</b> as you score it</span>}
-            </div>
-            <GhostButton onClick={() => setShowVideo(v => !v)}>{showVideo ? 'Hide video' : 'Show video'}</GhostButton>
-          </div>
-          {showVideo && proxy && (
-            <FeedPlayer ref={playerRef} src={proxy.url} fps={fps} onFrame={setCurrentFrame} captureKeys={!resultPanel && !sub && !finalForm && !editing}
-              markers={data.log.filter(l => l.timecode_s != null && !l.child && l.feed_id === activeFeedId).map(l => ({ id: l.id, t: l.timecode_s, label: l.text, kind: l.type }))} />
-          )}
-          {showVideo && !proxy && <p className="text-xs" style={{ color: '#94a3b8' }}>Loading the review proxy…</p>}
-        </section>
-      )}
+      {tab !== 'score' && videoPanel}
 
       {tab === 'score' && !lineupsReady && (
         <section className="rounded-2xl border p-5" style={cardStyle} data-testid="lineup-setup">
@@ -466,6 +525,18 @@ export default function ScorebookPage() {
                   </div>
                 ))}
                 <GhostButton onClick={() => setSetup(st => ({ ...st, ours: [...st.ours, { slot: st.ours.length + 1, player_id: null, label: '', position: '' }] }))}>+ slot</GhostButton>
+                <div className="grid sm:grid-cols-2 gap-3 mt-4">
+                  <Field label="Our starting pitcher (required)">
+                    <Select value={setup.pitcher} onChange={e => setSetup(st => ({ ...st, pitcher: e.target.value }))} data-testid="setup-pitcher">
+                      <option value="">— pick —</option>
+                      {data.roster.map(p => <option key={p.id} value={p.id}>{p.jersey ? `#${p.jersey} ` : ''}{p.first_name} {p.last_name}{p.is_guest ? ' · guest' : ''}</option>)}
+                      <option value="unknown">Unknown pitcher — audited exception</option>
+                    </Select>
+                  </Field>
+                  {setup.pitcher === 'unknown'
+                    ? <Field label="Exception reason (required)"><TextInput value={setup.pitcherReason} onChange={e => setSetup(st => ({ ...st, pitcherReason: e.target.value }))} placeholder="not on the roster sheet" /></Field>
+                    : <p className="text-xs self-end pb-2" style={{ color: '#64748b' }}>Pitching statistics publish only for an identified Diamond Metrics pitcher; scoring can start without one, but the record stays blocked until it is set.</p>}
+                </div>
               </div>
               <div>
                 <p className="text-[11px] font-bold uppercase tracking-widest mb-2" style={{ color: '#94a3b8' }}>Their lineup (labels)</p>
@@ -479,6 +550,14 @@ export default function ScorebookPage() {
                   </div>
                 ))}
                 <Field label="Their starting pitcher (label)"><TextInput value={setup.theirPitcher} onChange={e => setSetup(st => ({ ...st, theirPitcher: e.target.value }))} /></Field>
+                <div className="mt-4">
+                  <Field label="Regulation length for this game">
+                    <Select value={setup.regulation} onChange={e => setSetup(st => ({ ...st, regulation: Number(e.target.value) }))} data-testid="setup-regulation">
+                      {[5, 6, 7, 8, 9].map(n => <option key={n} value={n}>{n} innings{n === 7 ? ' (default)' : ''}</option>)}
+                    </Select>
+                  </Field>
+                  <p className="text-xs mt-1" style={{ color: '#64748b' }}>Set from the tournament, league or event rules. A "regulation" final is only accepted once this length is reached; anything earlier needs an explicit reason and an audit note.</p>
+                </div>
               </div>
               <div className="lg:col-span-2 flex gap-2">
                 <PrimaryButton onClick={saveLineups} disabled={busy}>Save lineups and start</PrimaryButton>
@@ -490,17 +569,18 @@ export default function ScorebookPage() {
       )}
 
       {tab === 'score' && lineupsReady && (
-        <div className="grid xl:grid-cols-[minmax(0,1fr)_360px] gap-4 items-start">
+        <div className={videoPanel ? 'grid lg:grid-cols-[minmax(0,11fr)_minmax(0,9fr)] gap-3 items-start' : ''} data-testid="workspace">
+          {videoPanel}
           {/* at bat */}
-          <section className="rounded-2xl border p-5" style={cardStyle} data-testid="at-bat">
+          <section className="rounded-2xl border p-4" style={cardStyle} data-testid="at-bat">
             {state.final ? (
               <p className="text-sm" style={{ color: '#94a3b8' }}>The game is final. Corrections still work from the play-by-play; reopen to keep scoring.</p>
             ) : (
               <>
-                <div className="flex items-center justify-between gap-3 flex-wrap mb-3">
-                  <div>
+                <div className="flex items-center justify-between gap-3 flex-nowrap mb-2">
+                  <div className="min-w-0">
                     <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: '#64748b' }}>At bat · {battingSide === 'us' ? 'us' : (data.job.opponent_label || 'them')}</p>
-                    <p className="text-lg font-bold text-white">
+                    <p className="text-lg font-bold text-white truncate">
                       {batterOverride ? refName(battingRoster.find(p => String(p.player_id || p.label) === batterOverride)) : refName(state.expected_batter)}
                       <span className="text-xs font-normal ml-2" style={{ color: '#64748b' }}>slot {state.expected_batter?.slot ?? '—'}</span>
                     </p>
@@ -516,15 +596,15 @@ export default function ScorebookPage() {
                   </div>
                 </div>
                 {/* count */}
-                <div className="flex items-center gap-4 mb-3">
-                  <p className="text-4xl font-black tabular-nums" style={{ color: '#38bdf8' }}>{balls}-{strikeCount}</p>
+                <div className="flex items-center gap-4 mb-2">
+                  <p className="text-3xl font-black tabular-nums" style={{ color: '#38bdf8' }}>{balls}-{strikeCount}</p>
                   <div className="flex flex-wrap gap-1.5 text-xs" style={{ color: '#94a3b8' }}>
                     {pitches.map((p, i) => <span key={i} className="px-1.5 py-0.5 rounded" style={{ backgroundColor: 'rgba(30, 41, 59, 0.9)' }}>{p.result.replace(/_/g, ' ')}</span>)}
                     {pitches.length > 0 && <button onClick={() => setPitches([])} className="text-xs cursor-pointer hover:underline" style={{ color: '#64748b' }}>clear (Esc)</button>}
                   </div>
                 </div>
                 {!resultPanel && (data.modules?.radar || data.pitch_types) && (
-                  <div className="flex items-end gap-2 flex-wrap mb-3" data-testid="pitch-detail">
+                  <div className="flex items-end gap-2 flex-wrap mb-2" data-testid="pitch-detail">
                     <Field label="Pitch type (carries forward)">
                       <Select value={pitchType} onChange={e => { const v = e.target.value; setPitchType(v); setPitches(list => list.length ? list.map((p, i) => (i === list.length - 1 ? { ...p, pitch_type: v || undefined } : p)) : list); }}>
                         <option value="">—</option>{(data.pitch_types || []).map(t => <option key={t} value={t}>{t}</option>)}
@@ -664,7 +744,7 @@ export default function ScorebookPage() {
                 )}
                 {/* between-batter runner plays */}
                 {!resultPanel && [3, 2, 1].some(b => state.bases[b]) && (
-                  <div className="mt-4 pt-3 border-t" style={{ borderColor: '#1e3a5f' }}>
+                  <div className="mt-3 pt-2 border-t" style={{ borderColor: '#1e3a5f' }}>
                     <div className="flex items-center justify-between gap-2 mb-1.5">
                       <p className="text-[11px] font-bold uppercase tracking-widest" style={{ color: '#94a3b8' }}>Runner plays before the next pitch</p>
                       {videoOn && data.modules?.steal && battingSide === 'us' && (
@@ -696,12 +776,20 @@ export default function ScorebookPage() {
             )}
           </section>
 
-          {/* lineups + substitutions */}
+        </div>
+      )}
+
+      {tab === 'score' && lineupsReady && (
+        <div className="mt-3">
+          {/* lineups + substitutions: secondary — collapsed under the workspace, opened on demand or when a substitution is in progress */}
           <section className="rounded-2xl border p-4" style={cardStyle} data-testid="lineups">
             <div className="flex items-center justify-between mb-2">
-              <p className="text-[11px] font-bold uppercase tracking-widest" style={{ color: '#94a3b8' }}>Lineups</p>
-              {!state.final && <GhostButton onClick={() => setSub({ kind: 'pinch_hitter', side: 'us', slot: '', base: '', player_in: '', player_in_label: '', position: '' })}>Substitution</GhostButton>}
+              <button onClick={() => setShowLineups(v => !v)} className="text-[11px] font-bold uppercase tracking-widest cursor-pointer hover:underline" style={{ color: '#94a3b8' }} data-testid="toggle-lineups">
+                {showLineups || sub ? '▾' : '▸'} Lineups & substitutions
+              </button>
+              {!state.final && <GhostButton onClick={() => { setShowLineups(true); setSub({ kind: 'pinch_hitter', side: 'us', slot: '', base: '', player_in: '', player_in_label: '', position: '' }); }}>Substitution</GhostButton>}
             </div>
+            {(showLineups || sub) && <>
             {['us', 'them'].map(side => (
               <div key={side} className="mb-3">
                 <p className="text-xs font-bold mb-1" style={{ color: side === battingSide ? '#38bdf8' : '#94a3b8' }}>{side === 'us' ? 'Us' : (data.job.opponent_label || 'Them')}{side === battingSide ? ' · batting' : ''} · P: {refName(state.pitcher[side])}</p>
@@ -755,6 +843,7 @@ export default function ScorebookPage() {
                 </div>
               </div>
             )}
+            </>}
           </section>
         </div>
       )}
