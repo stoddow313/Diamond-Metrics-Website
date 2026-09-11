@@ -14,6 +14,7 @@ import { log, alertOps } from './observability.js';
 import {
   createUpload, presignPart, appendLocalPart, completeUpload,
   listUploadedParts, storageMode, storageReady, missingStorageConfig,
+  playbackUrl as mediaPlaybackUrl, listObjectsIn, presignGetIn, LIVE_BUCKET,
 } from './storage.js';
 import {
   createStream, getStream, listStreams, endStream, withUrls, playbackUrl,
@@ -197,15 +198,18 @@ export function mountLiveRoutes(app, { db, requireInternal, currentUser }) {
     try {
       const stream = getStream(db, req.params.id);
       if (!stream) throw httpError(404, 'stream not found');
+      const [liveCopy, masters] = await Promise.all([
+        liveCopyFor(stream),
+        mastersWithUrls(db, stream.id),
+      ]);
       res.json({
         stream: withUrls(stream),
         report: sessionReport(db, stream.id),
-        // Live copies live in a separate bucket with its own retention, which
-        // this service is not configured for. Listed as unavailable rather than
-        // silently empty, so it does not read as "nothing was recorded".
-        live_copy: [],
-        live_copy_unavailable: 'Live copies are in the diamond-metrics-live bucket; listing is not wired up yet.',
-        masters: listMasters(db, stream.id),
+        live_copy: liveCopy.segments,
+        // Null when listing worked; otherwise the reason, so an empty panel
+        // never reads as "nothing was recorded" when the truth is "could not look".
+        live_copy_unavailable: liveCopy.error,
+        masters,
       });
     } catch (err) { next(err); }
   });
@@ -348,4 +352,52 @@ function describeMaster(db, row, uploadedParts) {
     uploaded_parts: uploadedParts.map((p) => p.partNumber),
     upload_id: row.upload_id,
   };
+}
+
+// ── both recordings, as the console plays them ──────────────────────────────
+
+/**
+ * The relay's live copy, listed from its bucket by the stream's own path — not
+ * by recording_prefix, because a segment the hourly sweeper recovered shipped
+ * without the hook that sets it, and it is just as much a recording of the game.
+ */
+async function liveCopyFor(stream) {
+  if (storageMode !== 'r2') {
+    return { segments: [], error: 'Live copies are only listed when media storage is R2.' };
+  }
+  const bucket = LIVE_BUCKET();
+  try {
+    const objects = (await listObjectsIn(bucket, `${stream.path}/`))
+      .sort((a, b) => a.key.localeCompare(b.key));
+    const segments = await Promise.all(objects.map(async (o) => ({
+      name: o.key.split('/').pop(),
+      bytes: o.size,
+      recorded_at: o.lastModified ? new Date(o.lastModified).toISOString() : null,
+      url: await presignGetIn(bucket, o.key),
+      preparing: false,
+      probe: null,
+    })));
+    return { segments, error: null };
+  } catch (err) {
+    log('warn', 'live_copy_list_failed', { stream_id: stream.id, bucket, error: err.message });
+    return { segments: [], error: `Could not list ${bucket}: ${err.name ? `${err.name} — ` : ''}${err.message}` };
+  }
+}
+
+/**
+ * Masters with something the console can play. A complete one gets a presigned
+ * R2 URL — without it the player renders empty and the upload looks lost. One
+ * still uploading gets progress from R2's own part list, because the phone sends
+ * parts straight there and this service never sees the bytes.
+ */
+async function mastersWithUrls(db, streamId) {
+  const rows = db.prepare('SELECT * FROM cmd_live_masters WHERE stream_id = ? ORDER BY created_at DESC').all(streamId);
+  return Promise.all(rows.map(async (row) => {
+    if (row.status === 'complete') {
+      return { ...describeMaster(db, row, []), url: await mediaPlaybackUrl(row.storage_key), bytes_received: row.bytes, probe: null };
+    }
+    const parts = await listUploadedParts(row.storage_key, row.upload_id).catch(() => []);
+    const received = parts.reduce((n, p) => n + (p.size || 0), 0);
+    return { ...describeMaster(db, row, parts), url: null, bytes_received: received, probe: null };
+  }));
 }

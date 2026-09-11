@@ -199,3 +199,24 @@ export async function playbackUrl(key) {
   }
   return `/api/command/media/${encodeURIComponent(key)}`;
 }
+
+// Live copies sit in their own bucket with their own 30-day retention, apart
+// from masters. Same account and client; only the bucket differs.
+export const LIVE_BUCKET = () => process.env.DM_LIVE_BUCKET || 'diamond-metrics-live';
+
+/** Objects under a prefix in a named bucket, with sizes. */
+export async function listObjectsIn(bucket, prefix) {
+  if (MODE !== 'r2') return [];
+  const out = [];
+  let token;
+  do {
+    const page = await client().send(new ListObjectsV2Command({ Bucket: bucket, Prefix: prefix, ContinuationToken: token }));
+    for (const obj of page.Contents || []) out.push({ key: obj.Key, size: obj.Size, lastModified: obj.LastModified });
+    token = page.IsTruncated ? page.NextContinuationToken : undefined;
+  } while (token);
+  return out;
+}
+
+export async function presignGetIn(bucket, key, expiresIn = 900) {
+  return getSignedUrl(client(), new GetObjectCommand({ Bucket: bucket, Key: key }), { expiresIn });
+}

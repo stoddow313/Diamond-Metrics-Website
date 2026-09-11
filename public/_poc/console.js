@@ -279,7 +279,7 @@ function liveCopyPanel(event) {
 
   if (!segments.length) {
     panel.append(event.live_copy_unavailable
-      ? placeholder('Not listed here', event.live_copy_unavailable)
+      ? placeholder('Live copy unavailable', event.live_copy_unavailable)
       : placeholder('Nothing recorded yet',
           'The relay records what it receives, so this appears once a stream publishes.'));
     return panel;
