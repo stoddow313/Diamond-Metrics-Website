@@ -555,7 +555,14 @@ async function startPlayback() {
  */
 function attemptPlay() {
   const video = $('video');
-  video.play().then(clearGesture).catch(showGesture);
+  // Sound first. Browsers refuse unmuted autoplay without a prior gesture, so
+  // fall back to muted — a live picture beats a blank player — and offer sound
+  // as one tap. Starting muted unconditionally is what silently lost the audio.
+  video.muted = false;
+  video.play().then(() => { clearGesture(); clearSoundPrompt(); }).catch(() => {
+    video.muted = true;
+    video.play().then(() => { clearGesture(); showSoundPrompt(); }).catch(showGesture);
+  });
 }
 
 function showGesture() {
@@ -566,7 +573,9 @@ function showGesture() {
   btn.innerHTML = '<strong>Tap to watch</strong><span>The browser blocked autoplay.</span>';
   btn.addEventListener('click', () => {
     seekToLive();
-    $('video').play().then(clearGesture).catch(() => {});
+    const video = $('video');
+    video.muted = false;   // this tap is the gesture browsers want, so sound is allowed now
+    video.play().then(() => { clearGesture(); clearSoundPrompt(); }).catch(() => {});
   });
   $('player').append(btn);
 }
@@ -574,6 +583,29 @@ function showGesture() {
 function clearGesture() {
   $('player').querySelector('.gesture')?.remove();
 }
+
+/** Sound is one tap away, never a blocker: the picture stays visible behind it. */
+function showSoundPrompt() {
+  if ($('player').querySelector('.sound')) return;
+  const btn = document.createElement('button');
+  btn.className = 'sound';
+  btn.type = 'button';
+  btn.textContent = 'Tap for sound';
+  btn.addEventListener('click', () => {
+    $('video').muted = false;
+    clearSoundPrompt();
+  });
+  $('player').append(btn);
+}
+
+function clearSoundPrompt() {
+  $('player').querySelector('.sound')?.remove();
+}
+
+// Unmuting from the player's own controls counts too.
+$('video').addEventListener('volumechange', () => {
+  if (!$('video').muted) clearSoundPrompt();
+});
 
 /** Seconds between the newest media the player holds and where it is playing. */
 function behindLive() {
@@ -613,6 +645,7 @@ function stopPlayback() {
   video.removeAttribute('src');
   video.load();
   clearGesture();
+  clearSoundPrompt();
   $('player-placeholder').hidden = false;
 }
 

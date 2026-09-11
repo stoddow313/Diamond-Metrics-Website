@@ -176,3 +176,11 @@ td.k { font-weight: 600; }
 .specs .v.better { color: var(--good); }
 .progress { height: 6px; border-radius: 999px; background: var(--bg-2); border: 1px solid var(--border-soft); overflow: hidden; }
 .progress > span { display: block; height: 100%; background: var(--accent); }
+
+/* Over a dark scrim in both themes, so the text colour is fixed rather than a
+   theme token that would turn dark-on-dark in light mode. */
+.player .sound { position: absolute; left: 50%; bottom: 56px; transform: translateX(-50%);
+  background: rgba(6,18,43,.86); color: #e8eefb; border: 1px solid rgba(232,238,251,.28);
+  border-radius: 999px; padding: 8px 16px; font-family: inherit; font-size: .82rem;
+  font-weight: 600; letter-spacing: .01em; cursor: pointer; }
+.player .sound:hover, .player .sound:focus-visible { border-color: var(--accent); }
