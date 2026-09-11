@@ -50,6 +50,7 @@ export default function LivePage() {
   const [error, setError] = useState('');
   const [buffering, setBuffering] = useState(false);
   const [needsTap, setNeedsTap] = useState(false);
+  const [soundBlocked, setSoundBlocked] = useState(false);
 
   // Poll rather than push: a game is hours long and this is two fields of JSON.
   useEffect(() => {
@@ -72,10 +73,21 @@ export default function LivePage() {
   }, [id]);
 
   const play = useCallback(() => {
-    videoRef.current?.play()
-      .then(() => setNeedsTap(false))
-      // Autoplay refusal is the common case on mobile, not the edge case.
-      .catch(() => setNeedsTap(true));
+    const video = videoRef.current;
+    if (!video) return;
+    // Sound first. Browsers refuse unmuted autoplay without a prior gesture, so
+    // fall back to muted — a live picture beats a blank one — and offer sound as
+    // one tap. Starting muted unconditionally is what silently lost the audio.
+    video.muted = false;
+    video.play()
+      .then(() => { setNeedsTap(false); setSoundBlocked(false); })
+      .catch(() => {
+        video.muted = true;
+        video.play()
+          .then(() => { setNeedsTap(false); setSoundBlocked(true); })
+          // Autoplay refusal is the common case on mobile, not the edge case.
+          .catch(() => setNeedsTap(true));
+      });
   }, []);
 
   const signPlayback = useCallback(async () => {
@@ -175,8 +187,8 @@ export default function LivePage() {
             className="h-full w-full object-contain"
             playsInline
             controls
-            muted
             onWaiting={onWaiting}
+            onVolumeChange={(e) => { if (!e.currentTarget.muted) setSoundBlocked(false); }}
             onPlaying={() => setBuffering(false)}
           />
 
@@ -184,6 +196,19 @@ export default function LivePage() {
             <div className="absolute left-3 top-3 rounded-full bg-slate-950/80 px-3 py-1.5 text-[0.65rem] uppercase tracking-widest">
               Buffering
             </div>
+          )}
+
+          {soundBlocked && live && !needsTap && (
+            <button
+              type="button"
+              onClick={() => {
+                if (videoRef.current) videoRef.current.muted = false;
+                setSoundBlocked(false);
+              }}
+              className="absolute bottom-14 left-1/2 -translate-x-1/2 rounded-full border border-slate-500/40 bg-slate-950/85 px-4 py-2 text-sm font-semibold text-slate-100 hover:border-sky-400 focus-visible:outline focus-visible:outline-2 focus-visible:outline-sky-400"
+            >
+              Tap for sound
+            </button>
           )}
 
           {needsTap && live && (
