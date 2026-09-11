@@ -93,6 +93,7 @@ export default function ScorebookPage() {
   const [showDetails, setShowDetails] = useState(false); // line score + non-blocking issues, behind a toggle in the workspace
   const [showLineups, setShowLineups] = useState(false); // lineups & substitutions live below the workspace
   const [pitcherPanel, setPitcherPanel] = useState(null); // { player_id, reason } — set our starting pitcher after the fact
+  const [guestForm, setGuestForm] = useState(null);      // { first_name, last_name, jersey } — a one-off player for this job's lineup
   const [timeSteals, setTimeSteals] = useState(true);    // queue a steal timing attempt with each SB/CS when the video is on
   const [pendingSeek, setPendingSeek] = useState(null);   // { seconds, nonce } from a play-by-play row
   const appliedSeekRef = useRef(null);
@@ -227,6 +228,22 @@ export default function ScorebookPage() {
     const pitcherSlot = ours.find(s => (s.position || '').toUpperCase() === 'P');
     setSetup({ us_is_home: false, dh: false, ours, theirs: [1, 2, 3, 4, 5, 6, 7, 8, 9].map(n => ({ slot: n, label: `#${n}`, position: n === 1 ? 'P' : '' })), theirPitcher: '#1',
       regulation: data.job.regulation_innings || 7, pitcher: pitcherSlot ? String(pitcherSlot.player_id) : '', pitcherReason: '' });
+  }
+  // The roster is dated: only memberships covering the game date appear. A
+  // player who is playing anyway (fill-in, wrong dates on the roster) joins as a
+  // job-scoped guest — a real player row, reassignable later, no public profile.
+  async function addGuest() {
+    const g = guestForm;
+    if (!g || (!g.first_name.trim() && !g.last_name.trim() && !g.jersey.trim())) return setError('Give the guest a name or a jersey number');
+    setError(''); setBusy(true);
+    try {
+      await api.commandAddGuest(jobId, { first_name: g.first_name.trim(), last_name: g.last_name.trim(), jersey: g.jersey.trim() });
+      const fresh = await load();
+      const added = fresh?.roster?.find(p => p.is_guest && `${p.first_name} ${p.last_name}`.trim() === `${g.first_name.trim()} ${g.last_name.trim()}`.trim()) || fresh?.roster?.filter(p => p.is_guest).at(-1);
+      if (added && setup) setSetup(st => ({ ...st, ours: [...st.ours, { slot: st.ours.length + 1, player_id: added.id, label: `${added.first_name} ${added.last_name}`, position: '' }] }));
+      setGuestForm(null);
+      setNotice(`${g.first_name || g.jersey} added as a guest for this job — reassign to the identified player later; no public profile is created`);
+    } catch (err) { setError(err.message); } finally { setBusy(false); }
   }
   async function saveLineups() {
     const ours = setup.ours.filter(s => s.player_id);
@@ -524,7 +541,22 @@ export default function ScorebookPage() {
                     </Select>
                   </div>
                 ))}
-                <GhostButton onClick={() => setSetup(st => ({ ...st, ours: [...st.ours, { slot: st.ours.length + 1, player_id: null, label: '', position: '' }] }))}>+ slot</GhostButton>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <GhostButton onClick={() => setSetup(st => ({ ...st, ours: [...st.ours, { slot: st.ours.length + 1, player_id: null, label: '', position: '' }] }))}>+ slot</GhostButton>
+                  <GhostButton onClick={() => setGuestForm(g => (g ? null : { first_name: '', last_name: '', jersey: '' }))} data-testid="add-guest">+ guest player</GhostButton>
+                  <span className="text-xs" style={{ color: '#64748b' }} data-testid="roster-hint">
+                    Roster as of {data.job.game_date}: {data.roster.length} player{data.roster.length === 1 ? '' : 's'}. Only memberships covering the game date appear — fix the dates in Admin → Teams, or add a guest for a one-off.
+                  </span>
+                </div>
+                {guestForm && (
+                  <div className="flex items-end gap-2 flex-wrap mt-2" data-testid="guest-form">
+                    <Field label="First name"><TextInput value={guestForm.first_name} onChange={e => setGuestForm(g => ({ ...g, first_name: e.target.value }))} placeholder="Jordan" /></Field>
+                    <Field label="Last name"><TextInput value={guestForm.last_name} onChange={e => setGuestForm(g => ({ ...g, last_name: e.target.value }))} placeholder="Fill-in" /></Field>
+                    <Field label="Jersey"><TextInput value={guestForm.jersey} onChange={e => setGuestForm(g => ({ ...g, jersey: e.target.value }))} placeholder="14" /></Field>
+                    <PrimaryButton onClick={addGuest} disabled={busy}>Add guest</PrimaryButton>
+                    <GhostButton onClick={() => setGuestForm(null)}>Cancel</GhostButton>
+                  </div>
+                )}
                 <div className="grid sm:grid-cols-2 gap-3 mt-4">
                   <Field label="Our starting pitcher (required)">
                     <Select value={setup.pitcher} onChange={e => setSetup(st => ({ ...st, pitcher: e.target.value }))} data-testid="setup-pitcher">

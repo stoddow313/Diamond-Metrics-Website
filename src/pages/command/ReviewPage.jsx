@@ -53,7 +53,7 @@ export default function ReviewPage() {
     const byPlayer = new Map();
     for (const r of data.results) {
       if (!byPlayer.has(r.player_id)) {
-        byPlayer.set(r.player_id, { player_id: r.player_id, name: `${r.first_name} ${r.last_name}`, slug: r.slug, metrics: new Map() });
+        byPlayer.set(r.player_id, { player_id: r.player_id, name: `${r.first_name} ${r.last_name}`, slug: r.slug, is_public: !!r.is_public, metrics: new Map() });
       }
       const g = byPlayer.get(r.player_id);
       if (!g.metrics.has(r.metric_code)) g.metrics.set(r.metric_code, []);
@@ -237,9 +237,19 @@ export default function ReviewPage() {
         <section key={group.player_id} className="rounded-2xl border mb-4 overflow-hidden" style={cardStyle}>
           <div className="flex items-center justify-between px-5 py-3 border-b" style={{ borderColor: '#1e3a5f' }}>
             <p className="text-base font-bold text-white">{group.name}</p>
-            <a href={`/p/${group.slug}`} target="_blank" rel="noreferrer" className="text-xs hover:underline" style={{ color: '#38bdf8' }}>
-              Public profile ↗
-            </a>
+            {data.job?.synthetic ? (
+              <span className="text-xs" style={{ color: '#fbbf24' }} title="Synthetic jobs run the whole release but write nothing to games or stat entries, so no profile ever changes" data-testid="profile-link-synthetic">
+                Synthetic job — nothing reaches a profile
+              </span>
+            ) : group.is_public ? (
+              <a href={`/p/${group.slug}`} target="_blank" rel="noreferrer" className="text-xs hover:underline" style={{ color: '#38bdf8' }}>
+                Public profile ↗
+              </a>
+            ) : (
+              <a href={`/admin/players/${group.player_id}`} target="_blank" rel="noreferrer" className="text-xs hover:underline" style={{ color: '#94a3b8' }} title="Published results are stored against the player; the public page shows once the profile is made public in Admin" data-testid="profile-link-private">
+                Profile private — publish it in Admin ↗
+              </a>
+            )}
           </div>
           {group.metrics.map(([code, results]) => {
             const info = metricInfo(code);

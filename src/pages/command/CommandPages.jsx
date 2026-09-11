@@ -839,10 +839,10 @@ export function JobDetailPage() {
                 </GhostButton>
               ))}
               {job.game_record_status === 'pending' && (
-                <GhostButton onClick={() => transition('game_record', 'not_ordered')}>Game record: not ordered</GhostButton>
+                <GhostButton onClick={() => transition('game_record', 'not_ordered')} title="Only when this order does not include a box score. The scorebook still works; nothing from it publishes until the track is reopened.">Mark game record as not ordered</GhostButton>
               )}
               {job.game_record_status === 'not_ordered' && (
-                <GhostButton onClick={() => transition('game_record', 'pending')}>Game record: reopen</GhostButton>
+                <GhostButton onClick={() => transition('game_record', 'pending')} title="Put the game-record track back to pending so a validated scorebook or import can release">Reopen game-record track</GhostButton>
               )}
             </div>
           </section>
