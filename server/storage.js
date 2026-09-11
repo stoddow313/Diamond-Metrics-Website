@@ -15,25 +15,40 @@ const MODE = process.env.DM_STORAGE === 'r2' ? 'r2' : 'local';
 const LOCAL_DIR = process.env.DM_MEDIA_DIR || path.join(process.env.DM_DB_PATH ? path.dirname(process.env.DM_DB_PATH) : path.join(process.cwd(), 'server', 'data'), 'media');
 if (MODE === 'local') fs.mkdirSync(LOCAL_DIR, { recursive: true });
 
+function makeClient(accessKeyId, secretAccessKey) {
+  return new S3Client({
+    region: 'auto',
+    endpoint: `https://${process.env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
+    credentials: { accessKeyId, secretAccessKey },
+    // The SDK ships with no timeouts at all: a connection R2 never answers,
+    // or a socket that goes silent mid-stream, blocks its caller forever.
+    // requestTimeout is socket inactivity, so a slow multi-GB stream that
+    // is still moving bytes never trips it — only a dead one does.
+    requestHandler: new NodeHttpHandler({
+      connectionTimeout: Number(process.env.DM_R2_CONNECT_TIMEOUT_MS || 10_000),
+      requestTimeout: Number(process.env.DM_R2_SOCKET_TIMEOUT_MS || 120_000),
+      throwOnRequestTimeout: true,
+    }),
+  });
+}
+
 let r2 = null;
 function client() {
-  if (!r2) {
-    r2 = new S3Client({
-      region: 'auto',
-      endpoint: `https://${process.env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
-      credentials: { accessKeyId: process.env.R2_ACCESS_KEY_ID, secretAccessKey: process.env.R2_SECRET_ACCESS_KEY },
-      // The SDK ships with no timeouts at all: a connection R2 never answers,
-      // or a socket that goes silent mid-stream, blocks its caller forever.
-      // requestTimeout is socket inactivity, so a slow multi-GB stream that
-      // is still moving bytes never trips it — only a dead one does.
-      requestHandler: new NodeHttpHandler({
-        connectionTimeout: Number(process.env.DM_R2_CONNECT_TIMEOUT_MS || 10_000),
-        requestTimeout: Number(process.env.DM_R2_SOCKET_TIMEOUT_MS || 120_000),
-        throwOnRequestTimeout: true,
-      }),
-    });
-  }
+  if (!r2) r2 = makeClient(process.env.R2_ACCESS_KEY_ID, process.env.R2_SECRET_ACCESS_KEY);
   return r2;
+}
+
+// The live bucket may carry its own key. The media key is often scoped to the
+// media bucket alone, and widening a key Command's uploads depend on is the
+// wrong fix. Unset, the live bucket uses the shared client, so a key that
+// already covers both buckets needs nothing extra.
+let r2Live = null;
+function liveClient() {
+  const id = process.env.DM_LIVE_R2_ACCESS_KEY_ID;
+  const secret = process.env.DM_LIVE_R2_SECRET_ACCESS_KEY;
+  if (!id || !secret) return client();
+  if (!r2Live) r2Live = makeClient(id, secret);
+  return r2Live;
 }
 const BUCKET = () => process.env.R2_BUCKET;
 
@@ -204,13 +219,15 @@ export async function playbackUrl(key) {
 // from masters. Same account and client; only the bucket differs.
 export const LIVE_BUCKET = () => process.env.DM_LIVE_BUCKET || 'diamond-metrics-live';
 
+const clientFor = (bucket) => (bucket === LIVE_BUCKET() ? liveClient() : client());
+
 /** Objects under a prefix in a named bucket, with sizes. */
 export async function listObjectsIn(bucket, prefix) {
   if (MODE !== 'r2') return [];
   const out = [];
   let token;
   do {
-    const page = await client().send(new ListObjectsV2Command({ Bucket: bucket, Prefix: prefix, ContinuationToken: token }));
+    const page = await clientFor(bucket).send(new ListObjectsV2Command({ Bucket: bucket, Prefix: prefix, ContinuationToken: token }));
     for (const obj of page.Contents || []) out.push({ key: obj.Key, size: obj.Size, lastModified: obj.LastModified });
     token = page.IsTruncated ? page.NextContinuationToken : undefined;
   } while (token);
@@ -218,5 +235,5 @@ export async function listObjectsIn(bucket, prefix) {
 }
 
 export async function presignGetIn(bucket, key, expiresIn = 900) {
-  return getSignedUrl(client(), new GetObjectCommand({ Bucket: bucket, Key: key }), { expiresIn });
+  return getSignedUrl(clientFor(bucket), new GetObjectCommand({ Bucket: bucket, Key: key }), { expiresIn });
 }

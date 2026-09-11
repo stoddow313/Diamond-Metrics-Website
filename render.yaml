@@ -56,6 +56,13 @@ services:
       # "authenticated" requires a signed-in session for a playback URL;
       # "public" hands one to anyone with the stream id. Team scoping against
       # per-job consent is not built yet.
+      # Optional key for the live-copy bucket only. Set these when the media
+      # key above cannot read diamond-metrics-live; leave unset when it can.
+      # Prefer a token scoped to that one bucket, Object Read only.
+      - key: DM_LIVE_R2_ACCESS_KEY_ID
+        sync: false
+      - key: DM_LIVE_R2_SECRET_ACCESS_KEY
+        sync: false
       - key: DM_LIVE_PLAYBACK_ACCESS
         value: authenticated
 
