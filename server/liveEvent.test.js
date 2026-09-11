@@ -28,12 +28,12 @@ function schema() {
   return db;
 }
 
-async function harness() {
+async function harness({ probeMedia } = {}) {
   process.env.DM_LIVE_CONSOLE_OPEN = '1';
   const db = schema();
   const app = express();
   app.use(express.json());
-  mountLiveRoutes(app, { db, requireInternal: (_req, res) => res.status(401).end(), currentUser: () => null });
+  mountLiveRoutes(app, { db, requireInternal: (_req, res) => res.status(401).end(), currentUser: () => null, probeMedia });
   // Express only treats four-argument middleware as an error handler.
   // eslint-disable-next-line no-unused-vars
   app.use((err, _req, res, _next) => res.status(err.status || 500).json({ error: err.message }));
@@ -43,11 +43,11 @@ async function harness() {
   return { db, server, base: `http://127.0.0.1:${server.address().port}/api/live` };
 }
 
-function addMaster(db, streamId, status) {
+function addMaster(db, streamId, status, expectedFps = null) {
   db.prepare(`INSERT INTO cmd_live_masters
-      (id, stream_id, filename, bytes, part_size, parts_total, status, created_at, storage_key, upload_id)
-      VALUES (?, ?, 'master.mp4', 1000, 500, 2, ?, ?, ?, NULL)`)
-    .run(`mst_${status}`, streamId, status, new Date().toISOString(), `live-masters/${streamId}/master.mp4`);
+      (id, stream_id, filename, bytes, part_size, parts_total, status, created_at, storage_key, upload_id, expected_fps)
+      VALUES (?, ?, 'master.mp4', 1000, 500, 2, ?, ?, ?, NULL, ?)`)
+    .run(`mst_${status}`, streamId, status, new Date().toISOString(), `live-masters/${streamId}/master.mp4`, expectedFps);
 }
 
 test('a completed master comes back with something to play', async () => {
@@ -77,5 +77,43 @@ test('when the live copy cannot be listed, the event says why', async () => {
   const event = await (await fetch(`${base}/streams/${s.id}/event`)).json();
   assert.deepEqual(event.live_copy, []);
   assert.ok(event.live_copy_unavailable, 'an unexplained empty list reads as "nothing was recorded"');
+  server.close();
+});
+
+test('a completed master is measured once, and no poll waits for it', async () => {
+  let calls = 0;
+  const probeMedia = async (bucket, key) => {
+    calls += 1;
+    assert.equal(bucket, '', 'masters are read from the media bucket');
+    assert.match(key, /^live-masters\//);
+    return { width: 1920, height: 1080, duration_seconds: 50.79, frames_counted: 3035, average_fps: 59.76 };
+  };
+  const { db, server, base } = await harness({ probeMedia });
+  const s = createStream(db, { job_id: 'job_1' });
+  addMaster(db, s.id, 'complete', 60);
+  const poll = async () => (await (await fetch(`${base}/streams/${s.id}/event`)).json()).masters[0];
+
+  const first = await poll();
+  assert.equal(first.probe, null);
+  assert.equal(first.probing, true, 'the first poll starts the probe rather than waiting on it');
+
+  await new Promise(setImmediate);
+  const next = await poll();
+  assert.equal(next.probing, false);
+  assert.equal(next.probe.frames_expected, 3047, 'counted against the rate the phone declared');
+  assert.equal(next.probe.frames_missing, 12);
+  assert.equal(calls, 1);
+  server.close();
+});
+
+test('a recording that cannot be measured says so, rather than looking unmeasured', async () => {
+  const { db, server, base } = await harness({ probeMedia: async () => { throw new Error('moov atom not found'); } });
+  const s = createStream(db, { job_id: 'job_1' });
+  addMaster(db, s.id, 'complete');
+  await fetch(`${base}/streams/${s.id}/event`);
+  await new Promise(setImmediate);
+  const [m] = (await (await fetch(`${base}/streams/${s.id}/event`)).json()).masters;
+  assert.deepEqual(m.probe, { error: 'moov atom not found' });
+  assert.equal(m.probing, false);
   server.close();
 });

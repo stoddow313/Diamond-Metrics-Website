@@ -17,10 +17,12 @@ import { mountCommandMediaRoutes } from './commandMediaRoutes.js';
 import { mountCommandRadarRoutes } from './commandRadarRoutes.js';
 import { mountCommandMeasureRoutes } from './commandMeasureRoutes.js';
 import { mountCommandReviewRoutes } from './commandReviewRoutes.js';
-import { startInlineWorker } from './mediaWorker.js';
+import { startInlineWorker, FFPROBE } from './mediaWorker.js';
+import { gatewayUrlFor } from './mediaGateway.js';
 import { mountCommandOpsRoutes } from './commandOpsRoutes.js';
 import { mountScorebookRoutes } from './scorebookRoutes.js';
 import { mountLiveRoutes } from './liveRoutes.js';
+import { makeProber } from './liveProbe.js';
 import { startBackupScheduler } from './backup.js';
 import { requestLogger, errorHandler, installProcessHandlers, log, ENV } from './observability.js';
 import { backfillPublishedRollups } from './releaseLogic.js';
@@ -1798,7 +1800,12 @@ mountScorebookRoutes(app, { db, requireInternal });
 // Field Live (M7). Off unless DM_LIVE_ENABLED is set, so this ships dark and the
 // relay simply gets 404s until someone turns it on deliberately.
 if (process.env.DM_LIVE_ENABLED === '1') {
-  mountLiveRoutes(app, { db, requireInternal, currentUser });
+  mountLiveRoutes(app, {
+    db, requireInternal, currentUser,
+    // Recording details are read from the files, through the same bundled
+    // ffprobe and localhost gateway the media worker uses.
+    probeMedia: makeProber({ ffprobe: FFPROBE, sourceUrl: gatewayUrlFor }),
+  });
 }
 // Media processing: inline worker in dev / single-service deployments;
 // DM_INLINE_WORKER=0 turns it off when the dedicated Render worker runs.

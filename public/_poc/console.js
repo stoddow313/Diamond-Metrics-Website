@@ -520,7 +520,7 @@ function renderEvent() {
   $('recordings').hidden = !show;
   if (!show) return;
 
-  // Rebuilding restarts any video being watched, so only when the event changed shape.
+  // Rebuilding restarts any video being watched, so only when the files changed.
   const signature = JSON.stringify([
     event.stream?.id,
     state.liveCopyIndex,
@@ -528,9 +528,14 @@ function renderEvent() {
     event.masters.map((m) => [m.id, m.status, m.bytes_received]),
     event.live_copy_unavailable,
   ]);
-  if (host.dataset.signature === signature) return;
-  host.dataset.signature = signature;
-  host.replaceChildren(liveCopyPanel(event), masterPanel(event));
+  if (host.dataset.signature !== signature) {
+    host.dataset.signature = signature;
+    host.replaceChildren(liveCopyPanel(event), masterPanel(event));
+    return;
+  }
+  // Same files: refresh only the measurements, which land a poll or two later.
+  host.querySelector('[data-specs="live"]')?.replaceWith(liveSpecs(event));
+  host.querySelector('[data-specs="master"]')?.replaceWith(masterSpecs(event));
 }
 
 function liveCopyPanel(event) {
@@ -564,7 +569,7 @@ function liveCopyPanel(event) {
     segment.preparing
       ? placeholder('Preparing playback', 'Making the relay’s file seekable. Takes a minute or so.')
       : videoFor(segment.url),
-    specs(segment.probe, segment.bytes, event));
+    liveSpecs(event));
   return panel;
 }
 
@@ -583,7 +588,7 @@ function masterPanel(event) {
       el('div', { className: 'progress' }, el('span', { style: `--done: ${pct / 100}` })));
     return panel;
   }
-  panel.append(videoFor(master.url), specs(master.probe, master.bytes, event));
+  panel.append(videoFor(master.url), masterSpecs(event));
   return panel;
 }
 
@@ -595,28 +600,70 @@ function videoFor(url) {
   return el('video', { src: url, controls: true, playsInline: true, preload: 'metadata' });
 }
 
-function specs(probe, bytes, event) {
+/** The measurements under whichever live-copy part is showing. */
+function liveSpecs(event) {
+  const segment = event.live_copy[Math.min(state.liveCopyIndex, event.live_copy.length - 1)];
+  const list = specs(segment.probe, segment.bytes, event, segment.probing);
+  list.dataset.specs = 'live';
+  return list;
+}
+
+function masterSpecs(event) {
+  const master = event.masters.find((m) => m.status === 'complete') ?? event.masters[0];
+  const list = specs(master.probe, master.bytes, event, master.probing);
+  list.dataset.specs = 'master';
+  return list;
+}
+
+const CODECS = { h264: 'H.264', hevc: 'HEVC', av1: 'AV1', vp9: 'VP9', aac: 'AAC', opus: 'Opus', mp3: 'MP3' };
+const codecName = (codec) => CODECS[codec] ?? codec?.toUpperCase();
+const videoRate = (p) => p.video_bit_rate ?? p.bit_rate;
+
+/**
+ * What the file itself holds, as the server's ffprobe measured it. Green marks
+ * the stronger copy, once both have been measured.
+ */
+function specs(probe, bytes, event, probing) {
   const rows = [];
   if (probe && !probe.error) {
     const best = bestOf(event);
-    const frames = probe.frames_counted != null && probe.frames_expected != null
-      ? `${probe.frames_counted.toLocaleString()} of ${probe.frames_expected.toLocaleString()} · ${
-        probe.frames_missing <= 0 ? 'none missing' : `−${(probe.frame_loss * 100).toFixed(2)}%`}`
-      : null;
     rows.push(
       ['Resolution', probe.width && probe.height ? `${probe.width}×${probe.height}` : null, best && probe.height === best.height],
       ['Frame rate', probe.average_fps ? `${probe.average_fps} fps` : null, best && probe.average_fps === best.fps],
-      ['Bitrate', probe.bit_rate ? `${(probe.bit_rate / 1e6).toFixed(1)} Mbps` : null, best && probe.bit_rate === best.bitRate],
-      ['Codec', [probe.video_codec, probe.audio_codec].filter(Boolean).join(' · ') || null],
+      ['Bitrate', videoRate(probe) ? `${(videoRate(probe) / 1e6).toFixed(1)} Mbps` : null, best && videoRate(probe) === best.bitRate],
+      ['Codec', [codecName(probe.video_codec), probe.video_profile].filter(Boolean).join(' ') || null],
+      ['Audio', audioText(probe)],
+      ['Frames', framesText(probe), probe.frames_missing === 0],
       ['Duration', probe.duration_seconds ? formatDuration(probe.duration_seconds) : null],
-      ['Frames', frames, probe.frames_missing <= 0],
     );
   }
   rows.push(['Size', bytes ? formatBytes(bytes) : null]);
+  if (probing) rows.push(['Details', 'Measuring…']);
+  else if (probe?.error) rows.push(['Details', 'Couldn’t measure this file']);
   return el('dl', { className: 'specs' }, ...rows.filter(([, value]) => value).flatMap(([label, value, better]) => [
     el('dt', { textContent: label }),
     el('dd', { textContent: value, className: better ? 'better' : '' }),
   ]));
+}
+
+function audioText(p) {
+  if (!p.audio_codec) return null;
+  const channels = { 1: 'mono', 2: 'stereo' }[p.audio_channels] ?? (p.audio_channels && `${p.audio_channels} ch`);
+  return [
+    codecName(p.audio_codec),
+    p.audio_sample_rate && `${p.audio_sample_rate / 1000} kHz`,
+    channels,
+    p.audio_bit_rate && `${Math.round(p.audio_bit_rate / 1000)} kbps`,
+  ].filter(Boolean).join(' · ');
+}
+
+/** Frames counted in the file, against what its length should hold at the declared rate. */
+function framesText(p) {
+  if (!p.frames_counted) return null;
+  const counted = p.frames_counted.toLocaleString();
+  if (p.frames_expected == null) return counted;
+  if (p.frames_missing === 0) return `${counted}, none missing`;
+  return `${counted} of ${p.frames_expected.toLocaleString()} (${p.frames_missing.toLocaleString()} missing)`;
 }
 
 /** The best value across both copies — null until each side has been measured, since one alone proves nothing. */
@@ -629,7 +676,7 @@ function bestOf(event) {
   return {
     height: Math.max(...probes.map((p) => p.height ?? 0)),
     fps: Math.max(...probes.map((p) => p.average_fps ?? 0)),
-    bitRate: Math.max(...probes.map((p) => p.bit_rate ?? 0)),
+    bitRate: Math.max(...probes.map((p) => videoRate(p) ?? 0)),
   };
 }
 
