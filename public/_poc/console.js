@@ -308,7 +308,8 @@ function describeIdlePlayer(stream) {
 
 function showPlaceholder(title, detail) {
   const host = $('player-placeholder');
-  host.replaceChildren(el('strong', { textContent: title }), detail && el('span', { textContent: detail }));
+  host.replaceChildren(el('strong', { textContent: title }));
+  if (detail) host.append(el('span', { textContent: detail }));
   host.hidden = false;
 }
 
