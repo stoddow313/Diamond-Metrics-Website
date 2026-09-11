@@ -194,11 +194,8 @@ button.stream[aria-current="true"] { background: var(--surface-2); border-color:
 .copy .none strong { color: var(--text-2); font-weight: 600; }
 .copy select { font-size: .82rem; }
 .specs { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 4px 18px; margin: 2px 0 0; font-size: .8rem; }
-.specs dt { color: var(--muted); }
-.specs dd {
-  margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  font-family: var(--mono); font-variant-numeric: tabular-nums;
-}
+.specs dt { color: var(--muted); white-space: nowrap; }
+.specs dd { margin: 0; min-width: 0; overflow-wrap: anywhere; font-family: var(--mono); font-variant-numeric: tabular-nums; }
 .specs dd.better { color: var(--good); }
 .progress { height: 6px; border-radius: 999px; background: var(--surface-2); overflow: hidden; }
 .progress > span {

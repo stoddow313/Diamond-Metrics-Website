@@ -21,8 +21,9 @@ import {
   authorize, recordRelayState, addEvent, listEvents, sessionReport,
   relayTokenValid, relayConfig, httpError, MASTER_PART_SIZE, newId,
 } from './liveLogic.js';
+import { makeProbeCache, withFrameAccounting } from './liveProbe.js';
 
-export function mountLiveRoutes(app, { db, requireInternal, currentUser }) {
+export function mountLiveRoutes(app, { db, requireInternal, currentUser, probeMedia }) {
   const r = express.Router();
 
   // A testing switch, not a policy. With DM_LIVE_CONSOLE_OPEN=1 every staff route
@@ -39,6 +40,10 @@ export function mountLiveRoutes(app, { db, requireInternal, currentUser }) {
   const PLAYBACK_ACCESS = consoleOpen
     ? 'public'
     : (process.env.DM_LIVE_PLAYBACK_ACCESS || 'authenticated');
+
+  // Each recording is measured once, from the file itself (liveProbe.js). With
+  // no prober — tests, or a box without ffprobe — the console shows sizes only.
+  const probes = probeMedia ? makeProbeCache(probeMedia) : null;
 
   // ── who is calling ────────────────────────────────────────────────────────
 
@@ -199,8 +204,8 @@ export function mountLiveRoutes(app, { db, requireInternal, currentUser }) {
       const stream = getStream(db, req.params.id);
       if (!stream) throw httpError(404, 'stream not found');
       const [liveCopy, masters] = await Promise.all([
-        liveCopyFor(stream),
-        mastersWithUrls(db, stream.id),
+        liveCopyFor(stream, probes),
+        mastersWithUrls(db, stream.id, probes),
       ]);
       res.json({
         stream: withUrls(stream),
@@ -361,7 +366,7 @@ function describeMaster(db, row, uploadedParts) {
  * by recording_prefix, because a segment the hourly sweeper recovered shipped
  * without the hook that sets it, and it is just as much a recording of the game.
  */
-async function liveCopyFor(stream) {
+async function liveCopyFor(stream, probes) {
   if (storageMode !== 'r2') {
     return { segments: [], error: 'Live copies are only listed when media storage is R2.' };
   }
@@ -375,7 +380,7 @@ async function liveCopyFor(stream) {
       recorded_at: o.lastModified ? new Date(o.lastModified).toISOString() : null,
       url: await presignGetIn(bucket, o.key),
       preparing: false,
-      probe: null,
+      ...measurementOf(probes, bucket, o.key, o.size, LIVE_RENDITION_FPS),
     })));
     return { segments, error: null };
   } catch (err) {
@@ -390,14 +395,30 @@ async function liveCopyFor(stream) {
  * still uploading gets progress from R2's own part list, because the phone sends
  * parts straight there and this service never sees the bytes.
  */
-async function mastersWithUrls(db, streamId) {
+async function mastersWithUrls(db, streamId, probes) {
   const rows = db.prepare('SELECT * FROM cmd_live_masters WHERE stream_id = ? ORDER BY created_at DESC').all(streamId);
   return Promise.all(rows.map(async (row) => {
     if (row.status === 'complete') {
-      return { ...describeMaster(db, row, []), url: await mediaPlaybackUrl(row.storage_key), bytes_received: row.bytes, probe: null };
+      return {
+        ...describeMaster(db, row, []),
+        url: await mediaPlaybackUrl(row.storage_key),
+        bytes_received: row.bytes,
+        ...measurementOf(probes, '', row.storage_key, row.bytes, row.expected_fps),
+      };
     }
     const parts = await listUploadedParts(row.storage_key, row.upload_id).catch(() => []);
     const received = parts.reduce((n, p) => n + (p.size || 0), 0);
-    return { ...describeMaster(db, row, parts), url: null, bytes_received: received, probe: null };
+    return { ...describeMaster(db, row, parts), url: null, bytes_received: received, probe: null, probing: false };
   }));
+}
+
+// The live rendition is every other frame of the phone's 60 fps capture.
+const LIVE_RENDITION_FPS = 30;
+
+/** What is known about one recording right now. Never waits on ffprobe. */
+function measurementOf(probes, bucket, key, bytes, expectedFps) {
+  if (!probes) return { probe: null, probing: false };
+  const entry = probes(bucket, key, bytes);
+  if (entry.probe) return { probe: withFrameAccounting(entry.probe, expectedFps), probing: false };
+  return { probe: entry.error ? { error: entry.error } : null, probing: entry.pending };
 }

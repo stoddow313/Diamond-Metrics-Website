@@ -14,7 +14,8 @@ import { storageMode, localPathFor, getObjectRange } from './storage.js';
 import { log, captureError } from './observability.js';
 
 const SECRET = randomBytes(16).toString('hex');   // per-process; gateway dies with it
-const sign = key => createHmac('sha256', SECRET).update(key).digest('hex').slice(0, 32);
+// Bucket and key are signed together, so a URL for one object cannot be pointed at another.
+const sign = (key, bucket = '') => createHmac('sha256', SECRET).update(`${bucket}\n${key}`).digest('hex').slice(0, 32);
 
 let serverPromise = null;
 
@@ -35,7 +36,8 @@ async function handle(req, res) {
   try {
     const url = new URL(req.url, 'http://127.0.0.1');
     const key = decodeURIComponent(url.pathname.replace(/^\/src\//, ''));
-    if (!key || url.searchParams.get('t') !== sign(key)) {
+    const bucket = url.searchParams.get('b') || '';
+    if (!key || url.searchParams.get('t') !== sign(key, bucket)) {
       res.writeHead(403).end();
       return;
     }
@@ -66,7 +68,7 @@ async function handle(req, res) {
     const ac = new AbortController();
     const firstByte = setTimeout(() => ac.abort(new Error(`storage did not answer within ${UPSTREAM_TIMEOUT_MS} ms`)), UPSTREAM_TIMEOUT_MS);
     let obj;
-    try { obj = await getObjectRange(key, rangeHeader, { abortSignal: ac.signal }); }
+    try { obj = await getObjectRange(key, rangeHeader, { abortSignal: ac.signal, bucket: bucket || undefined }); }
     finally { clearTimeout(firstByte); }
     if (req.destroyed || res.destroyed) { destroyBody(obj.body); return; }
     const headers = { 'Content-Type': 'application/octet-stream', 'Accept-Ranges': 'bytes' };
@@ -120,8 +122,10 @@ export function startMediaGateway() {
   return serverPromise;
 }
 
-// Plain-HTTP source URL for ffmpeg/ffprobe input.
-export async function gatewayUrlFor(key) {
+// Plain-HTTP source URL for ffmpeg/ffprobe input. The media bucket unless another
+// is named — Field Live's live copies sit in their own.
+export async function gatewayUrlFor(key, bucket = '') {
   const { port } = await startMediaGateway();
-  return `http://127.0.0.1:${port}/src/${encodeURIComponent(key)}?t=${sign(key)}`;
+  const named = bucket ? `&b=${encodeURIComponent(bucket)}` : '';
+  return `http://127.0.0.1:${port}/src/${encodeURIComponent(key)}?t=${sign(key, bucket)}${named}`;
 }

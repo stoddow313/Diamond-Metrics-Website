@@ -200,9 +200,10 @@ export async function fetchToScratch(key, scratchPath) {
 // Playback: short-TTL signed URL (R2) or the role-gated API stream (local).
 // Ranged object read for the worker's localhost media gateway. Returns the
 // body stream plus the headers the gateway forwards to ffmpeg's http client.
-export async function getObjectRange(key, rangeHeader = null, { abortSignal } = {}) {
-  const res = await client().send(
-    new GetObjectCommand({ Bucket: BUCKET(), Key: key, ...(rangeHeader ? { Range: rangeHeader } : {}) }),
+// `bucket` names another bucket (Field Live's live copies); the media bucket otherwise.
+export async function getObjectRange(key, rangeHeader = null, { abortSignal, bucket } = {}) {
+  const res = await (bucket ? clientFor(bucket) : client()).send(
+    new GetObjectCommand({ Bucket: bucket || BUCKET(), Key: key, ...(rangeHeader ? { Range: rangeHeader } : {}) }),
     abortSignal ? { abortSignal } : {},
   );
   return { body: res.Body, contentLength: res.ContentLength ?? null, contentRange: res.ContentRange ?? null };
