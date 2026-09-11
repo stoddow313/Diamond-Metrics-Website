@@ -562,6 +562,25 @@ Safeguards (reviewer items, 2026-09-10):
   lineups and substitutions under a collapsed section, box score and play-by-play
   behind tabs, audit history on the job page.
 
+Rosters in the scorebook are **dated**: lineup setup lists the players whose
+roster membership covers the job's game date (plus event-roster guests and
+job guests). A synthetic job dated after the test roster's memberships end
+therefore shows only the players still active — not a wrong team. Fix the
+dates in Admin → Teams for a reusable test roster, or use **+ guest player**
+in lineup setup for a one-off (a real player row, reassignable later, no
+public profile). The Review & publish page's profile link reads "Synthetic
+job — nothing reaches a profile" on synthetic jobs (they never write to
+profiles) and "Profile private — publish it in Admin" when the player is not
+public yet; the public page only exists for public players.
+
+Two-release test configuration: every order starts with the game-record
+track **pending** (Rookie included). "Mark game record as not ordered" is an
+action, not a status — use it only for orders without a box score, and
+"Reopen game-record track" undoes it. To test the independent release:
+score → Mark final → the live source validates → Game record → in progress
+→ validated → released (the box score publishes only then), while Metrics
+→ released can happen earlier or later on its own track.
+
 Publishing: the scorebook is the job's `live_internal` game-record source.
 It validates once the game is final with no blocking issues, and releases
 through the same **Game record → validated → released** path as an import.

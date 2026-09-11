@@ -23,7 +23,7 @@ export function mountCommandReviewRoutes(app, { db, requireInternal }) {
 
     // Every active result with player + evidence context, grouped for the UI.
     const results = db.prepare(
-      `SELECT r.*, p.first_name, p.last_name, p.slug,
+      `SELECT r.*, p.first_name, p.last_name, p.slug, p.is_public,
               m.start_frame, m.end_frame, m.fps_used, e.selected_feed_id,
               rr.velocity AS reading_velocity, rr.source_timestamp, rr.source AS reading_source, rr.pitch_type,
               rr.row_index AS reading_row, rr.raw_row AS reading_raw_row, rr.confirmed_at AS reading_confirmed_at,
@@ -54,7 +54,8 @@ export function mountCommandReviewRoutes(app, { db, requireInternal }) {
     ).all(job.id);
 
     res.json({
-      job,
+      // synthetic lives on the order; the page uses it to explain why nothing reaches a profile
+      job: { ...job, synthetic: !!db.prepare('SELECT synthetic FROM cmd_orders WHERE id = ?').get(job.order_id)?.synthetic },
       qa_flags,
       capture,
       metrics,
