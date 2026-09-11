@@ -21,6 +21,8 @@
 }
 
 * { box-sizing: border-box; }
+/* Any author display rule (the player placeholder is a grid) beats the UA's [hidden]. */
+[hidden] { display: none !important; }
 html { scrollbar-color: var(--border) transparent; accent-color: var(--accent); }
 body {
   margin: 0; background: var(--bg); color: var(--text);
