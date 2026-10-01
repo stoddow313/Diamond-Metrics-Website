@@ -17,7 +17,7 @@ function signMediaKey(key, exp) {
   return createHmac('sha256', MEDIA_SECRET).update(`${key}:${exp}`).digest('hex');
 }
 
-async function signedPlaybackUrl(key) {
+export async function signedPlaybackUrl(key) {
   if (storageMode !== 'local') return playbackUrl(key);   // R2 presigned GET
   const exp = Math.floor(Date.now() / 1000) + MEDIA_TTL_S;
   return `/api/command/media/${encodeURIComponent(key)}?exp=${exp}&sig=${signMediaKey(key, exp)}`;

@@ -902,6 +902,330 @@ db.exec(`
   );
 `);
 
+// ═══ Customer footage intake (CRM-lite) ═════════════════════════════════
+// The website's front door into Command (docs/COMMAND_TDR.md §8). Customers —
+// parents and guardians, coaches, directors, adult athletes — sign in, describe
+// the game, accept versioned rights terms and upload footage. Fulfillment staff
+// resolve identity and create or link the Command job; from there the existing
+// order → job → feed → release path takes over. Nothing here is a second source
+// of truth: players, teams, jobs and feeds stay the authoritative records, and
+// these tables hold only what the intake itself owns (who asked, what they
+// attested, what they sent, and every decision made about it).
+db.exec(`
+  -- The contact account (doc §8 "Contact account"). One login covers every
+  -- athlete and team the person is linked to. A coach or player who already
+  -- has a staff/player login is linked here by email (password_hash NULL) so
+  -- they submit under the same identity instead of a second account.
+  CREATE TABLE IF NOT EXISTS customer_accounts (
+    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+    email             TEXT NOT NULL UNIQUE,            -- normalized: trimmed, lowercase
+    email_verified_at TEXT,
+    verified_via      TEXT NOT NULL DEFAULT '',        -- email_link | staff
+    password_hash     TEXT,
+    first_name        TEXT NOT NULL DEFAULT '',
+    last_name         TEXT NOT NULL DEFAULT '',
+    phone             TEXT NOT NULL DEFAULT '',        -- as entered
+    phone_normalized  TEXT NOT NULL DEFAULT '',        -- digits with country code, duplicate detection only
+    role              TEXT NOT NULL DEFAULT 'parent',  -- parent | guardian | coach | team_rep | director | athlete
+    preferred_contact TEXT NOT NULL DEFAULT 'email',   -- email | text | phone
+    organization      TEXT NOT NULL DEFAULT '',
+    status            TEXT NOT NULL DEFAULT 'active',  -- active | suspended | closed
+    is_test           INTEGER NOT NULL DEFAULT 0,      -- internal test account: every submission is synthetic
+    staff_user_id     INTEGER REFERENCES staff_users(id) ON DELETE SET NULL,
+    player_user_id    INTEGER REFERENCES player_users(id) ON DELETE SET NULL,
+    created_at        TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at        TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+  CREATE INDEX IF NOT EXISTS idx_customer_phone ON customer_accounts(phone_normalized);
+
+  CREATE TABLE IF NOT EXISTS customer_sessions (
+    token      TEXT PRIMARY KEY,
+    account_id INTEGER NOT NULL REFERENCES customer_accounts(id) ON DELETE CASCADE,
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    expires_at TEXT NOT NULL
+  );
+
+  -- Single-use email verification and password-reset links. Only a hash of
+  -- the token is stored, so a database snapshot cannot be replayed.
+  CREATE TABLE IF NOT EXISTS customer_tokens (
+    token_hash TEXT PRIMARY KEY,
+    account_id INTEGER NOT NULL REFERENCES customer_accounts(id) ON DELETE CASCADE,
+    purpose    TEXT NOT NULL,                          -- verify_email | reset_password
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    expires_at TEXT NOT NULL,
+    used_at    TEXT
+  );
+
+  -- Staff-verified relationships. A parent sees "my athletes" only from rows
+  -- staff confirmed; there is no customer-side player search (minors).
+  CREATE TABLE IF NOT EXISTS customer_athletes (
+    id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+    account_id           INTEGER NOT NULL REFERENCES customer_accounts(id) ON DELETE CASCADE,
+    player_id            INTEGER NOT NULL REFERENCES players(id) ON DELETE CASCADE,
+    relationship         TEXT NOT NULL,                -- parent | guardian | self
+    verified_by          INTEGER REFERENCES admins(id),
+    verified_at          TEXT NOT NULL DEFAULT (datetime('now')),
+    source_submission_id INTEGER,
+    UNIQUE (account_id, player_id)
+  );
+
+  -- Coaches and directors are linked to teams, never to athlete ownership.
+  CREATE TABLE IF NOT EXISTS customer_team_links (
+    id                   INTEGER PRIMARY KEY AUTOINCREMENT,
+    account_id           INTEGER NOT NULL REFERENCES customer_accounts(id) ON DELETE CASCADE,
+    team_id              INTEGER NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
+    relationship         TEXT NOT NULL,                -- coach | team_rep | director | parent
+    verified_by          INTEGER REFERENCES admins(id),
+    verified_at          TEXT NOT NULL DEFAULT (datetime('now')),
+    source_submission_id INTEGER,
+    UNIQUE (account_id, team_id)
+  );
+
+  -- The submission (doc §8 "Submission" + "Fulfillment task"). status is the
+  -- intake stage; once a Command job is linked, the fulfillment stage (in
+  -- analysis → metrics released → game record → complete) is derived from the
+  -- job's two release tracks rather than copied, so it can never go stale.
+  CREATE TABLE IF NOT EXISTS intake_submissions (
+    id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+    public_id          TEXT NOT NULL UNIQUE,           -- DM-XXXX-XXXX, shown to the customer
+    account_id         INTEGER NOT NULL REFERENCES customer_accounts(id),
+    kind               TEXT NOT NULL DEFAULT 'footage',-- footage | inquiry (Hall of Fame: no upload)
+    status             TEXT NOT NULL DEFAULT 'draft',  -- draft | new | needs_identity_review | needs_customer_action | ready_for_job | linked | closed | declined
+    step               TEXT NOT NULL DEFAULT 'role',   -- where the draft resumes
+    form               TEXT NOT NULL DEFAULT '{}',     -- draft answers, kept verbatim for save/resume
+    submitter_role     TEXT NOT NULL DEFAULT '',
+    source_page        TEXT NOT NULL DEFAULT '',
+    source_params      TEXT NOT NULL DEFAULT '{}',
+    package_key        TEXT NOT NULL DEFAULT '',       -- rookie | pro | hall_of_fame | custom
+    requested_metrics  TEXT NOT NULL DEFAULT '',
+    order_reference    TEXT NOT NULL DEFAULT '',
+    payment_status     TEXT NOT NULL DEFAULT 'unconfirmed', -- unconfirmed | confirmed | not_required | waived
+    game_date          TEXT,
+    event_label        TEXT NOT NULL DEFAULT '',
+    team_label         TEXT NOT NULL DEFAULT '',
+    opponent_label     TEXT NOT NULL DEFAULT '',
+    location           TEXT NOT NULL DEFAULT '',
+    level              TEXT NOT NULL DEFAULT '',
+    footage_context    TEXT NOT NULL DEFAULT '{}',
+    team_id            INTEGER REFERENCES teams(id),
+    tournament_game_id INTEGER REFERENCES tournament_games(id),
+    job_id             INTEGER REFERENCES cmd_jobs(id),
+    owner_id           INTEGER REFERENCES admins(id),
+    next_action        TEXT NOT NULL DEFAULT '',
+    due_at             TEXT,
+    blocked_reason     TEXT NOT NULL DEFAULT '',
+    customer_message   TEXT NOT NULL DEFAULT '',       -- the open action-required message
+    escalated_at       TEXT,
+    synthetic          INTEGER NOT NULL DEFAULT 0,
+    submitted_at       TEXT,
+    closed_at          TEXT,
+    close_reason       TEXT NOT NULL DEFAULT '',
+    last_activity_at   TEXT NOT NULL DEFAULT (datetime('now')),
+    created_at         TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at         TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+  CREATE INDEX IF NOT EXISTS idx_intake_sub_account ON intake_submissions(account_id, status);
+  CREATE INDEX IF NOT EXISTS idx_intake_sub_status ON intake_submissions(status, owner_id);
+  CREATE INDEX IF NOT EXISTS idx_intake_sub_job ON intake_submissions(job_id);
+
+  -- Athlete candidates: what the submitter told us, and what staff decided.
+  -- player_id is set only by a staff decision or a previously verified link.
+  CREATE TABLE IF NOT EXISTS intake_athletes (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    submission_id   INTEGER NOT NULL REFERENCES intake_submissions(id) ON DELETE CASCADE,
+    player_id       INTEGER REFERENCES players(id) ON DELETE SET NULL,
+    first_name      TEXT NOT NULL DEFAULT '',
+    last_name       TEXT NOT NULL DEFAULT '',
+    birth_year      INTEGER,
+    age_band        TEXT NOT NULL DEFAULT '',
+    team_label      TEXT NOT NULL DEFAULT '',
+    jersey          TEXT NOT NULL DEFAULT '',
+    relationship    TEXT NOT NULL DEFAULT '',          -- the submitter's relationship to this athlete
+    resolution      TEXT NOT NULL DEFAULT 'pending',   -- pending | linked_existing | new_player | guest | deferred
+    resolved_by     INTEGER REFERENCES admins(id),
+    resolved_at     TEXT,
+    resolution_note TEXT NOT NULL DEFAULT '',
+    created_at      TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+  CREATE INDEX IF NOT EXISTS idx_intake_athletes_sub ON intake_athletes(submission_id);
+
+  -- Rights and consent (doc §10): versioned data, append-only. A revocation
+  -- is a new row that supersedes the grant; nothing is edited or deleted.
+  CREATE TABLE IF NOT EXISTS intake_rights (
+    id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+    submission_id      INTEGER NOT NULL REFERENCES intake_submissions(id),
+    account_id         INTEGER NOT NULL REFERENCES customer_accounts(id),
+    action             TEXT NOT NULL DEFAULT 'grant',  -- grant | revoke
+    supersedes_id      INTEGER REFERENCES intake_rights(id),
+    policy_key         TEXT NOT NULL,
+    policy_version     TEXT NOT NULL,
+    policy_hash        TEXT NOT NULL,                  -- sha256 of the exact text shown
+    pending_legal      INTEGER NOT NULL DEFAULT 1,     -- 1 while the wording is the unapproved draft
+    relationship       TEXT NOT NULL DEFAULT '',
+    attestation        TEXT NOT NULL DEFAULT '',
+    permitted_uses     TEXT NOT NULL DEFAULT '{}',
+    contact_permission INTEGER NOT NULL DEFAULT 0,
+    retention_ack      INTEGER NOT NULL DEFAULT 0,
+    retention_days     INTEGER NOT NULL,
+    retention_deadline TEXT NOT NULL,
+    restrictions       TEXT NOT NULL DEFAULT '',
+    athlete_ids        TEXT NOT NULL DEFAULT '[]',
+    guide_version      TEXT NOT NULL DEFAULT '',
+    guide_ack          INTEGER NOT NULL DEFAULT 0,
+    actor_kind         TEXT NOT NULL DEFAULT 'customer',
+    actor_id           INTEGER,
+    ip                 TEXT NOT NULL DEFAULT '',
+    user_agent         TEXT NOT NULL DEFAULT '',
+    created_at         TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+  CREATE INDEX IF NOT EXISTS idx_intake_rights_sub ON intake_rights(submission_id, id);
+  CREATE TRIGGER IF NOT EXISTS trg_intake_rights_no_update BEFORE UPDATE ON intake_rights
+  BEGIN SELECT RAISE(ABORT, 'rights records are immutable — append a new record instead'); END;
+  CREATE TRIGGER IF NOT EXISTS trg_intake_rights_no_delete BEFORE DELETE ON intake_rights
+  BEGIN SELECT RAISE(ABORT, 'rights records are never deleted'); END;
+
+  -- One row per uploaded file (doc §6 "File records"). Video becomes a Command
+  -- feed when staff create or link the job: the same storage object, never a
+  -- copy; feed_id records the hand-off.
+  CREATE TABLE IF NOT EXISTS intake_files (
+    id                 INTEGER PRIMARY KEY AUTOINCREMENT,
+    submission_id      INTEGER NOT NULL REFERENCES intake_submissions(id),
+    account_id         INTEGER NOT NULL REFERENCES customer_accounts(id),
+    kind               TEXT NOT NULL DEFAULT 'video',  -- video | radar_csv | scorecard | roster
+    camera_view        TEXT NOT NULL DEFAULT '',       -- behind_home | center_field | side_first_base | side_third_base | other
+    label              TEXT NOT NULL DEFAULT '',
+    original_name      TEXT NOT NULL DEFAULT '',
+    size_bytes         INTEGER,
+    mime_type          TEXT NOT NULL DEFAULT '',
+    content_hash       TEXT NOT NULL DEFAULT '',
+    storage_key        TEXT NOT NULL DEFAULT '',
+    upload_id          TEXT,
+    status             TEXT NOT NULL DEFAULT 'uploading', -- uploading | paused | uploaded | processing | ready | needs_customer_action | rejected | archived | deleted
+    duration_s         REAL,
+    codec              TEXT NOT NULL DEFAULT '',
+    width              INTEGER,
+    height             INTEGER,
+    rotation           INTEGER NOT NULL DEFAULT 0,
+    nominal_fps        REAL,
+    effective_fps      REAL,
+    vfr                INTEGER NOT NULL DEFAULT 0,
+    issues             TEXT NOT NULL DEFAULT '[]',     -- customer-relevant findings [{code, severity, text}]
+    diagnostics        TEXT NOT NULL DEFAULT '',       -- internal only, never sent to a customer
+    probe_attempts     INTEGER NOT NULL DEFAULT 0,
+    rights_id          INTEGER REFERENCES intake_rights(id),
+    retention_deadline TEXT,
+    feed_id            INTEGER REFERENCES cmd_video_feeds(id),
+    uploaded_at        TEXT,
+    processed_at       TEXT,
+    deleted_at         TEXT,
+    created_at         TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at         TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+  CREATE INDEX IF NOT EXISTS idx_intake_files_sub ON intake_files(submission_id);
+  CREATE INDEX IF NOT EXISTS idx_intake_files_hash ON intake_files(content_hash, size_bytes);
+  CREATE INDEX IF NOT EXISTS idx_intake_files_status ON intake_files(status);
+
+  -- The immutable timeline (doc §10): submission, consent, upload, matching,
+  -- staff review, job creation, release, correction and deletion actions.
+  -- visibility separates what the customer may read from internal notes.
+  CREATE TABLE IF NOT EXISTS intake_events (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    submission_id INTEGER REFERENCES intake_submissions(id),
+    account_id    INTEGER REFERENCES customer_accounts(id),
+    actor_kind    TEXT NOT NULL,                       -- customer | staff | system
+    actor_id      INTEGER,
+    event_type    TEXT NOT NULL,
+    visibility    TEXT NOT NULL DEFAULT 'internal',    -- internal | customer
+    message       TEXT NOT NULL DEFAULT '',
+    data          TEXT NOT NULL DEFAULT '{}',
+    created_at    TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+  CREATE INDEX IF NOT EXISTS idx_intake_events_sub ON intake_events(submission_id, id);
+  CREATE INDEX IF NOT EXISTS idx_intake_events_account ON intake_events(account_id, id);
+  -- The one permitted edit: redacting what a customer wrote, when an approved
+  -- deletion request closes their account. Every other column must stay as
+  -- it was, so the shape of the history survives the redaction.
+  CREATE TRIGGER IF NOT EXISTS trg_intake_events_no_update BEFORE UPDATE ON intake_events
+  WHEN NOT (NEW.message = '[redacted]' AND NEW.data = '{"redacted":true}' AND NEW.id = OLD.id
+            AND NEW.submission_id IS OLD.submission_id AND NEW.account_id IS OLD.account_id
+            AND NEW.actor_kind = OLD.actor_kind AND NEW.actor_id IS OLD.actor_id
+            AND NEW.event_type = OLD.event_type AND NEW.visibility = OLD.visibility AND NEW.created_at = OLD.created_at)
+  BEGIN SELECT RAISE(ABORT, 'the intake timeline is append-only — redaction under an approved deletion request is the only permitted edit'); END;
+  CREATE TRIGGER IF NOT EXISTS trg_intake_events_no_delete BEFORE DELETE ON intake_events
+  BEGIN SELECT RAISE(ABORT, 'the intake timeline is append-only'); END;
+
+  -- Customer notifications for the intake stage (job-stage events stay in
+  -- cmd_notifications). The row is the audit; email rides the adapter.
+  CREATE TABLE IF NOT EXISTS intake_notifications (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    submission_id INTEGER REFERENCES intake_submissions(id),
+    account_id    INTEGER REFERENCES customer_accounts(id),
+    event_key     TEXT NOT NULL,
+    payload       TEXT NOT NULL DEFAULT '{}',
+    email_status  TEXT NOT NULL DEFAULT 'skipped',     -- skipped | queued | sent | failed | suppressed_synthetic | no_permission
+    email_error   TEXT NOT NULL DEFAULT '',
+    created_at    TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+  CREATE INDEX IF NOT EXISTS idx_intake_notifications_sub ON intake_notifications(submission_id, id);
+
+  -- Deletion / revocation requests (doc §10): the inventory of everything a
+  -- request touches is captured when it is decided, and each executed step
+  -- records its own result.
+  CREATE TABLE IF NOT EXISTS intake_deletion_requests (
+    id                INTEGER PRIMARY KEY AUTOINCREMENT,
+    scope             TEXT NOT NULL,                   -- account | submission | file
+    target_id         INTEGER NOT NULL,
+    account_id        INTEGER REFERENCES customer_accounts(id),
+    requested_by_kind TEXT NOT NULL,                   -- customer | staff
+    requested_by_id   INTEGER,
+    reason            TEXT NOT NULL,                   -- customer_request | consent_revoked | retention_expired | other
+    note              TEXT NOT NULL DEFAULT '',
+    status            TEXT NOT NULL DEFAULT 'open',    -- open | completed | declined
+    actions           TEXT NOT NULL DEFAULT '[]',
+    inventory         TEXT NOT NULL DEFAULT '{}',
+    result            TEXT NOT NULL DEFAULT '{}',
+    decided_by        INTEGER REFERENCES admins(id),
+    decided_at        TEXT,
+    decision_note     TEXT NOT NULL DEFAULT '',
+    created_at        TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+
+  -- Players a job may attribute evidence to beyond its dated team roster,
+  -- added when a submission names them (an existing player confirmed by staff).
+  -- Distinct from cmd_job_guests: these are identified players, not placeholders,
+  -- and they never change the season roster.
+  CREATE TABLE IF NOT EXISTS cmd_job_participants (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    job_id        INTEGER NOT NULL REFERENCES cmd_jobs(id) ON DELETE CASCADE,
+    player_id     INTEGER NOT NULL REFERENCES players(id) ON DELETE CASCADE,
+    jersey        TEXT NOT NULL DEFAULT '',
+    source        TEXT NOT NULL DEFAULT 'intake',
+    submission_id INTEGER REFERENCES intake_submissions(id),
+    created_by    INTEGER REFERENCES admins(id),
+    created_at    TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE (job_id, player_id)
+  );
+
+  -- Small operator-editable settings (e.g. who owns new intake submissions).
+  CREATE TABLE IF NOT EXISTS app_settings (
+    key        TEXT PRIMARY KEY,
+    value      TEXT NOT NULL DEFAULT '',
+    updated_by INTEGER REFERENCES admins(id),
+    updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+`);
+// Internal accounts can be created and deactivated from Command (Team page);
+// a deactivated account cannot sign in or use an existing session.
+addColumnIfMissing('admins', 'active', 'active INTEGER NOT NULL DEFAULT 1');
+addColumnIfMissing('admins', 'created_by', 'created_by INTEGER');
+// A feed that arrived through intake carries its submission, rights record,
+// uploader and deletion date with it into Command (doc §9 "Evidence").
+addColumnIfMissing('cmd_video_feeds', 'submission_id', 'submission_id INTEGER');
+addColumnIfMissing('cmd_video_feeds', 'intake_file_id', 'intake_file_id INTEGER');
+addColumnIfMissing('cmd_video_feeds', 'rights_id', 'rights_id INTEGER');
+addColumnIfMissing('cmd_video_feeds', 'retention_deadline', 'retention_deadline TEXT');
+addColumnIfMissing('cmd_video_feeds', 'uploader_account_id', 'uploader_account_id INTEGER');
+
 // ── Seed Command reference data (idempotent; active flags follow code) ──
 {
   const insSport = db.prepare('INSERT OR IGNORE INTO sports (key, name) VALUES (?, ?)');

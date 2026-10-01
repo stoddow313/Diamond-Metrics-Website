@@ -91,10 +91,24 @@ export function appendLocalPart(key, chunk) {
   fs.appendFileSync(localPathFor(key) + '.parts', chunk);
 }
 
+// Numbered local parts (intake uploads): each part is its own file, so a
+// resumed transfer can be told which parts already landed — the same
+// contract R2's ListParts gives — instead of appending a duplicate.
+const localPartsDir = key => `${localPathFor(key)}.partsdir`;
+export function putLocalPart(key, partNumber, chunk) {
+  fs.mkdirSync(localPartsDir(key), { recursive: true });
+  fs.writeFileSync(path.join(localPartsDir(key), String(partNumber).padStart(5, '0')), chunk);
+}
+
 // Parts already uploaded for an in-flight multipart session — lets a
 // resumed transfer skip what R2 already has instead of restarting.
 export async function listUploadedParts(key, uploadId) {
-  if (MODE !== 'r2' || !uploadId) return [];
+  if (MODE !== 'r2') {
+    const dir = localPartsDir(key);
+    if (!fs.existsSync(dir)) return [];
+    return fs.readdirSync(dir).sort().map(name => ({ partNumber: Number(name), etag: 'local', size: fs.statSync(path.join(dir, name)).size }));
+  }
+  if (!uploadId) return [];
   const parts = [];
   let marker;
   do {
@@ -113,6 +127,15 @@ export async function completeUpload(key, uploadId, parts) {
     }));
     return;
   }
+  const dir = localPartsDir(key);
+  if (fs.existsSync(dir)) {
+    const out = localPathFor(key);
+    fs.writeFileSync(out, '');
+    for (const name of fs.readdirSync(dir).sort()) fs.appendFileSync(out, fs.readFileSync(path.join(dir, name)));
+    fs.rmSync(dir, { recursive: true, force: true });
+    fs.rmSync(`${out}.parts`, { force: true });
+    return;
+  }
   fs.renameSync(localPathFor(key) + '.parts', localPathFor(key));
 }
 
@@ -122,6 +145,7 @@ export async function abortUpload(key, uploadId) {
     return;
   }
   fs.rmSync(localPathFor(key) + '.parts', { force: true });
+  fs.rmSync(localPartsDir(key), { recursive: true, force: true });
 }
 
 // Key listing/deletion — used by backup retention, not the media path.

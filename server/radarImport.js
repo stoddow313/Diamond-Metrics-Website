@@ -5,6 +5,7 @@
 // keeps every row (unparseable velocity → invalid with the raw row kept),
 // and preserves the source file verbatim so batches can be reprocessed when
 // the format is pinned. Raw rows are immutable — analyst decisions layer on.
+import { createHash } from 'node:crypto';
 import { resultForEvidence, applyResultState, withdrawResult, resyncPublishedRollups } from './releaseLogic.js';
 export const PITCH_TYPES = ['fastball', 'curveball', 'slider', 'changeup', 'other', 'unknown'];
 
@@ -188,4 +189,36 @@ export function classifyReading(db, readingId, { player_id, pitch_or_exit, pitch
   });
   apply();
   return db.prepare('SELECT * FROM cmd_radar_readings WHERE id = ?').get(readingId);
+}
+
+// One radar CSV into a job's radar queue: idempotent by file hash, raw content
+// preserved, every row kept (unreadable rows land as invalid with a reason).
+// Shared by the Command upload route and the intake hand-off of a customer's
+// Pocket Radar export.
+export function importRadarCsv(db, jobId, { filename = 'radar.csv', content }, actorId) {
+  if (!content || typeof content !== 'string') throw Object.assign(new Error('content (CSV text) is required'), { status: 400 });
+  const hash = createHash('sha256').update(content).digest('hex');
+  const existing = db.prepare('SELECT id, row_count FROM cmd_radar_imports WHERE job_id = ? AND file_hash = ?').get(jobId, hash);
+  if (existing) return { import_id: existing.id, duplicate: true, rows: existing.row_count };
+
+  const { rows, header_detected } = parseRadarCsv(content);
+  if (!rows.length) throw Object.assign(new Error('No data rows found in the file'), { status: 400 });
+
+  const importId = db.transaction(() => {
+    const id = db.prepare(
+      'INSERT INTO cmd_radar_imports (job_id, filename, file_hash, raw_content, row_count, created_by) VALUES (?, ?, ?, ?, ?, ?)'
+    ).run(jobId, String(filename), hash, content, rows.length, actorId).lastInsertRowid;
+    const ins = db.prepare(
+      `INSERT INTO cmd_radar_readings (job_id, source, import_id, row_index, velocity, source_timestamp, raw_row, status, note, created_by)
+       VALUES (?, 'csv_import', ?, ?, ?, ?, ?, ?, ?, ?)`
+    );
+    for (const r of rows) {
+      ins.run(jobId, id, r.row_index, r.velocity, r.source_timestamp, r.raw_row,
+        r.parse_ok ? 'unmatched' : 'invalid', r.parse_ok ? '' : 'no readable velocity in row', actorId);
+    }
+    db.prepare("INSERT INTO cmd_review_actions (target_table, target_id, actor_id, action, note) VALUES ('cmd_jobs', ?, ?, 'radar_import', ?)")
+      .run(jobId, actorId, `${filename} — ${rows.length} rows (${rows.filter(r => r.parse_ok).length} readable)`);
+    return id;
+  })();
+  return { import_id: importId, duplicate: false, rows: rows.length, readable: rows.filter(r => r.parse_ok).length, header_detected };
 }

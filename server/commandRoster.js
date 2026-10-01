@@ -1,9 +1,10 @@
 // Who an analyst may attribute evidence to on a job (roadmap §4.2, identity
 // resolution): the team's dated roster, the event roster for the tournament
-// (including declared guests), and job-scoped guest placeholders created in
-// Command when a runner or pitcher is not on any roster. A placeholder never
-// forces a guessed permanent match — it can be reassigned to the identified
-// player after the game, and it never gets a public profile on its own.
+// (including declared guests), players a customer submission named, and
+// job-scoped guest placeholders created in Command when a runner or pitcher
+// is not on any roster. A placeholder never forces a guessed permanent match
+// — it can be reassigned to the identified player after the game, and it
+// never gets a public profile on its own.
 import { membershipCoversDate, slugify } from './rosterLogic.js';
 
 export function commandRoster(db, jobOrId) {
@@ -26,6 +27,11 @@ export function commandRoster(db, jobOrId) {
       if (!byPlayer.has(r.player_id)) byPlayer.set(r.player_id, { jersey: r.jersey || '', source: r.is_guest ? 'event_guest' : 'event_roster' });
       else if (r.jersey && !byPlayer.get(r.player_id).jersey) byPlayer.get(r.player_id).jersey = r.jersey;
     }
+  }
+  // Players a customer submission named and staff confirmed: identified
+  // players (not placeholders) who never change the season roster.
+  for (const p of db.prepare('SELECT player_id, jersey FROM cmd_job_participants WHERE job_id = ?').all(job.id)) {
+    if (!byPlayer.has(p.player_id)) byPlayer.set(p.player_id, { jersey: p.jersey || '', source: 'submission' });
   }
   for (const g of db.prepare('SELECT * FROM cmd_job_guests WHERE job_id = ?').all(job.id)) {
     byPlayer.set(g.player_id, { jersey: g.jersey || '', source: 'guest', guest_label: g.label || '' });
