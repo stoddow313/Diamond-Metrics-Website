@@ -1,6 +1,8 @@
 import { Link } from 'react-router-dom';
+import { useIntakeConfig } from '../lib/intake';
 
 function Hero() {
+  const intake = useIntakeConfig();
   return (
     <section className="hero" aria-labelledby="hero-title">
       <div className="hero-copy">
@@ -19,9 +21,15 @@ function Hero() {
         </p>
 
         <div className="hero-buttons">
-          <Link className="primary-button" to="/signup">
-            Analyze Your Player
-          </Link>
+          {intake?.enabled ? (
+            <Link className="primary-button" to="/submit?source=home_hero">
+              Submit Footage
+            </Link>
+          ) : (
+            <Link className="primary-button" to="/signup">
+              Analyze Your Player
+            </Link>
+          )}
 
           <Link className="secondary-button" to="/sample-profile">
             View a Sample Profile

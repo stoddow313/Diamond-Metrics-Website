@@ -4,6 +4,7 @@ import { useAuth } from '../../context/AuthContext';
 import { api } from '../../lib/api';
 import BrandMark from '../../components/BrandMark';
 import { cardStyle } from '../../components/admin/theme';
+import { useIntakeConfig } from '../../lib/intake';
 
 // Coach/director portal: read-only, assignment-scoped views. Analytics and
 // the full team/tournament dashboards arrive in roadmap Phase 3/4 — this
@@ -11,6 +12,7 @@ import { cardStyle } from '../../components/admin/theme';
 
 export function StaffLayout() {
   const { user, logout } = useAuth();
+  const intake = useIntakeConfig();
   const navigate = useNavigate();
 
   return (
@@ -24,6 +26,12 @@ export function StaffLayout() {
             </span>
           </div>
           <div className="flex items-center gap-4">
+            {intake?.enabled && (
+              <>
+                <Link to="/submissions" className="text-sm font-bold hover:underline hidden sm:inline" style={{ color: '#cfe8ff' }}>My submissions</Link>
+                <Link to="/submit?source=staff_portal" className="text-sm font-bold hover:underline" style={{ color: '#38bdf8' }}>Submit footage</Link>
+              </>
+            )}
             <span className="text-sm hidden sm:inline" style={{ color: '#94a3b8' }}>{user?.name || user?.email}</span>
             <button
               onClick={async () => { await logout(); navigate('/login'); }}

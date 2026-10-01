@@ -36,6 +36,10 @@ export function findOwnFile(db, fileId, accountId) {
 }
 
 const filesOf = (db, subId) => db.prepare('SELECT * FROM intake_files WHERE submission_id = ? ORDER BY id').all(subId);
+// Supporting files staff sent into the job (radar queue, game-record source).
+const importedFileIds = (db, subId) => new Set(db.prepare(
+  "SELECT json_extract(data, '$.file_id') AS fid FROM intake_events WHERE submission_id = ? AND event_type = 'supporting_imported'"
+).all(subId).map(r => Number(r.fid)));
 const athletesOf = (db, subId) => db.prepare('SELECT * FROM intake_athletes WHERE submission_id = ? ORDER BY id').all(subId);
 
 // ── Drafts ───────────────────────────────────────────────────────────────
@@ -172,6 +176,9 @@ export function acceptRights(db, sub, account, body = {}, meta = {}) {
   const role = sub.submitter_role;
   const terms = rightsTerms({ role, retention: retentionDays() });
   const uses = body.uses || {};
+  // The attestation is the uploader's own statement of authority — it has to
+  // be affirmed, not just displayed.
+  if (body.attest !== true) fail('Please confirm that you are authorized to submit this footage.');
   for (const u of terms.uses) if (u.required && uses[u.key] !== true) fail(`Please accept: “${u.text}”`);
   if (body.retention_ack !== true) fail('Please acknowledge how long footage is kept.');
   if (body.guide_ack !== true) fail('Please confirm you have read the filming guide.');
@@ -300,6 +307,11 @@ export async function completeFile(db, file, { uploadId, parts = [] } = {}) {
   db.prepare(
     `UPDATE intake_files SET status = ?, upload_id = NULL, uploaded_at = datetime('now'), retention_deadline = datetime('now', '+${days} days'), updated_at = datetime('now') WHERE id = ?`
   ).run(file.kind === 'video' ? 'uploaded' : 'ready', file.id);
+  // A file sent in answer to a request is the customer acting — say so in
+  // the queue's next action.
+  db.prepare(
+    "UPDATE intake_submissions SET next_action = 'Customer added a file — review it', updated_at = datetime('now') WHERE id = ? AND status = 'needs_customer_action'"
+  ).run(file.submission_id);
   addEvent(db, { submissionId: file.submission_id, accountId: file.account_id, actorKind: 'customer', actorId: file.account_id, type: 'file_uploaded', visibility: 'customer', message: `Uploaded ${file.original_name}`, data: { file_id: file.id, parts: parts.length } });
   log('info', 'intake_upload_completed', { file_id: file.id, size: file.size_bytes, parts: parts.length });
   return db.prepare('SELECT * FROM intake_files WHERE id = ?').get(file.id);
@@ -314,7 +326,7 @@ export function pauseFile(db, file) {
 // object; the row stays as 'deleted' so the timeline still resolves.
 export async function removeFile(db, sub, file, account) {
   if (!ADDING_FILES.includes(sub.status)) fail('Files on a submitted request can only be removed through a deletion request.', 409);
-  if (file.feed_id) fail('This file is already part of the analysis.', 409);
+  if (file.feed_id || importedFileIds(db, sub.id).has(file.id)) fail('This file is already part of the analysis.', 409);
   if (UPLOADING.includes(file.status) && file.upload_id) await abortUpload(file.storage_key, file.upload_id).catch(() => {});
   else if (file.storage_key) await deleteObject(file.storage_key).catch(() => {});
   db.prepare("UPDATE intake_files SET status = 'deleted', upload_id = NULL, deleted_at = datetime('now'), updated_at = datetime('now') WHERE id = ?").run(file.id);
@@ -355,8 +367,14 @@ export function submitSubmission(db, sub, account) {
   return db.prepare('SELECT * FROM intake_submissions WHERE id = ?').get(sub.id);
 }
 
-export function discardDraft(db, sub, account) {
+export async function discardDraft(db, sub, account) {
   if (sub.status !== 'draft') fail('Only a draft can be discarded.', 409);
+  // Nothing was ever sent to us, so the uploads go with the draft.
+  for (const f of filesOf(db, sub.id).filter(x => x.status !== 'deleted')) {
+    if (UPLOADING.includes(f.status) && f.upload_id) await abortUpload(f.storage_key, f.upload_id).catch(() => {});
+    else if (f.storage_key) await deleteObject(f.storage_key).catch(() => {});
+    db.prepare("UPDATE intake_files SET status = 'deleted', upload_id = NULL, deleted_at = datetime('now'), updated_at = datetime('now') WHERE id = ?").run(f.id);
+  }
   db.prepare("UPDATE intake_submissions SET status = 'closed', close_reason = 'customer_discarded_draft', closed_at = datetime('now'), updated_at = datetime('now') WHERE id = ?").run(sub.id);
   addEvent(db, { submissionId: sub.id, accountId: account.id, actorKind: 'customer', actorId: account.id, type: 'draft_discarded', visibility: 'customer', message: 'Draft discarded' });
 }
@@ -389,17 +407,20 @@ function fileSummary(f) {
   const quarter = Math.abs(Number(f.rotation) || 0) % 180 === 90;
   const short = f.width && f.height ? Math.min(quarter ? f.height : f.width, quarter ? f.width : f.height) : null;
   const fps = f.effective_fps || f.nominal_fps;
-  const dur = f.duration_s ? `${Math.floor(f.duration_s / 3600) ? `${Math.floor(f.duration_s / 3600)}h ` : ''}${Math.floor((f.duration_s % 3600) / 60)}m` : '';
+  const dur = !f.duration_s ? '' : f.duration_s < 60 ? `${Math.round(f.duration_s)}s`
+    : `${Math.floor(f.duration_s / 3600) ? `${Math.floor(f.duration_s / 3600)}h ` : ''}${Math.floor((f.duration_s % 3600) / 60)}m`;
   return [short ? `${short}p` : '', fps ? `${Math.round(fps)} fps` : '', dur].filter(Boolean).join(' · ');
 }
 
-export function customerFileView(f) {
+export function customerFileView(f, imported = new Set()) {
   return {
     id: f.id, kind: f.kind, camera_view: f.camera_view, label: f.label, original_name: f.original_name, size_bytes: f.size_bytes,
     status: f.status, status_label: CUSTOMER_FILE_STATUS[f.status] || f.status,
     summary: f.kind === 'video' && ['ready', 'needs_customer_action'].includes(f.status) ? fileSummary(f) : '',
     issues: safeJson(f.issues, []).map(i => ({ severity: i.severity, text: i.text })),
     uploaded_at: f.uploaded_at, retention_deadline: f.retention_deadline,
+    // Part of the analysis already: removing it is a deletion request now.
+    locked: !!f.feed_id || imported.has(f.id),
   };
 }
 
@@ -430,8 +451,9 @@ export function customerResults(db, sub, job) {
           };
         }
         const reasons = [...new Set(mine.filter(r => r.status === 'unavailable').map(r => r.unavailable_reason))];
-        const fallback = m.method === 'radar_verified' ? 'missing_radar' : 'no_valid_attempt';
-        return { metric: m.label, available: false, reasons: (reasons.length ? reasons : [fallback]).map(plainReason) };
+        // No result at all: say only that — never guess a cause (radar may
+        // well have been provided).
+        return { metric: m.label, available: false, reasons: (reasons.length ? reasons : ['not_measured']).map(plainReason) };
       });
       return { name: `${a.first_name} ${a.last_name}`.trim(), metrics };
     }),
@@ -445,6 +467,7 @@ export function customerSubmissionView(db, sub, account) {
   const pkg = INTAKE_PACKAGES[sub.package_key];
   const form = safeJson(sub.form);
   const live = files.filter(f => f.status !== 'deleted');
+  const imported = importedFileIds(db, sub.id);
   return {
     public_id: sub.public_id,
     kind: sub.kind,
@@ -456,10 +479,10 @@ export function customerSubmissionView(db, sub, account) {
     package: pkg ? { key: sub.package_key, label: pkg.label, note: pkg.customer_note || '' } : null,
     game: { date: sub.game_date, event: sub.event_label, team: sub.team_label, opponent: sub.opponent_label, location: sub.location, level: sub.level },
     athletes: athletesOf(db, sub.id).map(a => ({ first_name: a.first_name, last_name: a.last_name, birth_year: a.birth_year, age_band: a.age_band, relationship: a.relationship })),
-    files: live.map(customerFileView),
+    files: live.map(f => customerFileView(f, imported)),
     capture_notes: submissionCaptureNotes({ packageKey: sub.package_key, files: live }),
     rights: rights ? {
-      accepted_at: rights.created_at, version: rights.policy_version, pending_legal: !!rights.pending_legal, action: rights.action,
+      accepted_at: rights.created_at, version: rights.policy_version, pending_legal: !!rights.pending_legal, action: rights.action, role: rights.relationship,
       permitted_uses: safeJson(rights.permitted_uses), contact_permission: !!rights.contact_permission, retention_days: rights.retention_days,
     } : null,
     message: ['needs_customer_action'].includes(sub.status) ? sub.customer_message : '',
@@ -468,6 +491,12 @@ export function customerSubmissionView(db, sub, account) {
     ).all(sub.id).map(e => ({ id: e.id, from: e.actor_kind === 'customer' ? 'You' : 'Diamond Metrics', type: e.event_type, message: e.message, at: e.created_at })),
     results: customerResults(db, sub, job),
     deletion: db.prepare("SELECT status, created_at FROM intake_deletion_requests WHERE scope = 'submission' AND target_id = ? ORDER BY id DESC LIMIT 1").get(sub.id) || null,
+    // What the customer can do right now; the routes enforce the same rules.
+    can: {
+      add_files: ADDING_FILES.includes(sub.status) && sub.kind !== 'inquiry',
+      reply: !['draft', 'closed', 'declined'].includes(sub.status),
+      request_deletion: sub.status !== 'draft',
+    },
     submitted_at: sub.submitted_at,
     created_at: sub.created_at,
   };

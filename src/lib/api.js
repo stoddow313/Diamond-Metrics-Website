@@ -29,10 +29,35 @@ async function request(path, { method = 'GET', body, auth = true } = {}) {
   if (!res.ok) {
     const err = new Error(data?.error || `Request failed (${res.status})`);
     err.status = res.status;
+    // Intake responses explain themselves: a code to branch on and the list
+    // of what is still missing before a submission can be sent.
+    if (data?.code) err.code = data.code;
+    if (data?.missing) err.missing = data.missing;
     throw err;
   }
   return data;
 }
+
+// Raw bytes to a local-storage part endpoint (dev and tests only — in
+// production parts go straight to R2 on presigned URLs).
+async function postRawPart(path, blob) {
+  const res = await fetch(path, {
+    method: 'POST', headers: { Authorization: `Bearer ${getToken()}`, 'Content-Type': 'application/octet-stream' }, body: blob,
+  });
+  if (!res.ok) {
+    let message = '';
+    try { message = (await res.json())?.error || ''; } catch { /* non-JSON */ }
+    const err = new Error(message || `Part upload failed (${res.status})`);
+    err.status = res.status;
+    throw err;
+  }
+  return res.json();
+}
+
+const query = (params = {}) => {
+  const qs = new URLSearchParams(Object.entries(params).filter(([, v]) => v != null && v !== '')).toString();
+  return qs ? `?${qs}` : '';
+};
 
 export const api = {
   // auth
@@ -126,13 +151,7 @@ export const api = {
   commandAttachGameRecordSource: (jobId, source) => request(`/api/command/jobs/${jobId}/game-record-sources`, { method: 'POST', body: source }),
   commandRegisterFeed: (jobId, meta) => request(`/api/command/jobs/${jobId}/feeds`, { method: 'POST', body: meta }),
   commandPresignPart: (feedId, uploadId, partNumber) => request(`/api/command/feeds/${feedId}/parts/presign`, { method: 'POST', body: { uploadId, partNumber } }),
-  commandUploadLocalPart: async (feedId, partNumber, blob) => {
-    const res = await fetch(`/api/command/feeds/${feedId}/parts/${partNumber}`, {
-      method: 'POST', headers: { Authorization: `Bearer ${getToken()}`, 'Content-Type': 'application/octet-stream' }, body: blob,
-    });
-    if (!res.ok) throw new Error(`Part upload failed (${res.status})`);
-    return res.json();
-  },
+  commandUploadLocalPart: (feedId, partNumber, blob) => postRawPart(`/api/command/feeds/${feedId}/parts/${partNumber}`, blob),
   commandCompleteFeed: (feedId, uploadId, parts) => request(`/api/command/feeds/${feedId}/complete`, { method: 'POST', body: { uploadId, parts } }),
   commandAbortFeed: (feedId, uploadId) => request(`/api/command/feeds/${feedId}/abort`, { method: 'POST', body: { uploadId } }),
   commandFeed: (feedId) => request(`/api/command/feeds/${feedId}`),
@@ -171,6 +190,62 @@ export const api = {
   commandRunBackup: () => request('/api/command/backups/run', { method: 'POST' }),
   commandStorageCheck: () => request('/api/command/storage/check', { method: 'POST' }),
   commandBulkJobs: (body) => request('/api/command/jobs/bulk', { method: 'POST', body }),
+
+  // Customer footage intake (docs/COMMAND_TDR.md §8). One config call says
+  // whether intake is switched on and carries the packages, guides and labels.
+  intakeConfig: () => request('/api/intake/config', { auth: false }),
+  customerSignup: (fields) => request('/api/customer/signup', { method: 'POST', body: fields, auth: false }),
+  customerVerify: (token) => request('/api/customer/verify', { method: 'POST', body: { token }, auth: false }),
+  customerResendVerification: () => request('/api/customer/resend-verification', { method: 'POST' }),
+  customerForgotPassword: (email) => request('/api/customer/forgot-password', { method: 'POST', body: { email }, auth: false }),
+  customerResetPassword: (token, password) => request('/api/customer/reset-password', { method: 'POST', body: { token, password }, auth: false }),
+  customerMe: () => request('/api/customer/me'),
+  customerUpdateMe: (fields) => request('/api/customer/me', { method: 'PUT', body: fields }),
+  intakeSubmissions: () => request('/api/intake/submissions'),
+  intakeCreateDraft: (params) => request('/api/intake/submissions', { method: 'POST', body: params }),
+  intakeSubmission: (pid) => request(`/api/intake/submissions/${pid}`),
+  intakeSaveDraft: (pid, step, form) => request(`/api/intake/submissions/${pid}`, { method: 'PUT', body: { step, form } }),
+  intakeTerms: (pid) => request(`/api/intake/submissions/${pid}/terms`),
+  intakeAcceptRights: (pid, body) => request(`/api/intake/submissions/${pid}/rights`, { method: 'POST', body }),
+  intakeRegisterFile: (pid, meta) => request(`/api/intake/submissions/${pid}/files`, { method: 'POST', body: meta }),
+  intakePresignPart: (fileId, uploadId, partNumber) => request(`/api/intake/files/${fileId}/parts/presign`, { method: 'POST', body: { uploadId, partNumber } }),
+  intakeUploadLocalPart: (fileId, partNumber, blob) => postRawPart(`/api/intake/files/${fileId}/parts/${partNumber}`, blob),
+  intakeCompleteFile: (fileId, uploadId, parts) => request(`/api/intake/files/${fileId}/complete`, { method: 'POST', body: { uploadId, parts } }),
+  intakePauseFile: (fileId) => request(`/api/intake/files/${fileId}/pause`, { method: 'POST' }),
+  intakeRemoveFile: (fileId) => request(`/api/intake/files/${fileId}`, { method: 'DELETE' }),
+  intakeSubmit: (pid) => request(`/api/intake/submissions/${pid}/submit`, { method: 'POST' }),
+  intakeDiscard: (pid) => request(`/api/intake/submissions/${pid}/discard`, { method: 'POST' }),
+  intakeReply: (pid, message) => request(`/api/intake/submissions/${pid}/reply`, { method: 'POST', body: { message } }),
+  intakeRequestDeletion: (pid, note) => request(`/api/intake/submissions/${pid}/deletion-request`, { method: 'POST', body: { note } }),
+  intakeRequestAccountDeletion: (note) => request('/api/intake/account/deletion-request', { method: 'POST', body: { note } }),
+
+  // Will's intake queue (Command)
+  commandIntakeQueue: (params = {}) => request(`/api/command/intake${query(params)}`),
+  commandIntakeRecord: (id) => request(`/api/command/intake/${id}`),
+  commandIntakeUpdate: (id, fields) => request(`/api/command/intake/${id}`, { method: 'PUT', body: fields }),
+  commandIntakeNote: (id, message) => request(`/api/command/intake/${id}/notes`, { method: 'POST', body: { message } }),
+  commandIntakeMessage: (id, message, requestAction) => request(`/api/command/intake/${id}/messages`, { method: 'POST', body: { message, request_action: !!requestAction } }),
+  commandIntakeEscalate: (id, note) => request(`/api/command/intake/${id}/escalate`, { method: 'POST', body: { note } }),
+  commandIntakeResolveAthlete: (id, athleteId, body) => request(`/api/command/intake/${id}/athletes/${athleteId}/resolve`, { method: 'POST', body }),
+  commandIntakeCreateJob: (id, body) => request(`/api/command/intake/${id}/create-job`, { method: 'POST', body }),
+  commandIntakeLinkJob: (id, jobId) => request(`/api/command/intake/${id}/link-job`, { method: 'POST', body: { job_id: jobId } }),
+  commandIntakeAttachFiles: (id) => request(`/api/command/intake/${id}/attach-files`, { method: 'POST' }),
+  commandIntakeSendToJob: (id, fileId) => request(`/api/command/intake/${id}/files/${fileId}/send-to-job`, { method: 'POST' }),
+  commandIntakeDownload: (id, fileId) => request(`/api/command/intake/${id}/files/${fileId}/download`),
+  commandIntakeClose: (id, body) => request(`/api/command/intake/${id}/close`, { method: 'POST', body }),
+  commandIntakeReopen: (id, note) => request(`/api/command/intake/${id}/reopen`, { method: 'POST', body: { note } }),
+  commandIntakeVerifyEmail: (accountId, note) => request(`/api/command/intake/accounts/${accountId}/verify-email`, { method: 'POST', body: { note } }),
+  commandIntakeSetTestAccount: (accountId, isTest) => request(`/api/command/intake/accounts/${accountId}`, { method: 'PUT', body: { is_test: !!isTest } }),
+  commandIntakeDeletions: () => request('/api/command/intake-deletions'),
+  commandIntakeOpenDeletion: (body) => request('/api/command/intake-deletions', { method: 'POST', body }),
+  commandIntakeDeletion: (id) => request(`/api/command/intake-deletions/${id}`),
+  commandIntakeExecuteDeletion: (id, actions, note) => request(`/api/command/intake-deletions/${id}/execute`, { method: 'POST', body: { actions, note } }),
+  commandIntakeDeclineDeletion: (id, note) => request(`/api/command/intake-deletions/${id}/decline`, { method: 'POST', body: { note } }),
+  commandIntakeSettings: () => request('/api/command/intake-settings'),
+  commandIntakeUpdateSettings: (fields) => request('/api/command/intake-settings', { method: 'PUT', body: fields }),
+  commandTeam: () => request('/api/command/team'),
+  commandTeamCreate: (member) => request('/api/command/team', { method: 'POST', body: member }),
+  commandTeamUpdate: (id, fields) => request(`/api/command/team/${id}`, { method: 'PUT', body: fields }),
 
   // public
   publicProfile: (slug) => request(`/api/public/players/${slug}`, { auth: false }),

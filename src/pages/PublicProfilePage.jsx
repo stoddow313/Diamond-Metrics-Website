@@ -7,6 +7,7 @@ import {
   MoreHorizontal, Star, User, Play, Dna, ClipboardList,
 } from 'lucide-react';
 import { api } from '../lib/api';
+import { useIntakeConfig } from '../lib/intake';
 import BrandMark from '../components/BrandMark';
 import { TrendChart, Histogram, DonutChart, RingGauge, SprayChart } from '../components/profile/charts';
 import ProDayCardModal from '../components/profile/ProDayCard';
@@ -800,6 +801,7 @@ function PlayerCard({ player, ratings }) {
 /* ── Page ────────────────────────────────────────────────────────────────── */
 
 export default function PublicProfilePage({ portal = false }) {
+  const intake = useIntakeConfig();
   const { slug } = useParams();
   const { logout } = useAuth();
   const navigate = useNavigate();
@@ -902,6 +904,20 @@ export default function PublicProfilePage({ portal = false }) {
           <div className="flex items-center gap-2 shrink-0">
             {portal && (
               <span className="hidden sm:inline text-xs font-bold uppercase tracking-wider mr-1" style={{ color: text.faint }}>My Profile</span>
+            )}
+            {intake?.enabled && portal && (
+              <Link to="/submissions" className="hidden sm:inline text-xs font-bold px-3.5 py-2 rounded-lg border whitespace-nowrap hover:bg-slate-800" style={{ borderColor: '#334155', color: text.body }}>
+                My submissions
+              </Link>
+            )}
+            {intake?.enabled && (
+              <Link
+                to={`/submit?player=${encodeURIComponent(player.slug)}&source=${portal ? 'player_portal' : 'player_profile'}`}
+                className="text-xs font-bold px-3.5 py-2 rounded-lg border whitespace-nowrap hover:bg-slate-800"
+                style={{ borderColor: text.accent, color: text.accent }}
+              >
+                {portal ? 'Submit footage' : 'Submit footage for my player'}
+              </Link>
             )}
             {portal && (
               <button

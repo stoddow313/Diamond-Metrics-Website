@@ -1,6 +1,7 @@
-import { ArrowRight, Check, ShieldCheck } from 'lucide-react';
+import { ArrowRight, Check, ShieldCheck, Upload } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import MarketingLayout from '../components/MarketingLayout';
+import { useIntakeConfig } from '../lib/intake';
 import './PricingPage.css';
 
 const packages = [
@@ -40,6 +41,7 @@ const packages = [
 ];
 
 export default function PricingPage() {
+  const intake = useIntakeConfig();
   return (
     <MarketingLayout>
       <section className="pricing-hero">
@@ -70,6 +72,19 @@ export default function PricingPage() {
           </article>
         ))}
       </section>
+
+      {intake?.enabled && (
+        <section className="pricing-eligibility" aria-label="Upload a game">
+          <Upload size={25} aria-hidden="true" />
+          <div>
+            <h2>Already have a package? Upload a game.</h2>
+            <p>
+              Send us the footage and tell us who played — add your order number so we can match it to your purchase.{' '}
+              <Link className="pricing-partner-link" to="/submit?source=pricing">Upload a game <ArrowRight size={17} aria-hidden="true" /></Link>
+            </p>
+          </div>
+        </section>
+      )}
 
       <section className="pricing-partner-section">
         <div className="pricing-partner-heading">

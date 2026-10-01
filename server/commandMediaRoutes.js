@@ -64,8 +64,9 @@ export function mountCommandMediaRoutes(app, { db, requireInternal }) {
     const RESUMABLE = ['uploading', 'failed'];
     let reuseFeedId = null;
     if (b.content_hash && b.size_bytes) {
+      // A feed deleted under a deletion request is gone, not a duplicate.
       const existing = db.prepare(
-        'SELECT * FROM cmd_video_feeds WHERE job_id = ? AND content_hash = ? AND size_bytes = ?'
+        "SELECT * FROM cmd_video_feeds WHERE job_id = ? AND content_hash = ? AND size_bytes = ? AND status != 'deleted'"
       ).get(job.id, b.content_hash, b.size_bytes);
       if (existing && !RESUMABLE.includes(existing.status)) {
         return res.json({ feed: existing, upload: null, duplicate: true });

@@ -2,7 +2,7 @@
 // Any internal role may look; acting needs the fulfillment or admin role;
 // executing a deletion or clearing an escalation is admin-only (§2).
 import { staffQueue, staffRecord, loadSubmission, updateSubmission, addNote, messageCustomer, escalate, resolveAthlete,
-  createJobFromSubmission, linkSubmissionToJob, sendSupportingToJob, closeSubmission, reopenSubmission, settingsForIntake } from './intakeFulfillment.js';
+  createJobFromSubmission, linkSubmissionToJob, attachNewFiles, sendSupportingToJob, closeSubmission, reopenSubmission, settingsForIntake } from './intakeFulfillment.js';
 import { deletionInventory, createStaffDeletionRequest, executeDeletion, declineDeletion, retentionDue, DELETION_ACTIONS, DELETION_REASONS } from './intakeDeletion.js';
 import { markEmailVerified } from './customerAuth.js';
 import { addEvent, getAccount, setSetting } from './intakeStore.js';
@@ -76,6 +76,11 @@ export function mountIntakeCommandRoutes(app, { db, requireInternal, requireInte
     res.json(record(req.params.id));
   }));
 
+  app.post('/api/command/intake/:id/attach-files', canAct, respond((req, res) => {
+    const attached = attachNewFiles(db, loadSubmission(db, req.params.id), req.internal);
+    res.json({ attached, ...record(req.params.id) });
+  }));
+
   app.post('/api/command/intake/:id/files/:fid/send-to-job', canAct, respond(async (req, res) => {
     const result = await sendSupportingToJob(db, loadSubmission(db, req.params.id), req.params.fid, req.internal);
     res.json({ result, ...record(req.params.id) });
@@ -127,7 +132,9 @@ export function mountIntakeCommandRoutes(app, { db, requireInternal, requireInte
   }));
 
   app.get('/api/command/intake-deletions/:id', requireInternal, respond((req, res) => {
-    const request = db.prepare('SELECT * FROM intake_deletion_requests WHERE id = ?').get(Number(req.params.id));
+    const request = db.prepare(
+      'SELECT d.*, ad.name AS decided_by_name, a.email AS account_email FROM intake_deletion_requests d LEFT JOIN admins ad ON ad.id = d.decided_by LEFT JOIN customer_accounts a ON a.id = d.account_id WHERE d.id = ?'
+    ).get(Number(req.params.id));
     if (!request) return res.status(404).json({ error: 'Request not found' });
     res.json({
       request: { ...request, actions: safeJson(request.actions, []), result: safeJson(request.result), inventory: undefined },

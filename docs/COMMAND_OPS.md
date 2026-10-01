@@ -101,6 +101,15 @@ Without it, the same events still appear in the structured log as
 | `RESEND_API_KEY` | — | Activates transactional email; without it events are recorded in-app only |
 | `DM_EMAIL_FROM` | — | Verified sender address |
 
+### Customer footage intake (§3.17)
+| Variable | Default | Purpose |
+|---|---|---|
+| `DM_INTAKE_ENABLED` | on outside production, **off in production** | `1` turns on the customer pages, self-serve sign-up and every "Submit Footage" button; `0` forces it off anywhere |
+| `DM_PUBLIC_BASE_URL` | — | The site's public origin (e.g. `https://diamondmetrics.ai`), used in verification and password-reset links |
+| `DM_INTAKE_RETENTION_DAYS` | 180 | Days uploaded footage is kept (30–3650); stamped on each file when it lands |
+| `DM_INTAKE_TRIAGE_HOURS` | 24 | Due time for the first review of a new submission |
+| `DM_RATE_LIMITS` | on | `0` disables the sign-in/sign-up/upload rate limits (tests only) |
+
 ---
 
 ## 3. Setting up Cloudflare R2
@@ -654,6 +663,90 @@ test that pins the behaviour and how to see it in Command.
 | One-viewport tagging workspace | Score tab layout; compact `FeedPlayer` | — (layout, checked in the browser at 1366×768 / 1440×900) | Score tab with a ready feed |
 
 Run everything with `node --test server/*.test.js`. Prod verification after each deploy uses the synthetic job (badge on the job page); nothing it publishes reaches a profile.
+
+### 3.17 Customer footage intake (TDR §8)
+
+Customers submit footage at `/submit` (every "Submit Footage" button lands
+there). Will works it at **Command → Intake**. The feature is off in
+production until `DM_INTAKE_ENABLED=1`.
+
+**Giving Will a login.** An admin opens **Command → Team**, adds Will with the
+**fulfillment** role and a temporary password (Generate makes one), and hands
+it over in person or by phone. On the same page, *Who owns new submissions*
+→ Will. Fulfillment can read all of Command, work the intake queue and
+create or link jobs; it cannot approve or release, execute deletions or
+clear escalations. Deactivating a login signs it out at once. There is no
+self-service password change for internal logins yet — reset it on Team.
+
+**The queue.** Stage chips carry counts: New, Needs identity review, Needs
+customer action, Ready to create Command job, In analysis, Metrics released,
+Game record pending, Complete, Closed or declined, plus **Drafts** (started,
+not sent). Row flags:
+
+| Flag | Meaning | Usual action |
+|---|---|---|
+| Email unverified | The submitter has not confirmed their email | Until Resend is live: confirm the address with them (a reply from it, or a call), then **Mark email verified** on the record with how you confirmed it. Drafts waiting on this are in the Drafts chip |
+| Payment unconfirmed | No payment confirmed yet | Match the order reference (if given) to the purchase; set Payment on the record |
+| Customer replied | The customer answered a request | Read the reply on the timeline |
+| Overdue | Past its due time | Act or move the due time |
+| Escalated | Waiting on an admin decision | Admin clears it from the banner once decided |
+| Deletion requested | The customer asked for deletion | See *Deletion* below |
+| Hall of Fame | A consultation request — no upload | Contact them to plan the capture, then close it |
+
+**Identity.** Each athlete shows candidate players with confidence and the
+reasons (name, short form, typo, birth/grad year, roster on the game date).
+Nothing links on its own. Choose **Link** on the right player, **Create new
+private player** (a written reason is required when any reasonable match
+exists), **Guest placeholder** (unidentified or one-off players), or
+**Defer** with what is needed. A parent's, guardian's or adult athlete's link
+becomes "my athletes" on their account; a coach's never does — the coach gets
+a link to the team instead.
+
+**Create or link the job.** *Existing jobs for this game* lists jobs for the
+same team within a day of the game date, with reasons. The opponent's job for
+the same game is shown but cannot be linked. **Link** when it is the same game; otherwise
+**Create a new Command job** (team, date, opponent, event, tournament game,
+package — Pro and Custom default to Rookie — analyst, due date). Each
+video becomes a feed on the job **without copying** and runs the normal
+processing; radar CSVs and CSV scorecards go in with **Send to job**. Videos
+the customer adds later (after a request) attach with **Attach to the job**.
+
+**Talking to the customer.** *Message the customer* is customer-visible (and
+emailed once email is live); tick *Needs an answer* to move the submission to
+Needs customer action — the customer can then reply and add files. *Internal
+note* never reaches the customer. **Close** (done, duplicate) needs an
+internal reason; **Decline** also needs words for the customer. Nothing is
+deleted by either; **Reopen** brings it back.
+
+**Deletion and retention** (**Command → Intake → Deletions & retention**).
+Customers ask from their submission or account page; staff can open a request
+from a record. The request page lists everything it touches: the account,
+submissions, uploaded files, Command feeds and their proxies and thumbnails,
+jobs, measured results that cite the footage, public profiles, and
+exceptions to read first. An **admin** ticks the actions (delete media,
+revoke consent, make profiles private, close the account) and executes; each
+step's result is recorded, and a failed step leaves the request open to
+retry. Published values measured from deleted footage stay (their frames and
+timestamps remain the evidence) unless they are withdrawn in Command. Footage
+past its deletion date (180 days by default) appears under *Past the
+retention date*; nothing deletes automatically — open a request from there.
+**Database backups keep personal data for their own retention (30 days)
+after an account is closed**; say so if a customer asks.
+
+**Test accounts.** Tick *Internal test account* on a record's contact panel:
+its open submissions become synthetic, can never join a real job, and send
+no customer notifications. Test jobs keep the Synthetic badge.
+
+**Launch checklist (before `DM_INTAKE_ENABLED=1` in production)**
+
+| Check | How |
+|---|---|
+| Final legal wording | Replace the draft terms in `server/intakeLogic.js` (`RIGHTS_POLICY`, `AUTHORITY`, `rightsTerms`) with the approved text and bump the version; set `pending_legal: false` |
+| Email | `RESEND_API_KEY` + `DM_EMAIL_FROM` on a verified domain; ops → Email test send ✓; `DM_PUBLIC_BASE_URL` set |
+| R2 CORS | The existing policy (§3.3) covers the site's origins; add any other origin customers upload from |
+| Will's login and default owner | Command → Team |
+| Turnaround wording | Sales/ops decision (doc §14); the product promises no turnaround until then |
+| Smoke test | A test account submits a short clip end to end on the synthetic path; delete it with a deletion request afterwards |
 
 ---
 

@@ -2,9 +2,11 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { Menu, X } from 'lucide-react';
 import BrandMark from './BrandMark';
+import { useIntakeConfig } from '../lib/intake';
 
 function Navbar() {
   const [menuOpen, setMenuOpen] = useState(false);
+  const intake = useIntakeConfig();
   return (
     <header className="header marketing-header">
       <div className="nav">
@@ -19,7 +21,9 @@ function Navbar() {
           <Link to="/programs">For Programs</Link>
           <Link to="/blog">Playbook</Link>
           <Link className="nav-sign-in" to="/login">Sign In</Link>
-          <Link className="nav-sign-up" to="/pricing">Analyze Your Player</Link>
+          {intake?.enabled
+            ? <Link className="nav-sign-up" to="/submit?source=nav">Submit Footage</Link>
+            : <Link className="nav-sign-up" to="/pricing">Analyze Your Player</Link>}
         </nav>
       </div>
     </header>

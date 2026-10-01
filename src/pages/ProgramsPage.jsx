@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom';
+import { useIntakeConfig } from '../lib/intake';
 import { createElement } from 'react';
 import MarketingLayout from '../components/MarketingLayout';
 import ProductPreview from '../components/ProductPreview';
@@ -37,6 +38,7 @@ const programPaths = [
 ];
 
 export default function ProgramsPage() {
+  const intake = useIntakeConfig();
   return (
     <MarketingLayout>
       <section className="page-hero">
@@ -46,6 +48,7 @@ export default function ProgramsPage() {
         <div className="hero-buttons">
           <Link className="primary-button" to="/programs?inquiry=pro-day#contact">Schedule a Pro Day</Link>
           <Link className="secondary-button" to="/programs?inquiry=program#contact">Talk to Our Team</Link>
+          {intake?.enabled && <Link className="secondary-button" to="/submit?source=programs">Submit Team Footage</Link>}
         </div>
       </section>
       <section className="program-grid">

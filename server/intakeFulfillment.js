@@ -406,7 +406,11 @@ function attachToJob(db, sub, job, actor) {
   const attached = [];
   const files = db.prepare("SELECT * FROM intake_files WHERE submission_id = ? AND kind = 'video' AND status IN ('uploaded', 'processing', 'ready') AND feed_id IS NULL").all(sub.id);
   for (const f of files) {
-    const existing = db.prepare('SELECT id FROM cmd_video_feeds WHERE job_id = ? AND content_hash = ? AND size_bytes = ?').get(job.id, f.content_hash, f.size_bytes);
+    // Reuse only a live, complete feed of the same bytes — never one deleted
+    // under a deletion request or one whose own upload never finished.
+    const existing = db.prepare(
+      "SELECT id FROM cmd_video_feeds WHERE job_id = ? AND content_hash = ? AND size_bytes = ? AND status NOT IN ('deleted', 'uploading', 'failed')"
+    ).get(job.id, f.content_hash, f.size_bytes);
     let feedId = existing?.id;
     if (!feedId) {
       feedId = db.prepare(
@@ -542,6 +546,22 @@ export function linkSubmissionToJob(db, sub, jobId, actor) {
   });
   run();
   return loadSubmission(db, sub.id);
+}
+
+// Files the customer adds after the job exists (a replacement for one we could
+// not read, or a second angle we asked for) join the same job on request.
+// attachToJob only touches files without a feed, so this is idempotent.
+export function attachNewFiles(db, sub, actor) {
+  if (!sub.job_id) fail('Create or link the Command job first.', 409);
+  const rights = latestRights(db, sub.id);
+  if (!rights || rights.action !== 'grant') fail('The footage terms are missing or were revoked.', 409);
+  const job = jobOf(db, sub);
+  const attached = db.transaction(() => attachToJob(db, sub, job, actor))();
+  if (!attached.length) fail('There is no new usable video to attach.', 409);
+  db.prepare("INSERT INTO cmd_review_actions (target_table, target_id, actor_id, action, note) VALUES ('cmd_jobs', ?, ?, 'linked_intake', ?)")
+    .run(job.id, actor.id, `submission ${sub.public_id}: ${attached.length} more feed${attached.length === 1 ? '' : 's'} attached`);
+  staffEvent(db, sub, actor, 'files_attached', `${attached.length} more video${attached.length === 1 ? '' : 's'} attached to Command job #${job.id}`, { job_id: job.id, attached });
+  return attached;
 }
 
 // Supporting data into the linked job (§5 "imports may be processed later").

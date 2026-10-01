@@ -142,11 +142,16 @@ test('rights: exact wording is served, required uses are enforced, and the recor
   const terms = (await call('GET', `/api/intake/submissions/${pid}/terms`, { token: c.token })).body;
   assert.match(terms.terms.attestation, /parent of each minor athlete/);
   assert.equal(terms.guide.title, 'Rookie filming guide');
-  const missing = await call('POST', `/api/intake/submissions/${pid}/rights`, { token: c.token, body: { uses: { analysis: true }, retention_ack: true, guide_ack: true } });
+  const unattested = await call('POST', `/api/intake/submissions/${pid}/rights`, { token: c.token, body: { uses: { analysis: true, results: true }, retention_ack: true, guide_ack: true } });
+  assert.equal(unattested.status, 400);
+  assert.match(unattested.body.error, /authorized to submit/, 'the authority statement must be affirmed, not just shown');
+  const missing = await call('POST', `/api/intake/submissions/${pid}/rights`, { token: c.token, body: { uses: { analysis: true }, retention_ack: true, guide_ack: true, attest: true } });
   assert.equal(missing.status, 400);
   assert.equal((await h.upload(c.token, pid)).body.code, 'rights_required', 'no upload before the terms are accepted');
-  const ok = await call('POST', `/api/intake/submissions/${pid}/rights`, { token: c.token, body: { uses: { analysis: true, results: true }, contact_permission: false, retention_ack: true, guide_ack: true, restrictions: 'No social media' } });
+  const ok = await call('POST', `/api/intake/submissions/${pid}/rights`, { token: c.token, body: { uses: { analysis: true, results: true }, contact_permission: false, retention_ack: true, guide_ack: true, attest: true, restrictions: 'No social media' } });
   assert.equal(ok.status, 201);
+  assert.equal(ok.body.submission.rights.role, 'parent', 'the customer sees which role they accepted under');
+  assert.ok(!ok.body.submission.readiness.some(m => m.code === 'rights'));
   const rights = db.prepare('SELECT * FROM intake_rights WHERE submission_id = ?').get(h.sub(pid).id);
   assert.equal(rights.policy_version, '2026-10-draft-1');
   assert.equal(rights.pending_legal, 1);
@@ -156,6 +161,17 @@ test('rights: exact wording is served, required uses are enforced, and the recor
   assert.match(rights.retention_deadline, /^\d{4}-\d{2}-\d{2}/);
   assert.throws(() => db.prepare('UPDATE intake_rights SET contact_permission = 1 WHERE id = ?').run(rights.id), /immutable/);
   assert.throws(() => db.prepare('DELETE FROM intake_rights WHERE id = ?').run(rights.id), /never deleted/);
+  // Switching role after accepting needs the new role's own attestation.
+  const form = (await call('GET', `/api/intake/submissions/${pid}`, { token: c.token })).body.submission.form;
+  const switched = await call('PUT', `/api/intake/submissions/${pid}`, { token: c.token, body: { form: { ...form, role: 'coach' } } });
+  assert.ok(switched.body.submission.readiness.some(m => m.code === 'rights' && /changed your role/.test(m.text)));
+  const again = await call('POST', `/api/intake/submissions/${pid}/rights`, { token: c.token, body: { uses: { analysis: true, results: true }, retention_ack: true, guide_ack: true, attest: true } });
+  assert.equal(again.status, 201);
+  assert.ok(!again.body.submission.readiness.some(m => m.code === 'rights'), 're-accepted as a coach');
+  const records = db.prepare('SELECT * FROM intake_rights WHERE submission_id = ? ORDER BY id').all(h.sub(pid).id);
+  assert.equal(records.length, 2);
+  assert.equal(records[1].supersedes_id, records[0].id, 'the first acceptance is superseded, never edited');
+  assert.match(records[1].attestation, /coach for the team/);
 });
 
 // ── Uploads ──────────────────────────────────────────────────────────────
@@ -195,6 +211,65 @@ test('an unreadable upload asks the customer for action, after retrying transien
   assert.ok(view.readiness.some(m => m.code === 'file_action'), 'cannot submit until it is replaced or removed');
   assert.equal((await call('DELETE', `/api/intake/files/${up.registered.file.id}`, { token: c.token })).status, 200);
   assert.ok(!fs.existsSync(localPathFor(db.prepare('SELECT storage_key FROM intake_files WHERE id = ?').get(up.registered.file.id).storage_key)), 'the stored object is deleted');
+});
+
+test('a file found unreadable after submitting lets the customer replace it; a later file joins the linked job on request', async () => {
+  const c = await h.customer();
+  const outsider = db.prepare("INSERT INTO players (first_name, last_name, slug, is_public) VALUES ('Lee', 'Later', 'lee-later', 0)").run().lastInsertRowid;
+  const pid = await h.draft(c.token, { athletes: [{ first_name: 'Lee', last_name: 'Later', birth_year: 2014, relationship: 'parent' }] });
+  const bad = await h.upload(c.token, pid, { name: 'first.mov', bytes: Buffer.from('broken upload, checked after submit') });
+  assert.equal((await call('POST', `/api/intake/submissions/${pid}/submit`, { token: c.token })).status, 200, 'a file still being checked does not block submitting');
+  let view = (await call('GET', `/api/intake/submissions/${pid}`, { token: c.token })).body.submission;
+  assert.equal(view.can.add_files, false, 'files cannot be added to a submitted request…');
+  assert.equal(view.can.reply, true);
+
+  assert.equal(await h.probe(bad.registered.file.id, new Error('moov atom not found')), 'needs_customer_action');
+  assert.equal(h.sub(pid).status, 'needs_customer_action', '…until a file turns out to be unreadable');
+  view = (await call('GET', `/api/intake/submissions/${pid}`, { token: c.token })).body.submission;
+  assert.equal(view.status.key, 'action_required');
+  assert.match(view.message, /could not read “first\.mov”/);
+  assert.equal(view.can.add_files, true, 'the customer can act on it');
+  const replacement = await h.upload(c.token, pid, { name: 'second.mov', bytes: Buffer.from('the original file, exported again') });
+  assert.equal(replacement.status, 200, JSON.stringify(replacement.body));
+  assert.equal(h.sub(pid).next_action, 'Customer added a file — review it');
+  await h.probe(replacement.registered.file.id);
+
+  const will = h.internal('fulfillment');
+  const id = h.sub(pid).id;
+  const ath = db.prepare('SELECT id FROM intake_athletes WHERE submission_id = ?').get(id);
+  await call('POST', `/api/command/intake/${id}/athletes/${ath.id}/resolve`, { token: will.token, body: { action: 'link', player_id: outsider } });
+  const created = await call('POST', `/api/command/intake/${id}/create-job`, { token: will.token, body: { team_id: team } });
+  assert.equal(created.status, 201, JSON.stringify(created.body));
+  assert.equal(db.prepare('SELECT COUNT(*) n FROM cmd_video_feeds WHERE job_id = ?').get(created.body.job_id).n, 1, 'only the readable file became a feed');
+  assert.equal((await call('POST', `/api/command/intake/${id}/attach-files`, { token: will.token })).status, 409, 'nothing new to attach yet');
+
+  await call('POST', `/api/command/intake/${id}/messages`, { token: will.token, body: { message: 'Please add the side angle too.', request_action: true } });
+  const side = await h.upload(c.token, pid, { name: 'side.mov', view: 'side_first_base', bytes: Buffer.from('a side angle sent after the job existed') });
+  assert.equal(side.status, 200, JSON.stringify(side.body));
+  await h.probe(side.registered.file.id);
+  const analyst = h.internal('analyst');
+  assert.equal((await call('POST', `/api/command/intake/${id}/attach-files`, { token: analyst.token })).status, 403, 'acting is for fulfillment or admin');
+  const attached = await call('POST', `/api/command/intake/${id}/attach-files`, { token: will.token });
+  assert.equal(attached.status, 200, JSON.stringify(attached.body));
+  assert.equal(attached.body.attached.length, 1);
+  assert.equal(db.prepare('SELECT COUNT(*) n FROM cmd_video_feeds WHERE job_id = ?').get(created.body.job_id).n, 2);
+  assert.equal((await call('POST', `/api/command/intake/${id}/attach-files`, { token: will.token })).status, 409, 'idempotent: attaching again finds nothing new');
+  assert.ok(db.prepare("SELECT 1 FROM intake_events WHERE submission_id = ? AND event_type = 'files_attached'").get(id), 'audited');
+});
+
+test('discarding a draft deletes what was uploaded to it and hides it from the list', async () => {
+  const c = await h.customer();
+  const pid = await h.draft(c.token);
+  const up = await h.upload(c.token, pid, { name: 'second-thoughts.mp4', bytes: Buffer.from('footage the customer changed their mind about') });
+  const key = db.prepare('SELECT storage_key FROM intake_files WHERE id = ?').get(up.registered.file.id).storage_key;
+  assert.ok(fs.existsSync(localPathFor(key)));
+  assert.equal((await call('POST', `/api/intake/submissions/${pid}/discard`, { token: c.token })).status, 200);
+  assert.ok(!fs.existsSync(localPathFor(key)), 'the stored object is gone');
+  assert.equal(db.prepare('SELECT status FROM intake_files WHERE id = ?').get(up.registered.file.id).status, 'deleted');
+  assert.equal(h.sub(pid).close_reason, 'customer_discarded_draft');
+  const list = (await call('GET', '/api/intake/submissions', { token: c.token })).body.submissions;
+  assert.ok(!list.some(s => s.public_id === pid));
+  assert.equal((await call('POST', `/api/intake/submissions/${pid}/discard`, { token: c.token })).status, 409);
 });
 
 test('interrupted upload resumes the same file without re-sending finished parts; it attaches exactly once', async () => {
@@ -350,6 +425,8 @@ test('creating the job: feeds are the same stored objects, carrying rights/uploa
   assert.equal(db.prepare('SELECT media_consent, sharing_scope FROM cmd_consent WHERE job_id = ?').get(job.id).sharing_scope, 'customer');
   const file = db.prepare('SELECT * FROM intake_files WHERE id = ?').get(up.registered.file.id);
   const feed = db.prepare('SELECT * FROM cmd_video_feeds WHERE id = ?').get(file.feed_id);
+  const mine = (await call('GET', `/api/intake/submissions/${pid}`, { token: c.token })).body.submission.files.find(x => x.id === file.id);
+  assert.equal(mine.locked, true, 'the customer is not offered a Remove the server would refuse');
   assert.equal(feed.storage_key, file.storage_key, 'no copy, no re-upload');
   assert.equal(feed.submission_id, id);
   assert.equal(feed.rights_id, file.rights_id);
@@ -370,6 +447,11 @@ test('creating the job: feeds are the same stored objects, carrying rights/uploa
   assert.equal(sent.status, 200, JSON.stringify(sent.body));
   assert.equal(db.prepare('SELECT COUNT(*) n FROM cmd_radar_readings WHERE job_id = ?').get(job.id).n, 2);
   assert.equal((await call('POST', `/api/command/intake/${id}/files/${radar.id}/send-to-job`, { token: will.token })).body.result.duplicate, true, 'idempotent');
+  const sentFile = (await call('GET', `/api/intake/submissions/${pid}`, { token: c.token })).body.submission.files.find(x => x.id === radar.id);
+  assert.equal(sentFile.locked, true, 'an imported supporting file is part of the analysis too');
+  await call('POST', `/api/command/intake/${id}/messages`, { token: will.token, body: { message: 'One more thing…', request_action: true } });
+  assert.equal((await call('DELETE', `/api/intake/files/${radar.id}`, { token: c.token })).status, 409, 'removing it needs a deletion request');
+  await call('PUT', `/api/command/intake/${id}`, { token: will.token, body: { status: 'linked' } });
   assert.equal((await call('POST', `/api/command/intake/${id}/create-job`, { token: will.token, body: { team_id: team } })).status, 409, 'never a second job');
   // Customer sees analysis, not identity or job internals.
   const view = (await call('GET', `/api/intake/submissions/${pid}`, { token: c.token })).body.submission;
@@ -532,7 +614,7 @@ test('job email reaches the order contact and each verified submitter who allowe
   // A second family on the same game, who declined contact.
   const quiet = await h.customer();
   const pid2 = await h.draft(quiet.token, { terms: false });
-  await call('POST', `/api/intake/submissions/${pid2}/rights`, { token: quiet.token, body: { uses: { analysis: true, results: true }, contact_permission: false, retention_ack: true, guide_ack: true } });
+  await call('POST', `/api/intake/submissions/${pid2}/rights`, { token: quiet.token, body: { uses: { analysis: true, results: true }, contact_permission: false, retention_ack: true, guide_ack: true, attest: true } });
   await h.upload(quiet.token, pid2, { bytes: Buffer.from('second family video') });
   await call('POST', `/api/intake/submissions/${pid2}/submit`, { token: quiet.token });
   const id2 = h.sub(pid2).id;
@@ -563,6 +645,43 @@ test('a test account’s submissions are synthetic end to end', async () => {
 });
 
 // ── Deletion ─────────────────────────────────────────────────────────────
+test('a feed deleted under a deletion request is never reused for the same bytes — not by intake, not by an analyst upload', async () => {
+  const will = h.internal('fulfillment');
+  const admin = h.internal('admin');
+  const bytes = Buffer.from('one game, filmed once, sent by two families');
+  const submitAndResolve = async () => {
+    const c = await h.customer();
+    const pid = await h.draft(c.token);
+    await h.upload(c.token, pid, { bytes });
+    await call('POST', `/api/intake/submissions/${pid}/submit`, { token: c.token });
+    const id = h.sub(pid).id;
+    const ath = db.prepare('SELECT id FROM intake_athletes WHERE submission_id = ?').get(id);
+    await call('POST', `/api/command/intake/${id}/athletes/${ath.id}/resolve`, { token: will.token, body: { action: 'guest' } });
+    return id;
+  };
+  const first = await submitAndResolve();
+  const jobId = (await call('POST', `/api/command/intake/${first}/create-job`, { token: will.token, body: { team_id: team } })).body.job_id;
+  const deletedFeed = db.prepare('SELECT feed_id FROM intake_files WHERE submission_id = ?').get(first).feed_id;
+  const request = (await call('POST', '/api/command/intake-deletions', { token: will.token, body: { scope: 'submission', target_id: first, reason: 'customer_request' } })).body.request;
+  await call('POST', `/api/command/intake-deletions/${request.id}/execute`, { token: admin.token, body: { actions: ['delete_media'] } });
+  assert.equal(db.prepare('SELECT status FROM cmd_video_feeds WHERE id = ?').get(deletedFeed).status, 'deleted');
+
+  // An analyst can register the same file again: the deleted feed is not a duplicate.
+  const reg = await call('POST', `/api/command/jobs/${jobId}/feeds`, { token: admin.token, body: { label: 'Behind Home', original_name: 'again.mp4', size_bytes: bytes.length, content_hash: h.fingerprint(bytes) } });
+  assert.notEqual(reg.body.duplicate, true, JSON.stringify(reg.body));
+  assert.notEqual(reg.body.feed.id, deletedFeed);
+  db.prepare("UPDATE cmd_video_feeds SET status = 'failed' WHERE id = ?").run(reg.body.feed.id);   // abandon it: never finished
+
+  // A second family's identical file becomes its own feed on its own stored object.
+  const second = await submitAndResolve();
+  assert.equal((await call('POST', `/api/command/intake/${second}/link-job`, { token: will.token, body: { job_id: jobId } })).status, 200);
+  const file = db.prepare('SELECT feed_id, storage_key FROM intake_files WHERE submission_id = ?').get(second);
+  assert.ok(![deletedFeed, reg.body.feed.id].includes(file.feed_id), 'neither the deleted feed nor an unfinished one');
+  const feed = db.prepare('SELECT * FROM cmd_video_feeds WHERE id = ?').get(file.feed_id);
+  assert.equal(feed.storage_key, file.storage_key);
+  assert.equal(feed.submission_id, second);
+});
+
 test('closing an account anonymizes it, redacts what the customer wrote, and keeps the shape of the audit', async () => {
   const admin = h.internal();
   const c = await h.customer({ phone: '801-555-0199' });

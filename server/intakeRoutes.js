@@ -133,8 +133,8 @@ export function mountIntakeRoutes(app, { db, requireSubmitter }) {
     res.json({ submission: customerSubmissionView(db, s, req.account) });
   }));
 
-  app.post('/api/intake/submissions/:pid/discard', requireSubmitter, respond((req, res) => {
-    discardDraft(db, sub(req), req.account);
+  app.post('/api/intake/submissions/:pid/discard', requireSubmitter, respond(async (req, res) => {
+    await discardDraft(db, sub(req), req.account);
     res.json({ ok: true });
   }));
 

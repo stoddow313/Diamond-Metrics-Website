@@ -8,7 +8,7 @@ import { Field, TextInput, Select, PrimaryButton, GhostButton, ErrorNote } from 
 import { cardStyle } from '../../components/admin/theme';
 
 // Diamond Metrics Command — internal analyst platform (M1: production queue,
-// job setup, job detail). Access: admin | analyst | reviewer. Customer
+// job setup, job detail). Access: admin | analyst | reviewer | fulfillment. Customer
 // surfaces never link here. docs/COMMAND_TDR.md is the decision record.
 
 const STATUS_COLORS = {
@@ -287,21 +287,23 @@ export function CommandLayout() {
             <span className="text-xs font-bold tracking-widest uppercase px-2 py-1 rounded" style={{ backgroundColor: 'rgba(251, 191, 36, 0.12)', color: '#fbbf24' }}>
               Command
             </span>
-            <nav className="hidden md:flex items-center gap-4 text-sm font-bold">
+            <nav className="hidden md:flex items-center gap-3 xl:gap-4 text-sm font-bold whitespace-nowrap">
+              <Link to="/command/intake" className="hover:underline" style={{ color: '#cfe8ff' }}>Intake</Link>
               <Link to="/command" className="hover:underline" style={{ color: '#cfe8ff' }}>Production Queue</Link>
               <Link to="/command/new" className="hover:underline" style={{ color: '#cfe8ff' }}>New Job</Link>
               <Link to="/command/bulk" className="hover:underline" style={{ color: '#cfe8ff' }}>Bulk</Link>
               <Link to="/command/ops" className="hover:underline" style={{ color: '#cfe8ff' }}>Operations</Link>
+              {user?.role === 'admin' && <Link to="/command/team" className="hover:underline" style={{ color: '#cfe8ff' }}>Team</Link>}
               {user?.role === 'admin' && <Link to="/admin" className="hover:underline" style={{ color: '#64748b' }}>Admin ↗</Link>}
             </nav>
           </div>
           <div className="flex items-center gap-3">
-            <span className="text-sm hidden sm:inline" style={{ color: '#94a3b8' }}>
+            <span className="text-sm hidden xl:inline whitespace-nowrap" style={{ color: '#94a3b8' }}>
               {user?.name || user?.email} · <span className="uppercase text-xs font-bold" style={{ color: '#38bdf8' }}>{user?.role}</span>
             </span>
             <button
               onClick={async () => { await logout(); navigate('/login'); }}
-              className="text-sm font-bold px-4 py-2 rounded-xl border cursor-pointer hover:bg-slate-800"
+              className="text-sm font-bold px-4 py-2 rounded-xl border cursor-pointer hover:bg-slate-800 whitespace-nowrap"
               style={{ borderColor: '#334155', color: '#cfe8ff' }}
             >
               Sign out

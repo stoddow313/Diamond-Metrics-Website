@@ -18,6 +18,7 @@ export const MAX_PROBE_ATTEMPTS = 3;
 const PERMANENT = /invalid data|moov atom not found|could not find codec|no such file|end of file|not a video|unsupported/i;
 
 const IN_FLIGHT = "('uploading', 'paused', 'uploaded', 'processing')";
+const SUBMITTED_OPEN = ['new', 'needs_identity_review', 'ready_for_job', 'linked'];
 
 export async function probeIntakeFile(db, file, { probe = probeFile, sourceUrl = gatewayUrlFor } = {}) {
   const claimed = db.prepare(
@@ -64,6 +65,20 @@ export async function probeIntakeFile(db, file, { probe = probeFile, sourceUrl =
     data: { file_id: file.id, status: unreadable ? 'needs_customer_action' : 'ready', issue_codes: issues.map(i => i.code) },
   });
   log('info', 'intake_probe_finished', { file_id: file.id, unreadable, issues: issues.map(i => i.code) });
+
+  // A submitted request with a file we cannot read waits on the customer, who
+  // can then add a replacement — otherwise "action required" would have no
+  // action available to them. A draft shows the same thing on screen.
+  if (unreadable && SUBMITTED_OPEN.includes(sub.status)) {
+    db.prepare(
+      "UPDATE intake_submissions SET status = 'needs_customer_action', customer_message = ?, next_action = 'Waiting on the customer to replace an unreadable file', updated_at = datetime('now') WHERE id = ?"
+    ).run(`We could not read “${file.original_name}”. Please export the original file from the camera or phone and upload it again, or remove it if it was sent by mistake.`, sub.id);
+    addEvent(db, {
+      submissionId: sub.id, accountId: file.account_id, actorKind: 'system', type: 'status_changed',
+      message: `An uploaded file could not be read — waiting on the customer (was ${sub.status.replace(/_/g, ' ')})`,
+      data: { from: sub.status, to: 'needs_customer_action', file_id: file.id },
+    });
+  }
 
   // Processing-complete is a customer message about a submitted request;
   // drafts show the same state on screen while the customer is still there.

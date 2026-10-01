@@ -11,6 +11,7 @@ export async function startIntakeApp() {
   const { makePrincipals } = await import('./principals.js');
   const { mountAuthRoutes } = await import('./authRoutes.js');
   const { mountCommandRoutes } = await import('./commandRoutes.js');
+  const { mountCommandMediaRoutes } = await import('./commandMediaRoutes.js');
   const { mountCustomerAuthRoutes, makeSubmitterGuard, issueToken } = await import('./customerAuth.js');
   const { mountIntakeRoutes, mountIntakeConfigRoute } = await import('./intakeRoutes.js');
   const { mountIntakeCommandRoutes } = await import('./intakeCommandRoutes.js');
@@ -23,6 +24,7 @@ export async function startIntakeApp() {
   const { requireInternal, requireInternalRole } = principals;
   mountAuthRoutes(app, { db, principals });
   const { createJob } = mountCommandRoutes(app, { db, requireInternal });
+  mountCommandMediaRoutes(app, { db, requireInternal });
   mountIntakeCommandRoutes(app, { db, requireInternal, requireInternalRole, createJob });
   mountTeamRoutes(app, { db, requireInternalRole });
   mountIntakeConfigRoute(app);
@@ -107,7 +109,7 @@ export async function startIntakeApp() {
     const s = await call('PUT', `/api/intake/submissions/${pid}`, { token, body: { step: 'terms', form } });
     if (s.status !== 200) throw new Error(`save failed: ${JSON.stringify(s.body)}`);
     if (terms) {
-      const r = await call('POST', `/api/intake/submissions/${pid}/rights`, { token, body: { uses: { analysis: true, results: true, improvement: false }, contact_permission: true, retention_ack: true, guide_ack: true } });
+      const r = await call('POST', `/api/intake/submissions/${pid}/rights`, { token, body: { uses: { analysis: true, results: true, improvement: false }, contact_permission: true, retention_ack: true, guide_ack: true, attest: true } });
       if (r.status !== 201) throw new Error(`rights failed: ${JSON.stringify(r.body)}`);
     }
     return pid;
@@ -115,5 +117,5 @@ export async function startIntakeApp() {
 
   const sub = pid => db.prepare('SELECT * FROM intake_submissions WHERE public_id = ?').get(pid);
 
-  return { db, app, principals, call, internal, customer, upload, probe, draft, sub, base, META_1080P60, close: () => new Promise(r => server.close(r)) };
+  return { db, app, principals, call, internal, customer, upload, probe, draft, sub, base, META_1080P60, fingerprint, close: () => new Promise(r => server.close(r)) };
 }

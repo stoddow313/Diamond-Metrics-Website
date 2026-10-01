@@ -132,7 +132,7 @@ test('submit readiness lists every missing piece in plain language', () => {
     account: { email_verified_at: '2026-09-20 10:00:00' },
     athletes: [{ first_name: 'Rae', last_name: 'Runner', birth_year: 2014, relationship: 'parent' }],
     files: [{ kind: 'video', status: 'ready', camera_view: 'behind_home' }],
-    rights: { action: 'grant' },
+    rights: { action: 'grant', relationship: 'parent' },
   };
   assert.deepEqual(submitReadiness(base), []);
   const codes = r => submitReadiness(r).map(m => m.code);
@@ -142,8 +142,10 @@ test('submit readiness lists every missing piece in plain language', () => {
   assert.deepEqual(codes({ ...base, athletes: [{ first_name: 'Rae', last_name: '', relationship: 'parent' }] }), ['athlete_0_name', 'athlete_0_age']);
   assert.deepEqual(codes({ ...base, sub: { ...base.sub, event_label: '', footage_context: '{"coverage":"full","no_event":true}' } }), [], 'a regular-season game needs no event');
   // A coach may attach a roster instead of naming athletes.
-  const coach = { ...base, sub: { ...base.sub, submitter_role: 'coach' }, athletes: [] };
+  const coach = { ...base, sub: { ...base.sub, submitter_role: 'coach' }, athletes: [], rights: { action: 'grant', relationship: 'coach' } };
   assert.deepEqual(codes(coach), ['athlete']);
+  // Terms accepted as a parent do not cover submitting as a coach.
+  assert.deepEqual(codes({ ...coach, rights: base.rights, files: [...base.files, { kind: 'roster', status: 'ready' }] }), ['rights']);
   assert.deepEqual(codes({ ...coach, files: [...base.files, { kind: 'roster', status: 'ready' }] }), []);
   // Hall of Fame is an inquiry: no game, files or terms needed to submit.
   assert.deepEqual(codes({ ...base, sub: { submitter_role: 'parent', package_key: 'hall_of_fame', kind: 'inquiry' }, files: [], rights: null }), []);

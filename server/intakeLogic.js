@@ -374,6 +374,7 @@ const PLAIN_REASONS = {
   no_qualified_capture: 'The required camera view was not available.',
   missing_radar: 'No radar readings were provided for this game.',
   athlete_not_identifiable: 'We could not identify the athlete in the footage.',
+  not_measured: 'This measurement was not recorded for this game.',
 };
 export function plainReason(code) {
   return PLAIN_REASONS[code] || 'We could not verify this measurement from the footage.';
@@ -408,6 +409,9 @@ export function submitReadiness({ sub, account, athletes = [], files = [], right
   });
 
   if (!rights || rights.action !== 'grant') need('rights', 'Read the filming guide and accept the footage terms.');
+  // The attestation names the role it was given in; a different role needs
+  // its own acceptance.
+  else if (rights.relationship !== sub.submitter_role) need('rights', 'You changed your role after accepting the footage terms — review and accept them again.');
 
   const live = files.filter(f => !['deleted', 'archived'].includes(f.status));
   const videos = live.filter(f => f.kind === 'video');
