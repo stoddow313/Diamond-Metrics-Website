@@ -434,6 +434,8 @@ test('creating the job: feeds are the same stored objects, carrying rights/uploa
   assert.equal(feed.uploader_account_id, c.id);
   assert.equal(feed.capture_profile_key, 'behind_home_1080p60');
   assert.equal(db.prepare("SELECT status FROM cmd_media_jobs WHERE feed_id = ? AND kind = 'probe'").get(feed.id).status, 'queued', 'the normal probe → proxy pipeline takes over');
+  const onRecord = (await call('GET', `/api/command/intake/${id}`, { token: will.token })).body.files.find(x => x.id === file.id);
+  assert.ok(!onRecord.duplicates.command.some(d => d.feed_id === file.feed_id), 'a file is not a duplicate of the feed it became');
   const participant = db.prepare('SELECT * FROM cmd_job_participants WHERE job_id = ? AND player_id = ?').get(job.id, outsider);
   assert.equal(participant.jersey, '44');
   const { commandRoster } = await import('./commandRoster.js');

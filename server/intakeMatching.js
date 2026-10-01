@@ -223,8 +223,10 @@ export function fileDuplicates(db, file) {
        FROM intake_files f JOIN intake_submissions s ON s.id = f.submission_id
       WHERE f.content_hash = ? AND f.size_bytes = ? AND f.id != ? AND f.status NOT IN ('deleted', 'archived')`
   ).all(file.content_hash, file.size_bytes, file.id ?? -1);
+  // Not the feed this very file became, and not a feed already deleted.
   const command = db.prepare(
-    'SELECT id AS feed_id, job_id, label, original_name FROM cmd_video_feeds WHERE content_hash = ? AND size_bytes = ?'
-  ).all(file.content_hash, file.size_bytes);
+    `SELECT id AS feed_id, job_id, label, original_name FROM cmd_video_feeds
+      WHERE content_hash = ? AND size_bytes = ? AND id != ? AND COALESCE(intake_file_id, -1) != ? AND status != 'deleted'`
+  ).all(file.content_hash, file.size_bytes, file.feed_id ?? -1, file.id ?? -1);
   return { intake, command };
 }

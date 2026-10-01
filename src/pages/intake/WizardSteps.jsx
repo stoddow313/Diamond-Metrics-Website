@@ -25,7 +25,7 @@ function Choice({ selected, onClick, children, testId }) {
   return (
     <button
       type="button" onClick={onClick} aria-pressed={selected} data-testid={testId}
-      className="text-left rounded-xl border p-4 cursor-pointer transition-colors w-full"
+      className="text-left rounded-xl border p-4 cursor-pointer transition-colors w-full flex flex-col justify-start items-stretch"
       style={selected
         ? { borderColor: '#38bdf8', backgroundColor: 'rgba(56, 189, 248, 0.08)' }
         : { borderColor: '#1e3a5f', backgroundColor: 'rgba(15, 23, 42, 0.5)' }}

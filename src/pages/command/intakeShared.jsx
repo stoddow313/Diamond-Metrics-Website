@@ -1,4 +1,5 @@
 // Small pieces shared by Will's intake queue and record pages.
+import { useEffect, useRef } from 'react';
 
 const STAGE_TONE = {
   new: '#38bdf8', needs_identity_review: '#fbbf24', needs_customer_action: '#fbbf24', ready_for_job: '#4ade80',
@@ -58,7 +59,15 @@ export function Panel({ title, aside, children, className = '', testId }) {
 }
 
 // Fixed bottom-right confirmation / error, visible wherever the page is scrolled.
+// Confirmations fade on their own; an error stays until it is dismissed.
 export function Toast({ message, tone = 'ok', onClose }) {
+  const close = useRef(onClose);
+  useEffect(() => { close.current = onClose; });
+  useEffect(() => {
+    if (!message || tone === 'error') return undefined;
+    const t = setTimeout(() => close.current?.(), 4000);
+    return () => clearTimeout(t);
+  }, [message, tone]);
   if (!message) return null;
   const err = tone === 'error';
   return (

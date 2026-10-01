@@ -96,7 +96,7 @@ export default function TeamPage() {
                     <td className="px-4 py-3">
                       {resetFor === m.id ? (
                         <div className="flex flex-col gap-1.5">
-                          <div className="flex gap-1.5"><TextInput value={resetPw} onChange={e => setResetPw(e.target.value)} placeholder={`${PASSWORD_MIN}+ characters`} /><GhostButton type="button" onClick={() => setResetPw(temporaryPassword())}>Generate</GhostButton></div>
+                          <div className="flex gap-1.5"><TextInput value={resetPw} onChange={e => setResetPw(e.target.value)} placeholder={`${PASSWORD_MIN}+ characters`} aria-label={`New password for ${m.name}`} /><GhostButton type="button" onClick={() => setResetPw(temporaryPassword())}>Generate</GhostButton></div>
                           <div className="flex gap-1.5">
                             <GhostButton type="button" disabled={busy || resetPw.length < PASSWORD_MIN} onClick={async () => { if (await run(() => api.commandTeamUpdate(m.id, { password: resetPw }), `Password reset for ${m.name}${self ? '' : ' — they were signed out'}`)) { setResetFor(null); setResetPw(''); } }}>Save</GhostButton>
                             <GhostButton type="button" onClick={() => { setResetFor(null); setResetPw(''); }}>Cancel</GhostButton>
@@ -130,7 +130,7 @@ export default function TeamPage() {
               </Field>
               <Field label={`Temporary password (${PASSWORD_MIN}+ characters)`}>
                 <div className="flex gap-1.5">
-                  <TextInput value={form.password} onChange={e => setForm(f => ({ ...f, password: e.target.value }))} required minLength={PASSWORD_MIN} />
+                  <TextInput value={form.password} onChange={e => setForm(f => ({ ...f, password: e.target.value }))} required minLength={PASSWORD_MIN} aria-label="Temporary password" />
                   <GhostButton type="button" onClick={() => setForm(f => ({ ...f, password: temporaryPassword() }))}>Generate</GhostButton>
                 </div>
                 <p className="text-xs mt-1" style={faint}>Give it to them in person or by phone — not by email. They can’t change it themselves yet, so reset it here if needed.</p>
