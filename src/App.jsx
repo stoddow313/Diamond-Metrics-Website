@@ -35,6 +35,7 @@ import BlogPage from './pages/BlogPage';
 import BaseballFilmingGuidePage from './pages/BaseballFilmingGuidePage';
 import YouthBaseballVideoAnalysisPage from './pages/YouthBaseballVideoAnalysisPage';
 import BaseballMetricsAges1318Page from './pages/BaseballMetricsAges1318Page';
+import FindYourPlayerPage from './pages/FindYourPlayerPage';
 
 const HOME_BY_ROLE = { admin: '/admin', analyst: '/command', reviewer: '/command', player: '/me', staff: '/staff' };
 
@@ -71,6 +72,7 @@ function AppRoutes() {
       <Route path="/blog/baseball-metrics-ages-13-18" element={<BaseballMetricsAges1318Page />} />
       <Route path="/login" element={<LoginPage />} />
       <Route path="/signup" element={<SignupInfoPage />} />
+      <Route path="/find-your-player" element={<FindYourPlayerPage />} />
       <Route path="/claim/:token" element={<ClaimPage />} />
       <Route path="/claim-staff/:token" element={<ClaimStaffPage />} />
       <Route path="/p/:slug" element={<PublicProfilePage />} />
