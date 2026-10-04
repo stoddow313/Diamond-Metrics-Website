@@ -4,7 +4,7 @@
 import { useEffect, useState } from 'react';
 import { useAuth } from '../../context/AuthContext';
 import { api } from '../../lib/api';
-import { fmtDate } from '../../lib/intake';
+import { fmtDate, roleLabel } from '../../lib/intake';
 import { Field, TextInput, Select, PrimaryButton, GhostButton, ErrorNote } from '../../components/admin/ui';
 import { cardStyle } from '../../components/admin/theme';
 import { InfoTip } from '../../components/Tooltip';
@@ -86,8 +86,8 @@ export default function TeamPage() {
                       <p className="text-xs" style={faint}>{m.email} · since {fmtDate(m.created_at)}</p>
                     </td>
                     <td className="px-4 py-3 w-48">
-                      <Select value={m.role} disabled={self || busy} onChange={e => run(() => api.commandTeamUpdate(m.id, { role: e.target.value }), `${m.name} is now ${e.target.value}`)}>
-                        {data.roles.map(r => <option key={r.key} value={r.key}>{r.key}</option>)}
+                      <Select value={m.role} disabled={self || busy} onChange={e => run(() => api.commandTeamUpdate(m.id, { role: e.target.value }), `${m.name}’s role is now ${roleLabel(e.target.value)}`)}>
+                        {data.roles.map(r => <option key={r.key} value={r.key}>{roleLabel(r.key)}</option>)}
                       </Select>
                     </td>
                     <td className="px-4 py-3">
@@ -127,9 +127,9 @@ export default function TeamPage() {
                     <div key={r.key} className="flex items-center gap-1.5">
                       <label className="flex items-center gap-2 text-sm font-bold cursor-pointer" style={{ color: '#e2e8f0' }}>
                         <input type="radio" name="role" checked={form.role === r.key} onChange={() => setForm(f => ({ ...f, role: r.key }))} className="accent-sky-400" />
-                        {r.key}
+                        {roleLabel(r.key)}
                       </label>
-                      <InfoTip label={`About the ${r.key} role`}>{r.description}</InfoTip>
+                      <InfoTip label={`About the ${roleLabel(r.key)} role`}>{r.description}</InfoTip>
                     </div>
                   ))}
                 </div>
@@ -152,7 +152,7 @@ export default function TeamPage() {
                   if (r) setSettings(r);
                 }}>
                 <option value="">Nobody — they arrive unassigned</option>
-                {active.map(m => <option key={m.id} value={m.id}>{m.name} ({m.role})</option>)}
+                {active.map(m => <option key={m.id} value={m.id}>{m.name} ({roleLabel(m.role)})</option>)}
               </Select>
             </Field>
           </Panel>

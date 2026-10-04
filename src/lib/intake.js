@@ -35,6 +35,8 @@ export const HOME_BY_ROLE = {
   player: '/me', staff: '/staff', customer: '/submissions',
 };
 export const INTERNAL_ROLES = ['admin', 'analyst', 'reviewer', 'fulfillment'];
+// A staff role as people read it: "fulfillment" → "Fulfillment".
+export const roleLabel = role => (role ? role.charAt(0).toUpperCase() + role.slice(1) : '');
 // Logins that may submit footage: each resolves to one customer contact.
 export const SUBMITTER_ROLES = ['customer', 'staff', 'player'];
 

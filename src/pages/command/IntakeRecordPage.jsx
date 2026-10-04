@@ -11,7 +11,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { BadgeCheck, Check, Eye, Lock, TriangleAlert, X } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { api } from '../../lib/api';
-import { fmtDate, fmtDateTime, fmtBytes, timeAgo, parseServerDate } from '../../lib/intake';
+import { fmtDate, fmtDateTime, fmtBytes, timeAgo, parseServerDate, roleLabel } from '../../lib/intake';
 import { Field, TextInput, Select, PrimaryButton, GhostButton, ErrorNote } from '../../components/admin/ui';
 import { InfoTip, Tooltip } from '../../components/Tooltip';
 import { Issues } from '../intake/ui';
@@ -191,7 +191,7 @@ function TaskPanel({ rec, act, canAct, isAdmin, busy }) {
         <Field label="Owner">
           <Select value={f.owner_id} onChange={e => set('owner_id', e.target.value)} disabled={!canAct}>
             <option value="">Unassigned</option>
-            {rec.owners.map(o => <option key={o.id} value={o.id}>{o.name} ({o.role})</option>)}
+            {rec.owners.map(o => <option key={o.id} value={o.id}>{o.name} ({roleLabel(o.role)})</option>)}
           </Select>
         </Field>
         <Field label="Next action"><TextInput value={f.next_action} onChange={e => set('next_action', e.target.value)} disabled={!canAct} /></Field>

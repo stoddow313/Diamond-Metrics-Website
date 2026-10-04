@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { api } from '../../lib/api';
+import { roleLabel } from '../../lib/intake';
 import { Field, TextInput, Select, PrimaryButton, GhostButton, ErrorNote } from '../../components/admin/ui';
 import { cardStyle } from '../../components/admin/theme';
 
@@ -113,7 +114,7 @@ export default function BulkJobsPage() {
           <Field label="Assign to">
             <Select value={form.assigned_to} onChange={e => setForm(f => ({ ...f, assigned_to: e.target.value }))}>
               <option value="">— unassigned —</option>
-              {boot.analysts.map(a => <option key={a.id} value={a.id}>{a.name} ({a.role})</option>)}
+              {boot.analysts.map(a => <option key={a.id} value={a.id}>{a.name} ({roleLabel(a.role)})</option>)}
             </Select>
           </Field>
           <Field label="Regulation length">

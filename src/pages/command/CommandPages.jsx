@@ -3,6 +3,7 @@ import { Link, Outlet, useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { api } from '../../lib/api';
 import { uploadFeed, validateUpload } from '../../lib/mediaUpload';
+import { roleLabel } from '../../lib/intake';
 import BrandMark from '../../components/BrandMark';
 import { Field, TextInput, Select, PrimaryButton, GhostButton, ErrorNote } from '../../components/admin/ui';
 import { cardStyle } from '../../components/admin/theme';
@@ -527,7 +528,7 @@ export function NewJobPage() {
             <Field label="Assign analyst">
               <Select value={form.assigned_to} onChange={e => setForm(f => ({ ...f, assigned_to: e.target.value }))}>
                 <option value="">— unassigned —</option>
-                {boot.analysts.map(a => <option key={a.id} value={a.id}>{a.name} ({a.role})</option>)}
+                {boot.analysts.map(a => <option key={a.id} value={a.id}>{a.name} ({roleLabel(a.role)})</option>)}
               </Select>
             </Field>
             <Field label="Due date">
@@ -793,7 +794,7 @@ export function JobDetailPage() {
           <section className="rounded-2xl border p-6" style={cardStyle}>
             <h2 className="text-lg font-bold text-white mb-1" style={{ fontSize: '1.125rem' }}>Status</h2>
             <p className="text-xs mb-3" style={{ color: '#64748b' }}>
-              Approve/release requires reviewer or admin. Signed in as <b style={{ color: '#38bdf8' }}>{user?.role}</b>.
+              Approve/release requires Reviewer or Admin. Signed in as <b style={{ color: '#38bdf8' }}>{roleLabel(user?.role)}</b>.
             </p>
             <div className="flex flex-wrap gap-2">
               <Link
@@ -863,7 +864,7 @@ export function JobDetailPage() {
                   }}
                 >
                   <option value="">— unassigned —</option>
-                  {(boot?.analysts || []).map(a => <option key={a.id} value={a.id}>{a.name} ({a.role})</option>)}
+                  {(boot?.analysts || []).map(a => <option key={a.id} value={a.id}>{a.name} ({roleLabel(a.role)})</option>)}
                 </Select>
               </Field>
               <Field label="Regulation length">
