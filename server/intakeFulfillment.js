@@ -217,10 +217,12 @@ export function readinessForJob(db, sub, files = null, athletes = null) {
   if (as.some(a => ['pending', 'deferred'].includes(a.resolution))) blockers.push('Resolve every athlete first (link, create, or use a guest placeholder).');
   if (!fs_.some(f => f.kind === 'video' && ['uploaded', 'processing', 'ready'].includes(f.status))) blockers.push('No usable game video is attached.');
   if (!rights || rights.action !== 'grant') blockers.push('The footage terms are missing or were revoked.');
-  if (fs_.some(f => f.status === 'needs_customer_action')) warnings.push('A file could not be read — it will not be attached.');
-  if (sub.payment_status === 'unconfirmed') warnings.push('Payment is not confirmed.');
-  if (!getAccount(db, sub.account_id)?.email_verified_at) warnings.push('The submitter’s email is not verified.');
-  if (rights?.pending_legal) warnings.push('Accepted under draft terms that legal has not approved yet.');
+  // Warnings carry a code so the record page can show a short chip.
+  const warn = (code, text) => warnings.push({ code, text });
+  if (fs_.some(f => f.status === 'needs_customer_action')) warn('unreadable_file', 'A file could not be read — it will not be attached.');
+  if (sub.payment_status === 'unconfirmed') warn('payment_unconfirmed', 'Payment is not confirmed.');
+  if (!getAccount(db, sub.account_id)?.email_verified_at) warn('email_unverified', 'The submitter’s email is not verified.');
+  if (rights?.pending_legal) warn('draft_terms', 'Accepted under draft terms that legal has not approved yet.');
   return { ready: blockers.length === 0, blockers, warnings };
 }
 

@@ -7,6 +7,7 @@ import { api } from '../../lib/api';
 import { fmtDate } from '../../lib/intake';
 import { Field, TextInput, Select, PrimaryButton, GhostButton, ErrorNote } from '../../components/admin/ui';
 import { cardStyle } from '../../components/admin/theme';
+import { InfoTip } from '../../components/Tooltip';
 import { Panel, Tag, Toast } from './intakeShared';
 
 const muted = { color: '#94a3b8' };
@@ -62,8 +63,10 @@ export default function TeamPage() {
 
   return (
     <div data-testid="team-page">
-      <h1 className="text-2xl font-bold text-white">Team &amp; settings</h1>
-      <p className="text-sm mt-1 mb-6" style={muted}>Internal Command logins. Give each person the least access that does their job.</p>
+      <div className="flex items-center gap-2 mb-6">
+        <h1 className="text-2xl font-bold text-white">Team &amp; settings</h1>
+        <InfoTip label="About team and settings" size={16}>Internal Command logins. Give each person the least access that does their job. Every change is audited.</InfoTip>
+      </div>
 
       <div className="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_minmax(0,24rem)] gap-6 items-start">
         <div className="rounded-2xl border overflow-x-auto" style={cardStyle}>
@@ -119,28 +122,30 @@ export default function TeamPage() {
               <Field label="Name"><TextInput value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} required /></Field>
               <Field label="Email (their sign-in)"><TextInput type="email" value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} required /></Field>
               <Field label="Role">
-                <div className="flex flex-col gap-1.5">
+                <div className="grid grid-cols-2 gap-x-4 gap-y-1.5" role="radiogroup" aria-label="Role">
                   {data.roles.map(r => (
-                    <label key={r.key} className="flex items-start gap-2 text-sm cursor-pointer" style={{ color: '#e2e8f0' }}>
-                      <input type="radio" name="role" checked={form.role === r.key} onChange={() => setForm(f => ({ ...f, role: r.key }))} className="mt-1 accent-sky-400" />
-                      <span><b>{r.key}</b> <span className="text-xs" style={muted}>— {r.description}</span></span>
-                    </label>
+                    <div key={r.key} className="flex items-center gap-1.5">
+                      <label className="flex items-center gap-2 text-sm font-bold cursor-pointer" style={{ color: '#e2e8f0' }}>
+                        <input type="radio" name="role" checked={form.role === r.key} onChange={() => setForm(f => ({ ...f, role: r.key }))} className="accent-sky-400" />
+                        {r.key}
+                      </label>
+                      <InfoTip label={`About the ${r.key} role`}>{r.description}</InfoTip>
+                    </div>
                   ))}
                 </div>
               </Field>
-              <Field label={`Temporary password (${PASSWORD_MIN}+ characters)`}>
+              <Field label="Temporary password" hint="Give it to them in person or by phone — not by email. They can’t change it themselves yet, so reset it here if needed.">
                 <div className="flex gap-1.5">
-                  <TextInput value={form.password} onChange={e => setForm(f => ({ ...f, password: e.target.value }))} required minLength={PASSWORD_MIN} aria-label="Temporary password" />
+                  <TextInput value={form.password} onChange={e => setForm(f => ({ ...f, password: e.target.value }))} required minLength={PASSWORD_MIN} placeholder={`${PASSWORD_MIN}+ characters`} aria-label="Temporary password" />
                   <GhostButton type="button" onClick={() => setForm(f => ({ ...f, password: temporaryPassword() }))}>Generate</GhostButton>
                 </div>
-                <p className="text-xs mt-1" style={faint}>Give it to them in person or by phone — not by email. They can’t change it themselves yet, so reset it here if needed.</p>
               </Field>
               <PrimaryButton type="submit" disabled={busy}>Create login</PrimaryButton>
             </form>
           </Panel>
 
           <Panel title="Intake" testId="intake-settings">
-            <Field label="Who owns new submissions">
+            <Field label="Who owns new submissions" hint="Each new submission is assigned to this person, with a due time for its first review.">
               <Select value={settings.default_owner_id || ''} disabled={busy}
                 onChange={async e => {
                   const r = await run(() => api.commandIntakeUpdateSettings({ default_owner_id: e.target.value ? Number(e.target.value) : null }), 'Default owner saved');
@@ -150,7 +155,6 @@ export default function TeamPage() {
                 {active.map(m => <option key={m.id} value={m.id}>{m.name} ({m.role})</option>)}
               </Select>
             </Field>
-            <p className="text-xs mt-2" style={faint}>Each new submission is assigned to this person, with a due time for its first review.</p>
           </Panel>
         </div>
       </div>

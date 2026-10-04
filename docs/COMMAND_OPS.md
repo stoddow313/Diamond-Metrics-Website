@@ -678,14 +678,15 @@ create or link jobs; it cannot approve or release, execute deletions or
 clear escalations. Deactivating a login signs it out at once. There is no
 self-service password change for internal logins yet — reset it on Team.
 
-**The queue.** Stage chips carry counts: New, Needs identity review, Needs
-customer action, Ready to create Command job, In analysis, Metrics released,
-Game record pending, Complete, Closed or declined, plus **Drafts** (started,
-not sent). Row flags:
+**The queue.** Stage chips carry counts: New, Identity review, Waiting on
+customer, Ready for job, In analysis, Metrics released, Box score pending,
+Complete, Closed (or declined), plus **Drafts** (started, not sent). Hover a
+chip for what the stage means. Row flags show as small icons (hover for the
+name); a missing or revoked consent shows as a red shield:
 
 | Flag | Meaning | Usual action |
 |---|---|---|
-| Email unverified | The submitter has not confirmed their email | Until Resend is live: confirm the address with them (a reply from it, or a call), then **Mark email verified** on the record with how you confirmed it. Drafts waiting on this are in the Drafts chip |
+| Email unverified | The submitter has not confirmed their email | Until Resend is live: confirm the address with them (a reply from it, or a call), then on the record's contact panel choose *Verify the email manually…*, record how you confirmed it, and **Mark email verified**. Drafts waiting on this are in the Drafts chip |
 | Payment unconfirmed | No payment confirmed yet | Match the order reference (if given) to the purchase; set Payment on the record |
 | Customer replied | The customer answered a request | Read the reply on the timeline |
 | Overdue | Past its due time | Act or move the due time |
@@ -695,9 +696,10 @@ not sent). Row flags:
 
 **Identity.** Each athlete shows candidate players with confidence and the
 reasons (name, short form, typo, birth/grad year, roster on the game date).
-Nothing links on its own. Choose **Link** on the right player, **Create new
-private player** (a written reason is required when any reasonable match
-exists), **Guest placeholder** (unidentified or one-off players), or
+Nothing links on its own. Hover a candidate's confidence for its score and
+reasons. Choose **Link** on the right player, **New private player** (a written
+reason is required when any reasonable match exists), **Guest placeholder**
+(unidentified or one-off players), or
 **Defer** with what is needed. A parent's, guardian's or adult athlete's link
 becomes "my athletes" on their account; a coach's never does — the coach gets
 a link to the team instead.
@@ -711,10 +713,12 @@ video becomes a feed on the job **without copying** and runs the normal
 processing; radar CSVs and CSV scorecards go in with **Send to job**. Videos
 the customer adds later (after a request) attach with **Attach to the job**.
 
-**Talking to the customer.** *Message the customer* is customer-visible (and
-emailed once email is live); tick *Needs an answer* to move the submission to
-Needs customer action — the customer can then reply and add files. *Internal
-note* never reaches the customer. **Close** (done, duplicate) needs an
+**Talking to the customer.** The *Message* panel has two modes. *To the
+customer* is customer-visible (and emailed once email is live); tick *Needs an
+answer* to move the submission to Waiting on customer — the customer can then
+reply and add files. *Internal note* never reaches the customer. On the
+timeline an eye marks what the customer sees and a lock marks internal
+events; *Customer view* filters to the customer's side. **Close** (done, duplicate) needs an
 internal reason; **Decline** also needs words for the customer. Nothing is
 deleted by either; **Reopen** brings it back.
 

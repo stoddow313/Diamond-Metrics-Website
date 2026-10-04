@@ -417,7 +417,8 @@ export function customerFileView(f, imported = new Set()) {
     id: f.id, kind: f.kind, camera_view: f.camera_view, label: f.label, original_name: f.original_name, size_bytes: f.size_bytes,
     status: f.status, status_label: CUSTOMER_FILE_STATUS[f.status] || f.status,
     summary: f.kind === 'video' && ['ready', 'needs_customer_action'].includes(f.status) ? fileSummary(f) : '',
-    issues: safeJson(f.issues, []).map(i => ({ severity: i.severity, text: i.text })),
+    // The code is a plain kind (e.g. resolution_below_minimum) the page uses for a short label.
+    issues: safeJson(f.issues, []).map(i => ({ code: i.code, severity: i.severity, text: i.text })),
     uploaded_at: f.uploaded_at, retention_deadline: f.retention_deadline,
     // Part of the analysis already: removing it is a deletion request now.
     locked: !!f.feed_id || imported.has(f.id),

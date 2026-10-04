@@ -9,6 +9,7 @@ import { Field, TextInput, Select, PrimaryButton, GhostButton, ErrorNote } from 
 const GROUP_LABELS = { family: 'Family', team: 'Team', event: 'Event' };
 const CONTACT_LABELS = { email: 'Email', text: 'Text message', phone: 'Phone call' };
 const PASSWORD_MIN = 10;
+export const LEGAL_NAME_HINT = 'Your legal name — it helps us verify athletes and teams.';
 
 export function RoleSelect({ roles, value, onChange, id, required = false }) {
   const groups = Object.keys(GROUP_LABELS).map(g => [g, roles.filter(r => r.group === g)]).filter(([, rs]) => rs.length);
@@ -75,36 +76,32 @@ export function CreateAccountForm({ config, initialEmail = '', onDone, onSignInI
   return (
     <form onSubmit={submit} className="flex flex-col gap-4" data-testid="create-account-form">
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <Field label="First name (legal)"><TextInput value={f.first_name} onChange={e => set('first_name', e.target.value)} autoComplete="given-name" required /></Field>
-        <Field label="Last name (legal)"><TextInput value={f.last_name} onChange={e => set('last_name', e.target.value)} autoComplete="family-name" required /></Field>
+        <Field label="First name" hint={LEGAL_NAME_HINT}><TextInput value={f.first_name} onChange={e => set('first_name', e.target.value)} autoComplete="given-name" required /></Field>
+        <Field label="Last name"><TextInput value={f.last_name} onChange={e => set('last_name', e.target.value)} autoComplete="family-name" required /></Field>
       </div>
-      <Field label="Email"><TextInput type="email" value={f.email} onChange={e => set('email', e.target.value)} autoComplete="email" required /></Field>
+      <Field label="Email" hint="We’ll send a link to confirm it. You can start right away; it needs confirming before you submit.">
+        <TextInput type="email" value={f.email} onChange={e => set('email', e.target.value)} autoComplete="email" required />
+      </Field>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <Field label="I am a…">
+        <Field label="I am a…" hint="Submitting for an athlete under 18? A parent or legal guardian holds the account.">
           <RoleSelect roles={config.roles} value={f.role} onChange={v => set('role', v)} required />
         </Field>
-        <Field label="Mobile phone (preferred)"><TextInput type="tel" value={f.phone} onChange={e => set('phone', e.target.value)} autoComplete="tel" placeholder="Optional" /></Field>
+        <Field label="Mobile phone"><TextInput type="tel" value={f.phone} onChange={e => set('phone', e.target.value)} autoComplete="tel" placeholder="Optional" /></Field>
       </div>
-      <p className="text-xs -mt-2" style={{ color: '#64748b' }}>
-        Submitting for an athlete under 18? A parent or legal guardian holds the account.
-      </p>
       {group && group !== 'family' && (
         <Field label={group === 'event' ? 'Event or organization' : 'Team or organization'}>
           <TextInput value={f.organization} onChange={e => set('organization', e.target.value)} autoComplete="organization" />
         </Field>
       )}
       <Field label="Best way to reach you"><ContactChoice value={f.preferred_contact} onChange={v => set('preferred_contact', v)} /></Field>
-      <Field label={`Password (at least ${PASSWORD_MIN} characters)`}>
-        <TextInput type="password" value={f.password} onChange={e => set('password', e.target.value)} autoComplete="new-password" minLength={PASSWORD_MIN} required />
+      <Field label="Password">
+        <TextInput type="password" value={f.password} onChange={e => set('password', e.target.value)} autoComplete="new-password" minLength={PASSWORD_MIN} placeholder={`At least ${PASSWORD_MIN} characters`} required />
       </Field>
       <ErrorNote>{error}</ErrorNote>
       {['account_exists', 'login_exists'].includes(code) && onSignInInstead && (
         <GhostButton type="button" onClick={() => onSignInInstead(f.email)}>Sign in instead</GhostButton>
       )}
       <PrimaryButton type="submit" disabled={busy} className="py-3">{busy ? 'Creating your account…' : 'Create account'}</PrimaryButton>
-      <p className="text-xs" style={{ color: '#64748b' }}>
-        We’ll email you a link to verify your address. You can start right away; we need it verified before you submit.
-      </p>
     </form>
   );
 }

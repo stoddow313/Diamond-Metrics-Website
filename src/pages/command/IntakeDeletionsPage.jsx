@@ -10,12 +10,14 @@ import { api } from '../../lib/api';
 import { fmtDate, fmtDateTime, fmtBytes } from '../../lib/intake';
 import { PrimaryButton, GhostButton, ErrorNote } from '../../components/admin/ui';
 import { cardStyle } from '../../components/admin/theme';
+import { InfoTip } from '../../components/Tooltip';
 import { Panel, Tag, Toast } from './intakeShared';
 
 const muted = { color: '#94a3b8' };
 const faint = { color: '#64748b' };
 const body = { color: '#e2e8f0' };
 const STATUS_TONE = { open: '#fbbf24', completed: '#4ade80', declined: '#94a3b8' };
+const ACTION_LABEL = { delete_media: 'Delete media', revoke_consent: 'Revoke consent', hide_profiles: 'Make public profiles private', close_account: 'Close the account' };
 
 function target(r) {
   if (r.scope === 'account') return <span>Account · {r.account_email || `#${r.account_id}`}</span>;
@@ -44,8 +46,10 @@ export function IntakeDeletionsPage() {
   return (
     <div data-testid="deletions-page">
       <Link to="/command/intake" className="text-sm font-bold hover:underline" style={muted}>← Intake queue</Link>
-      <h1 className="text-2xl font-bold text-white mt-3">Deletions &amp; retention</h1>
-      <p className="text-sm mt-1 mb-5" style={muted}>Requests from customers and staff, and footage past its deletion date. An admin reviews what each request touches before anything is deleted; every step is recorded.</p>
+      <div className="flex items-center gap-2 mt-3 mb-5">
+        <h1 className="text-2xl font-bold text-white">Deletions &amp; retention</h1>
+        <InfoTip label="About deletions" size={16}>Requests from customers and staff, and footage past its deletion date. An admin reviews what each request touches before anything is deleted; every step is recorded.</InfoTip>
+      </div>
       <ErrorNote>{error}</ErrorNote>
       {!data ? <p style={muted}>Loading…</p> : (
         <div className="flex flex-col gap-6">
@@ -71,7 +75,7 @@ export function IntakeDeletionsPage() {
               </tbody>
             </table>
           </div>
-          <Panel title="Past the retention date" testId="retention-due">
+          <Panel title="Past the retention date" hint="Nothing deletes on its own — open a request to review and delete." testId="retention-due">
             {data.retention_due.length === 0 ? <p className="text-sm" style={muted}>No footage is past its deletion date.</p> : (
               <div className="flex flex-col">
                 {data.retention_due.map(f => (
@@ -188,10 +192,13 @@ export function IntakeDeletionRequestPage() {
                 {Object.entries(data.actions).map(([k, label]) => {
                   const disabled = k === 'close_account' && r.scope !== 'account';
                   return (
-                    <label key={k} className={`flex items-start gap-2 text-sm py-1 ${disabled ? 'opacity-50' : 'cursor-pointer'}`} style={body}>
-                      <input type="checkbox" checked={!!chosen[k] && !disabled} disabled={disabled} onChange={e => setChosen(c => ({ ...c, [k]: e.target.checked }))} className="mt-1 accent-sky-400" data-testid={`action-${k}`} />
-                      <span>{label}{disabled && <span className="block text-xs" style={faint}>Needs an account-wide request.</span>}</span>
-                    </label>
+                    <div key={k} className="flex items-center gap-1.5 py-1">
+                      <label className={`flex items-center gap-2 text-sm ${disabled ? 'opacity-50' : 'cursor-pointer'}`} style={body}>
+                        <input type="checkbox" checked={!!chosen[k] && !disabled} disabled={disabled} onChange={e => setChosen(c => ({ ...c, [k]: e.target.checked }))} className="accent-sky-400" data-testid={`action-${k}`} />
+                        {ACTION_LABEL[k] || label}
+                      </label>
+                      <InfoTip label={`About ${(ACTION_LABEL[k] || k).toLowerCase()}`}>{label}{disabled ? '. Needs an account-wide request.' : '.'}</InfoTip>
+                    </div>
                   );
                 })}
               </div>

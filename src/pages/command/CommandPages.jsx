@@ -654,7 +654,7 @@ export function JobDetailPage() {
     } catch (err) {
       // Stage-labelled failure from mediaUpload — show it verbatim, plus the
       // one action that matters when the transfer is resumable.
-      setError(`${err.message}${err.resumable ? ' Nothing is lost — choose the same file again and the upload resumes where it stopped.' : ''}`);
+      setError(`${err.message}${err.hint ? ` ${err.hint}` : ''}${err.resumable ? ' Nothing is lost — choose the same file again and the upload resumes where it stopped.' : ''}`);
     } finally {
       setUploadPct(null);
       setUploadLabel('');

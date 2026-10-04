@@ -14,19 +14,21 @@ const BACKOFF_MS = [1000, 4000];
 const PART_STALL_TIMEOUT_MS = 10 * 60 * 1000;   // a 50 MB part at ~1 Mbps ≈ 7 min
 
 export class UploadError extends Error {
-  constructor(message, { stage, partNumber = null, totalParts = null, status = null, resumable = false, cause = null } = {}) {
+  // `hint` is the longer "what usually causes this", kept apart so a page can
+  // show it on demand.
+  constructor(message, { stage, partNumber = null, totalParts = null, status = null, resumable = false, cause = null, hint = null } = {}) {
     super(message);
     this.name = 'UploadError';
-    Object.assign(this, { stage, partNumber, totalParts, status, resumable, cause });
+    Object.assign(this, { stage, partNumber, totalParts, status, resumable, cause, hint });
   }
 }
 
 // fetch() rejects with a bare TypeError for anything network-level. Turn
 // that into something a person can act on.
+const NETWORK_HINT = 'Usual causes: the connection dropped, a firewall/VPN/browser extension blocked the storage host, ' +
+  'or the file is a cloud placeholder (iCloud/OneDrive) that became unreadable mid-upload.';
 function describeNetworkFailure(err) {
-  return `the request never got a response (${err?.message || 'network error'}). ` +
-    'Usual causes: the connection dropped, a firewall/VPN/browser extension blocked the storage host, ' +
-    'or the file is a cloud placeholder (iCloud/OneDrive) that became unreadable mid-upload.';
+  return `the request never got a response (${err?.message || 'network error'}).`;
 }
 
 async function apiStep(stage, fn) {
@@ -36,7 +38,7 @@ async function apiStep(stage, fn) {
     if (err instanceof UploadError) throw err;
     const status = err?.status ?? null;
     const detail = status ? `${err.message} (HTTP ${status})` : describeNetworkFailure(err);
-    throw new UploadError(`${stage} failed: ${detail}`, { stage, status, resumable: stage !== 'Registering the upload', cause: err });
+    throw new UploadError(`${stage} failed: ${detail}`, { stage, status, resumable: stage !== 'Registering the upload', cause: err, hint: status ? null : NETWORK_HINT });
   }
 }
 
@@ -76,7 +78,7 @@ async function putPart(url, blob, { partNumber, totalParts }) {
   if (lastErr instanceof UploadError) throw lastErr;
   throw new UploadError(
     `Uploading part ${partNumber}/${totalParts} to storage failed after ${PART_ATTEMPTS} attempts: ${describeNetworkFailure(lastErr)}`,
-    { stage: 'Uploading to storage', partNumber, totalParts, resumable: true, cause: lastErr },
+    { stage: 'Uploading to storage', partNumber, totalParts, resumable: true, cause: lastErr, hint: NETWORK_HINT },
   );
 }
 

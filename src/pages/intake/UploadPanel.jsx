@@ -10,13 +10,15 @@ import { api } from '../../lib/api';
 import { uploadIntakeFile } from '../../lib/mediaUpload';
 import { fmtBytes, fmtElapsed } from '../../lib/intake';
 import { Select, TextInput, GhostButton, PrimaryButton } from '../../components/admin/ui';
-import { Card, Banner, ProgressBar, IssueLine, SectionTitle } from './ui';
+import { InfoTip, Tooltip } from '../../components/Tooltip';
+import { Card, Banner, ProgressBar, Issues, SectionTitle } from './ui';
 
 const SUPPORTING = [
-  { kind: 'radar_csv', help: 'Optional. Radar readings are matched to the pitches in your video.' },
-  { kind: 'scorecard', help: 'Optional. A scorebook or GameChanger export helps us check the game record.' },
-  { kind: 'roster', help: 'Optional. Coaches: a roster can stand in for listing every athlete.' },
+  { kind: 'radar_csv', help: 'Radar readings are matched to the pitches in your video.' },
+  { kind: 'scorecard', help: 'A scorebook or GameChanger export helps us check the game record.' },
+  { kind: 'roster', help: 'Coaches: a roster can stand in for listing every athlete.' },
 ];
+const VIDEO_HINT = 'Upload the original file from the camera or phone, one file per camera angle. Big files go up in parts — if your connection drops, choose the same file again and it picks up where it stopped.';
 const CHECKING = ['uploaded', 'processing'];
 const UNFINISHED = ['uploading', 'paused'];
 const TONE = {
@@ -86,7 +88,7 @@ export default function UploadPanel({ publicId, config, sub, onRefresh, onBusyCh
       if (r.duplicate) setNotice({ text: r.message, elsewhere: r.elsewhere });
       await onRefresh();
     } catch (err) {
-      patch(key, { phase: 'failed', error: err.message, resumable: err.resumable !== false, fileId: err.fileId ?? null });
+      patch(key, { phase: 'failed', error: err.message, hint: err.hint || '', resumable: err.resumable !== false, fileId: err.fileId ?? null });
       onRefresh();
     }
   }
@@ -151,31 +153,29 @@ export default function UploadPanel({ publicId, config, sub, onRefresh, onBusyCh
           {notice.elsewhere && <> <Link to={`/submissions/${notice.elsewhere}`} className="font-bold underline">Open {notice.elsewhere}</Link></>}
         </Banner>
       )}
-      {sub.capture_notes?.length > 0 && (
-        <div className="flex flex-col gap-1">{sub.capture_notes.map(n => <IssueLine key={n.code} issue={n} />)}</div>
-      )}
+      <Issues issues={sub.capture_notes || []} className="" />
 
       <input ref={resumeInput} type="file" hidden accept={resumeTarget ? acceptFor(resumeTarget.kind) : ''} onChange={onResumeFile} data-testid="resume-input" />
       <Card className="p-5">
-        <SectionTitle>Game video</SectionTitle>
+        <SectionTitle hint={VIDEO_HINT}>Game video</SectionTitle>
         <div className="flex flex-col gap-1">
           {videos.map(row)}
           {pending.filter(t => t.kind === 'video').map(t => <PendingRow key={t.key} t={t} now={now} kindLabel={viewLabel[t.view]} onDismiss={() => drop(t.key)}
             onRetry={() => start(filesRef.current[t.key], { kind: t.kind, cameraView: t.view, fileLabel: t.label, key: t.key })} canRetry={!!filesRef.current[t.key]} />)}
           {videos.length === 0 && !pending.some(t => t.kind === 'video') && (
-            <p className="text-sm py-2" style={{ color: '#94a3b8' }}>Upload the original file from the camera or phone. Add each camera angle as its own file.</p>
+            <p className="text-sm py-2" style={{ color: '#64748b' }}>No video yet.</p>
           )}
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] gap-3 items-end mt-4 pt-4 border-t" style={{ borderColor: '#1e3a5f' }}>
           <label className="flex flex-col gap-1.5">
-            <span className="text-xs font-bold" style={{ color: '#cfe8ff' }}>Where was the camera?</span>
+            <span className="text-xs font-bold" style={{ color: '#cfe8ff' }}>Camera angle</span>
             <Select value={view} onChange={e => setView(e.target.value)} data-testid="camera-view">
               {config.camera_views.map(v => <option key={v.key} value={v.key}>{v.label}</option>)}
             </Select>
           </label>
           <label className="flex flex-col gap-1.5">
-            <span className="text-xs font-bold" style={{ color: '#cfe8ff' }}>Label (optional)</span>
-            <TextInput value={label} onChange={e => setLabel(e.target.value)} placeholder="e.g. Innings 1–4" maxLength={80} />
+            <span className="text-xs font-bold" style={{ color: '#cfe8ff' }}>Label</span>
+            <TextInput value={label} onChange={e => setLabel(e.target.value)} placeholder="Optional — e.g. Innings 1–4" maxLength={80} />
           </label>
           <PrimaryButton type="button" onClick={() => videoInput.current?.click()}>Choose video…</PrimaryButton>
           <input ref={videoInput} type="file" hidden multiple accept={acceptFor('video')} onChange={onVideos} data-testid="video-input" />
@@ -183,15 +183,15 @@ export default function UploadPanel({ publicId, config, sub, onRefresh, onBusyCh
       </Card>
 
       <Card className="p-5">
-        <SectionTitle>Supporting files</SectionTitle>
-        <div className="flex flex-col gap-4">
+        <SectionTitle hint="Optional — each one helps us check or enrich the analysis.">Supporting files</SectionTitle>
+        <div className="flex flex-col gap-3">
           {SUPPORTING.map(s => (
             <div key={s.kind}>
               <div className="flex items-center justify-between gap-3 flex-wrap">
-                <div className="min-w-0">
-                  <p className="text-sm font-bold text-white">{specs[s.kind].label}</p>
-                  <p className="text-xs" style={{ color: '#64748b' }}>{s.help} {specs[s.kind].extensions.join(' ')}</p>
-                </div>
+                <p className="text-sm font-bold text-white flex items-center gap-1.5 min-w-0">
+                  {specs[s.kind].label}
+                  <InfoTip label={`About ${specs[s.kind].label}`}>{s.help} Accepts {specs[s.kind].extensions.join(', ')}.</InfoTip>
+                </p>
                 <GhostButton type="button" onClick={() => supportInputs.current[s.kind]?.click()}>Add file…</GhostButton>
                 <input ref={el => { supportInputs.current[s.kind] = el; }} type="file" hidden accept={acceptFor(s.kind)} onChange={onSupporting(s.kind)} data-testid={`input-${s.kind}`} />
               </div>
@@ -213,9 +213,13 @@ function TransferLine({ t, now }) {
     return (
       <div className="mt-1.5 flex flex-col gap-1">
         <ProgressBar pct={t.pct} />
-        <p className="text-xs" style={{ color: '#94a3b8' }}>
-          {Math.round((t.pct || 0) * 100)}%{t.totalParts > 1 ? ` · part ${t.part} of ${t.totalParts}` : ''} · {elapsed} elapsed
-          {t.resumed ? ' · resuming — finished parts are skipped' : ''}
+        <p className="text-xs flex items-center gap-2 flex-wrap" style={{ color: '#94a3b8' }}>
+          <span>{Math.round((t.pct || 0) * 100)}%{t.totalParts > 1 ? ` · part ${t.part} of ${t.totalParts}` : ''} · {elapsed}</span>
+          {t.resumed && (
+            <Tooltip content="Picking up where it stopped — finished parts are skipped.">
+              <span className="text-[11px] font-bold px-2 py-0.5 rounded-full" style={{ backgroundColor: 'rgba(56, 189, 248, 0.12)', color: '#38bdf8' }} data-testid="resumed">Resumed</span>
+            </Tooltip>
+          )}
         </p>
       </div>
     );
@@ -224,15 +228,15 @@ function TransferLine({ t, now }) {
 }
 
 function FailureLine({ t, onRetry, canRetry }) {
+  const why = [t.hint, t.resumable && 'Finished parts are kept.'].filter(Boolean).join(' ');
   return (
-    <div className="mt-1.5">
-      <p className="text-xs" style={{ color: '#f87171' }} data-testid="upload-error">{t.error}</p>
-      {t.resumable && (
-        <p className="text-xs mt-1" style={{ color: '#94a3b8' }}>
-          Finished parts are kept.{canRetry ? '' : ' Choose the same file again to continue.'}
-          {canRetry && <button type="button" onClick={onRetry} className="ml-2 font-bold hover:underline cursor-pointer" style={{ color: '#38bdf8' }}>Retry</button>}
-        </p>
-      )}
+    <div className="mt-1.5 flex items-start gap-2 flex-wrap">
+      <p className="text-xs flex items-center gap-1.5" style={{ color: '#f87171' }} data-testid="upload-error">
+        {t.error}
+        {why && <InfoTip label="Why this happens">{why}</InfoTip>}
+      </p>
+      {t.resumable && canRetry && <button type="button" onClick={onRetry} className="text-xs font-bold hover:underline cursor-pointer" style={{ color: '#38bdf8' }}>Retry</button>}
+      {t.resumable && !canRetry && <span className="text-xs" style={{ color: '#94a3b8' }}>Choose the same file again to continue.</span>}
     </div>
   );
 }
@@ -241,7 +245,7 @@ function FileRow({ file: f, transfer: t, viewLabel, kindLabel, now, onRetry, can
   const inFlight = t && ['checking', 'uploading'].includes(t.phase);
   const failed = t?.phase === 'failed';
   const interrupted = !inFlight && UNFINISHED.includes(f.status);
-  const status = inFlight ? 'Uploading' : interrupted ? 'Paused — choose the same file to resume' : f.status_label;
+  const status = inFlight ? 'Uploading' : interrupted ? 'Paused' : f.status_label;
   const tone = inFlight ? '#38bdf8' : TONE[f.status] || '#94a3b8';
   const title = f.kind === 'video' ? (f.label || viewLabel[f.camera_view] || 'Game video') : kindLabel;
   return (
@@ -255,14 +259,18 @@ function FileRow({ file: f, transfer: t, viewLabel, kindLabel, now, onRetry, can
           <p className="text-xs truncate" style={{ color: '#64748b' }}>{f.original_name} · {fmtBytes(f.size_bytes)}{f.summary ? ` · ${f.summary}` : ''}</p>
         </div>
         <div className="flex items-center gap-3 shrink-0">
-          <span className="text-xs font-bold" style={{ color: tone }}>{CHECKING.includes(f.status) ? 'Checking the file…' : status}</span>
+          {interrupted ? (
+            <Tooltip content="Choose the same file again to continue — finished parts are kept.">
+              <span className="text-xs font-bold" style={{ color: tone }}>{status}</span>
+            </Tooltip>
+          ) : <span className="text-xs font-bold" style={{ color: tone }}>{CHECKING.includes(f.status) ? 'Checking…' : status}</span>}
           {interrupted && !(failed && canRetry(t)) && <button type="button" onClick={onResume} className="text-xs font-bold hover:underline cursor-pointer" style={{ color: '#38bdf8' }}>Resume</button>}
           {!inFlight && !f.locked && <button type="button" onClick={onRemove} className="text-xs hover:underline cursor-pointer" style={{ color: '#64748b' }} aria-label={`Remove ${f.original_name}`}>Remove</button>}
         </div>
       </div>
       {inFlight && <TransferLine t={t} now={now} />}
       {failed && <FailureLine t={t} onRetry={() => onRetry(t)} canRetry={canRetry(t)} />}
-      {(f.issues || []).map(i => <IssueLine key={i.text} issue={i} />)}
+      <Issues issues={f.issues || []} />
     </div>
   );
 }

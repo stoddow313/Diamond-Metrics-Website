@@ -1,8 +1,10 @@
 // Customer-side building blocks for footage intake, in the site's dark
 // product theme (the same tokens as Sign in, the staff portal and Command).
 import { Link, NavLink, Outlet, useNavigate } from 'react-router-dom';
+import { CircleAlert, Info, TriangleAlert } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import BrandMark from '../../components/BrandMark';
+import { InfoTip, Tooltip } from '../../components/Tooltip';
 import { cardStyle, inputStyle } from '../../components/admin/theme';
 import { useIntakeConfig, SUBMITTER_ROLES, STATUS_TONE } from '../../lib/intake';
 
@@ -94,29 +96,34 @@ export function Card({ children, className = '', style, ...rest }) {
   return <div {...rest} className={`rounded-2xl border ${className}`} style={{ ...cardStyle, ...style }}>{children}</div>;
 }
 
-export function PageTitle({ eyebrow, title, children, actions }) {
+export function PageTitle({ eyebrow, title, children, actions, hint }) {
   return (
     <div className="flex items-start justify-between gap-4 flex-wrap mb-6">
       <div className="min-w-0">
         {eyebrow && <p className="text-xs font-bold uppercase tracking-widest mb-1" style={{ color: '#38bdf8' }}>{eyebrow}</p>}
-        <h1 className="text-2xl font-bold text-white">{title}</h1>
+        <div className="flex items-center gap-2">
+          <h1 className="text-2xl font-bold text-white">{title}</h1>
+          {hint && <InfoTip label="About this page" size={16}>{hint}</InfoTip>}
+        </div>
         {children && <div className="text-sm mt-1" style={{ color: '#94a3b8' }}>{children}</div>}
       </div>
-      {actions && <div className="flex gap-2 flex-wrap">{actions}</div>}
+      {actions && <div className="flex gap-2 flex-wrap items-center">{actions}</div>}
     </div>
   );
 }
 
-export function StatusPill({ status }) {
+// The customer status; its one-line explanation is the tooltip.
+export function StatusPill({ status, focusable = true }) {
   if (!status) return null;
   const tone = STATUS_TONE[status.key] || '#94a3b8';
-  return (
+  const pill = (
     <span className="inline-flex items-center gap-1.5 text-xs font-bold px-2.5 py-1 rounded-full whitespace-nowrap"
       style={{ backgroundColor: 'rgba(30, 41, 59, 0.9)', color: tone }} data-status={status.key}>
       <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: tone }} aria-hidden="true" />
       {status.label}
     </span>
   );
+  return status.detail ? <Tooltip content={status.detail} focusable={focusable} className="rounded-full">{pill}</Tooltip> : pill;
 }
 
 const TONES = {
@@ -137,9 +144,9 @@ export function Banner({ tone = 'info', title, children, actions, className = ''
   );
 }
 
-export function CheckRow({ checked, onChange, children, hint, disabled = false, testId }) {
+export function CheckRow({ checked, onChange, children, optional = false, disabled = false, testId }) {
   return (
-    <label className={`flex items-start gap-3 py-2 ${disabled ? 'opacity-60' : 'cursor-pointer'}`}>
+    <label className={`flex items-start gap-3 py-1.5 ${disabled ? 'opacity-60' : 'cursor-pointer'}`}>
       <input
         type="checkbox" checked={!!checked} disabled={disabled} data-testid={testId}
         onChange={e => onChange(e.target.checked)}
@@ -147,7 +154,7 @@ export function CheckRow({ checked, onChange, children, hint, disabled = false, 
       />
       <span className="text-sm" style={{ color: '#cbd5e1' }}>
         {children}
-        {hint && <span className="ml-2 text-[10px] font-bold uppercase tracking-wider" style={{ color: hint === 'Required' ? '#fbbf24' : '#64748b' }}>{hint}</span>}
+        {optional && <span className="ml-1.5 text-xs" style={{ color: '#64748b' }}>(optional)</span>}
       </span>
     </label>
   );
@@ -176,23 +183,57 @@ export function ProgressBar({ pct, tone = '#38bdf8' }) {
   );
 }
 
-// One plain-language capture finding: 'action' needs the customer, 'warning'
-// may limit metrics, 'tip' is advice.
-export function IssueLine({ issue }) {
-  const color = issue.severity === 'action' ? '#f87171' : issue.severity === 'warning' ? '#fbbf24' : '#94a3b8';
-  const label = issue.severity === 'action' ? 'Action needed' : issue.severity === 'warning' ? 'Note' : 'Tip';
+// Capture findings (server captureIssues / submissionCaptureNotes): 'action'
+// needs the customer and is spelled out; a 'warning' (may limit metrics) or
+// 'tip' is a short chip whose full sentence is the tooltip.
+const SEVERITY = {
+  warning: { Icon: TriangleAlert, fg: '#fbbf24', bg: 'rgba(251, 191, 36, 0.12)' },
+  tip: { Icon: Info, fg: '#94a3b8', bg: 'rgba(148, 163, 184, 0.12)' },
+  action: { Icon: CircleAlert, fg: '#f87171', bg: 'rgba(248, 113, 113, 0.12)' },
+};
+const ISSUE_LABEL = {
+  portrait: () => 'Vertical video',
+  resolution_below_minimum: t => { const m = /(\d{3,4})p/.exec(t); return m ? `${m[1]}p video` : 'Below 1080p'; },
+  frame_rate_below_minimum: t => { const m = /is ([\d.]+) frames/.exec(t); return m ? `${m[1]} fps video` : 'Low frame rate'; },
+  frame_rate_below_preferred: () => '60 fps is better',
+  side_frame_rate_below_preferred: () => 'Side angle under 120 fps',
+  short_for_full_game: () => 'Short for a full game',
+  pro_without_side_angle: () => 'No side angle',
+  no_primary_view: () => 'No behind-home view',
+};
+
+export function IssueChip({ issue, prefix = '' }) {
+  const tone = SEVERITY[issue.severity] || SEVERITY.tip;
+  const label = ISSUE_LABEL[issue.code]?.(issue.text) || (issue.severity === 'tip' ? 'Tip' : 'Note');
   return (
-    <p className="text-xs mt-1" style={{ color }}>
-      <span className="font-bold uppercase tracking-wider mr-1.5">{label}</span>
-      <span style={{ color: issue.severity === 'tip' ? '#94a3b8' : '#cbd5e1' }}>{issue.text}</span>
-    </p>
+    <Tooltip content={`${prefix}${issue.text}`} className="rounded-full">
+      <span className="inline-flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded-full whitespace-nowrap"
+        style={{ backgroundColor: tone.bg, color: tone.fg }} data-issue={issue.code}>
+        <tone.Icon size={12} strokeWidth={2.4} aria-hidden="true" />{label}
+      </span>
+    </Tooltip>
   );
 }
 
-export function SectionTitle({ children, aside }) {
+export function Issues({ issues = [], prefix = '', className = 'mt-1.5' }) {
+  if (!issues.length) return null;
+  const actions = issues.filter(i => i.severity === 'action');
+  const rest = issues.filter(i => i.severity !== 'action');
+  return (
+    <div className={`flex flex-col gap-1 ${className}`}>
+      {actions.map(i => <p key={i.code} className="text-xs" style={{ color: '#f87171' }} data-issue={i.code}>{i.text}</p>)}
+      {rest.length > 0 && <div className="flex gap-1.5 flex-wrap">{rest.map(i => <IssueChip key={i.code} issue={i} prefix={prefix} />)}</div>}
+    </div>
+  );
+}
+
+export function SectionTitle({ children, aside, hint }) {
   return (
     <div className="flex items-center justify-between gap-3 mb-3">
-      <h2 className="font-bold uppercase tracking-wider" style={{ color: '#cfe8ff', fontSize: '0.875rem', lineHeight: '1.25rem', margin: 0 }}>{children}</h2>
+      <div className="flex items-center gap-1.5 min-w-0">
+        <h2 className="font-bold uppercase tracking-wider" style={{ color: '#cfe8ff', fontSize: '0.875rem', lineHeight: '1.25rem', margin: 0 }}>{children}</h2>
+        {hint && <InfoTip label={typeof children === 'string' ? `Help: ${children}` : 'Help'}>{hint}</InfoTip>}
+      </div>
       {aside}
     </div>
   );

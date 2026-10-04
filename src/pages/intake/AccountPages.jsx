@@ -8,7 +8,8 @@ import { useIntakeConfig, safeNext, homeFor, fmtDate } from '../../lib/intake';
 import { Field, TextInput, PrimaryButton, GhostButton, ErrorNote } from '../../components/admin/ui';
 import SignupInfoPage from '../SignupInfoPage';
 import { AuthFrame, Card, PageTitle, Banner, TextArea, SectionTitle } from './ui';
-import { CreateAccountForm, RoleSelect, ContactChoice } from './AuthForms';
+import { CreateAccountForm, RoleSelect, ContactChoice, LEGAL_NAME_HINT } from './AuthForms';
+import { InfoTip } from '../../components/Tooltip';
 
 const muted = { color: '#94a3b8' };
 
@@ -31,12 +32,11 @@ export function SignupRoute() {
       </p>
     )}>
       <Card className="p-8">
-        <h1 className="text-2xl font-bold text-white mb-1">Create your account</h1>
-        <p className="text-sm mb-6" style={muted}>Submit game footage and follow your analysis from one place.</p>
+        <h1 className="text-2xl font-bold text-white mb-6">Create your account</h1>
         <CreateAccountForm config={config} onDone={() => navigate(next || '/submissions', { replace: true })} />
       </Card>
       <p className="text-xs text-center mt-4" style={{ color: '#64748b' }}>
-        Got an invite link from your program? Open it to claim your player profile instead.
+        Have an invite from your program? Open that link instead.
       </p>
     </AuthFrame>
   );
@@ -197,14 +197,16 @@ export function EmailVerifyBanner({ me, onChecked }) {
       tone="warn" title="Verify your email to submit"
       actions={(
         <>
-          {!manual && <GhostButton type="button" onClick={resend} disabled={state === 'sending'}>{state === 'sent' ? 'Sent — send again' : state === 'sending' ? 'Sending…' : 'Resend the link'}</GhostButton>}
-          {onChecked && <GhostButton type="button" onClick={onChecked}>I’ve verified — check again</GhostButton>}
+          {!manual && <GhostButton type="button" onClick={resend} disabled={state === 'sending'}>{state === 'sent' ? 'Sent — send again' : state === 'sending' ? 'Sending…' : 'Resend link'}</GhostButton>}
+          {onChecked && <GhostButton type="button" onClick={onChecked}>Check again</GhostButton>}
         </>
       )}
     >
-      {manual
-        ? <>Our email isn’t switched on yet, so our team will confirm <b className="text-white">{me.account.email}</b> for you. You can finish everything else now; submitting unlocks once it’s confirmed.</>
-        : <>We sent a link to <b className="text-white">{me.account.email}</b>. Open it to confirm the address — your draft stays saved here.</>}
+      <span className="inline-flex items-center gap-1.5 flex-wrap">
+        {manual
+          ? <>Our team will confirm <b className="text-white">{me.account.email}</b> for you.<InfoTip label="Why">Email isn’t switched on yet. Finish everything else now — submitting unlocks once the address is confirmed.</InfoTip></>
+          : <>We sent a link to <b className="text-white">{me.account.email}</b>.<InfoTip label="What to do">Open it to confirm the address. Your draft stays saved here.</InfoTip></>}
+      </span>
       {error && <span className="block mt-1" style={{ color: '#f87171' }}>{error}</span>}
     </Banner>
   );
@@ -255,8 +257,8 @@ export function AccountPage() {
         <SectionTitle>Your details</SectionTitle>
         <form onSubmit={save} className="flex flex-col gap-4">
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <Field label="First name (legal)"><TextInput value={form.first_name} onChange={e => set('first_name', e.target.value)} required /></Field>
-            <Field label="Last name (legal)"><TextInput value={form.last_name} onChange={e => set('last_name', e.target.value)} required /></Field>
+            <Field label="First name" hint={LEGAL_NAME_HINT}><TextInput value={form.first_name} onChange={e => set('first_name', e.target.value)} required /></Field>
+            <Field label="Last name"><TextInput value={form.last_name} onChange={e => set('last_name', e.target.value)} required /></Field>
             <Field label="Mobile phone"><TextInput type="tel" value={form.phone} onChange={e => set('phone', e.target.value)} /></Field>
             <Field label="I am usually a…">{config && <RoleSelect roles={config.roles} value={form.role} onChange={v => set('role', v)} />}</Field>
           </div>
@@ -276,7 +278,7 @@ export function AccountPage() {
         <Card className="p-6">
           <SectionTitle>Your athletes</SectionTitle>
           {me.athletes.length === 0 ? (
-            <p className="text-sm" style={muted}>None yet. Athletes are linked to your account after our team verifies them from a submission.</p>
+            <p className="text-sm flex items-center gap-1.5" style={muted}>None yet <InfoTip>Athletes are linked to your account after our team verifies them from a submission.</InfoTip></p>
           ) : (
             <ul className="flex flex-col gap-2">
               {me.athletes.map(a => (
@@ -291,7 +293,7 @@ export function AccountPage() {
         <Card className="p-6">
           <SectionTitle>Your teams</SectionTitle>
           {me.teams.length === 0 ? (
-            <p className="text-sm" style={muted}>Teams are linked after our team confirms a team submission.</p>
+            <p className="text-sm flex items-center gap-1.5" style={muted}>None yet <InfoTip>Teams are linked after our team confirms a team submission.</InfoTip></p>
           ) : (
             <ul className="flex flex-col gap-2">
               {me.teams.map(t => <li key={t.team_id} className="text-sm text-white font-bold">{t.name}{t.age_group ? <span className="font-normal" style={muted}> · {t.age_group}</span> : ''}</li>)}
@@ -313,7 +315,8 @@ export function AccountPage() {
           ) : deletion.open ? (
             <div className="flex flex-col gap-3">
               <Banner tone="warn" title="Delete your account and footage?">
-                Our team reviews every request, deletes the footage and your personal details, and confirms with you. Results that were already published may stay on an athlete’s profile unless you ask us to withdraw them.
+                <span className="inline-flex items-center gap-1.5">Our team deletes them and confirms with you.
+                  <InfoTip>Results already published may stay on an athlete’s profile unless you ask us to withdraw them.</InfoTip></span>
               </Banner>
               <Field label="Anything we should know? (optional)"><TextArea value={deletion.note} onChange={e => setDeletion(d => ({ ...d, note: e.target.value }))} /></Field>
               <ErrorNote>{deletion.error}</ErrorNote>

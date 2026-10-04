@@ -4,9 +4,11 @@ import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api } from '../../lib/api';
 import { fmtDate, fmtDateTime } from '../../lib/intake';
+import { BadgeCheck } from 'lucide-react';
 import { Field, TextInput, Select, PrimaryButton, GhostButton, ErrorNote } from '../../components/admin/ui';
-import { Card, Banner, CheckRow, TextArea, SectionTitle, IssueLine } from './ui';
-import { ContactChoice } from './AuthForms';
+import { InfoTip, Tooltip } from '../../components/Tooltip';
+import { Card, Banner, CheckRow, TextArea, SectionTitle, Issues } from './ui';
+import { ContactChoice, LEGAL_NAME_HINT } from './AuthForms';
 import { blankAthlete, groupOf, LEVELS, RELATIONSHIP_FOR_ROLE, stepForReadiness } from './wizard';
 import primaryBehindHome from '../../assets/blog/primary-behind-home-plate-setup.svg';
 import filmingBehindHome from '../../assets/blog/filming-behind-home-plate.png';
@@ -17,15 +19,16 @@ const GUIDE_IMAGES = {
   'filming-behind-home-plate.png': { src: filmingBehindHome, alt: 'A phone filming the game from behind home plate' },
   'optional-second-camera-setup.svg': { src: secondCamera, alt: 'A second camera fixed on the first-base line' },
 };
-const GROUP_TITLES = { family: 'For my family', team: 'For a team', event: 'For an event' };
 const muted = { color: '#94a3b8' };
 const faint = { color: '#64748b' };
 
-function Choice({ selected, onClick, children, testId }) {
-  return (
+// A selectable card. `corner` (an ⓘ) sits over the top-right corner as a
+// sibling of the button, never inside it.
+function Choice({ selected, onClick, children, testId, corner }) {
+  const button = (
     <button
       type="button" onClick={onClick} aria-pressed={selected} data-testid={testId}
-      className="text-left rounded-xl border p-4 cursor-pointer transition-colors w-full flex flex-col justify-start items-stretch"
+      className={`text-left rounded-xl border p-4 cursor-pointer transition-colors w-full h-full flex flex-col justify-start items-stretch ${corner ? 'pr-10' : ''}`}
       style={selected
         ? { borderColor: '#38bdf8', backgroundColor: 'rgba(56, 189, 248, 0.08)' }
         : { borderColor: '#1e3a5f', backgroundColor: 'rgba(15, 23, 42, 0.5)' }}
@@ -33,43 +36,51 @@ function Choice({ selected, onClick, children, testId }) {
       {children}
     </button>
   );
+  if (!corner) return button;
+  return <div className="relative h-full">{button}<span className="absolute top-4 right-4 flex">{corner}</span></div>;
+}
+
+function Verified({ ok, tip }) {
+  return (
+    <Tooltip content={tip}>
+      <span className="inline-flex items-center gap-1 text-[11px] font-bold px-2 py-0.5 rounded-full"
+        style={ok ? { backgroundColor: 'rgba(74, 222, 128, 0.12)', color: '#4ade80' } : { backgroundColor: 'rgba(251, 191, 36, 0.12)', color: '#fbbf24' }}>
+        {ok && <BadgeCheck size={12} strokeWidth={2.4} aria-hidden="true" />}{ok ? 'Verified' : 'Not verified'}
+      </span>
+    </Tooltip>
+  );
 }
 
 // ── About you ────────────────────────────────────────────────────────────
 export function RoleStep({ form, update, config, me, profile, setProfile }) {
-  const groups = ['family', 'team', 'event'].map(g => [g, config.roles.filter(r => r.group === g)]);
   const group = groupOf(config, form.role);
   const setP = (k, v) => setProfile(p => ({ ...p, [k]: v }));
   return (
     <div className="flex flex-col gap-6">
       <div>
-        <SectionTitle>Who are you submitting as?</SectionTitle>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          {groups.map(([g, roles]) => (
-            <div key={g} className="flex flex-col gap-2">
-              <p className="text-xs font-bold uppercase tracking-wider" style={faint}>{GROUP_TITLES[g]}</p>
-              {roles.map(r => (
-                <Choice key={r.key} selected={form.role === r.key} onClick={() => update(f => ({ ...f, role: r.key }))} testId={`role-${r.key}`}>
-                  <span className="text-sm font-bold text-white">{r.label}</span>
-                </Choice>
-              ))}
-            </div>
+        <SectionTitle hint="Athletes under 18 need a parent or legal guardian to submit. Coaches, team reps and organizers submit for a team or event — athlete accounts stay with families.">
+          Who are you submitting as?
+        </SectionTitle>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          {config.roles.map(r => (
+            <Choice key={r.key} selected={form.role === r.key} onClick={() => update(f => ({ ...f, role: r.key }))} testId={`role-${r.key}`}>
+              <span className="text-sm font-bold text-white">{r.label}</span>
+            </Choice>
           ))}
         </div>
-        {form.role === 'athlete' && <p className="text-xs mt-3" style={muted}>Under 18? A parent or legal guardian needs to submit for you.</p>}
-        {group === 'team' && <p className="text-xs mt-3" style={muted}>Submitting for a team doesn’t give you ownership of any athlete’s account — families keep that.</p>}
       </div>
       <div>
         <SectionTitle>Your details</SectionTitle>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <Field label="First name (legal)"><TextInput value={profile.first_name} onChange={e => setP('first_name', e.target.value)} autoComplete="given-name" /></Field>
-          <Field label="Last name (legal)"><TextInput value={profile.last_name} onChange={e => setP('last_name', e.target.value)} autoComplete="family-name" /></Field>
+          <Field label="First name" hint={LEGAL_NAME_HINT}><TextInput value={profile.first_name} onChange={e => setP('first_name', e.target.value)} autoComplete="given-name" /></Field>
+          <Field label="Last name"><TextInput value={profile.last_name} onChange={e => setP('last_name', e.target.value)} autoComplete="family-name" /></Field>
           <Field label="Email">
-            <p className="text-sm py-2" style={{ color: '#cbd5e1' }}>
-              {me.account.email} {me.account.email_verified ? <span style={{ color: '#4ade80' }}>· verified</span> : <span style={{ color: '#fbbf24' }}>· not verified yet</span>}
+            <p className="text-sm py-2 flex items-center gap-2 flex-wrap" style={{ color: '#cbd5e1' }}>
+              {me.account.email}
+              <Verified ok={me.account.email_verified} tip={me.account.email_verified ? 'Your email is confirmed.' : 'Confirm it from the email we sent — needed before you submit.'} />
             </p>
           </Field>
-          <Field label="Mobile phone (preferred)"><TextInput type="tel" value={profile.phone} onChange={e => setP('phone', e.target.value)} autoComplete="tel" /></Field>
+          <Field label="Mobile phone"><TextInput type="tel" value={profile.phone} onChange={e => setP('phone', e.target.value)} autoComplete="tel" placeholder="Optional" /></Field>
           {group && group !== 'family' && (
             <Field label={group === 'event' ? 'Event or organization' : 'Team or organization'}>
               <TextInput value={profile.organization} onChange={e => setP('organization', e.target.value)} autoComplete="organization" />
@@ -89,41 +100,48 @@ export function ServiceStep({ form, update, config }) {
   return (
     <div className="flex flex-col gap-6">
       <div>
-        <SectionTitle>Choose your analysis path</SectionTitle>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <SectionTitle>Choose a package</SectionTitle>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           {config.packages.map(p => (
-            <Choice key={p.key} selected={s.package_key === p.key} onClick={() => setS('package_key', p.key)} testId={`package-${p.key}`}>
-              <div className="flex items-baseline justify-between gap-3">
-                <span className="text-base font-bold text-white">{p.label}</span>
-                {!p.self_serve && <span className="text-[10px] font-bold uppercase tracking-wider" style={{ color: '#c4b5fd' }}>Consultation</span>}
-              </div>
-              <p className="text-sm font-bold mt-1" style={{ color: '#7dd3fc' }}>{p.best_for}</p>
-              <dl className="text-xs mt-3 flex flex-col gap-1.5" style={{ color: '#cbd5e1' }}>
-                <div><dt className="inline font-bold" style={muted}>Upload: </dt><dd className="inline">{p.upload}</dd></div>
-                <div><dt className="inline font-bold" style={muted}>Delivers: </dt><dd className="inline">{p.delivers}</dd></div>
-                <div><dt className="inline font-bold" style={muted}>Footage: </dt><dd className="inline">{p.expectation}</dd></div>
-              </dl>
-              {p.note && <p className="text-xs mt-3" style={{ color: '#fbbf24' }}>{p.note}</p>}
+            <Choice key={p.key} selected={s.package_key === p.key} onClick={() => setS('package_key', p.key)} testId={`package-${p.key}`}
+              corner={<InfoTip label={`What ${p.label} includes`} maxWidth={320}><PackageDetails p={p} /></InfoTip>}>
+              <span className="text-base font-bold text-white">{p.label}</span>
+              <p className="text-sm mt-0.5" style={{ color: '#7dd3fc' }}>{p.best_for}</p>
+              {(p.note || !p.self_serve) && (
+                <p className="mt-2.5">
+                  <span className="text-[11px] font-bold px-2 py-0.5 rounded-full" style={p.note ? { backgroundColor: 'rgba(251, 191, 36, 0.12)', color: '#fbbf24' } : { backgroundColor: 'rgba(196, 181, 253, 0.12)', color: '#c4b5fd' }}>
+                    {p.note ? 'Analyzed as Rookie for now' : 'Consultation'}
+                  </span>
+                </p>
+              )}
             </Choice>
           ))}
         </div>
         {s.package_key === 'hall_of_fame' && (
-          <Banner tone="info" className="mt-4" title="No upload needed">
-            Hall of Fame uses an approved hardware and data-capture setup. Tell us about the athlete and the event, and our team will contact you to plan it.
-          </Banner>
+          <Banner tone="info" className="mt-4" title="No upload needed">Our team will contact you to plan the capture.</Banner>
         )}
       </div>
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <Field label={s.package_key === 'custom' ? 'What would you like measured?' : 'Anything specific you’d like us to look at? (optional)'}>
-          <TextArea value={s.requested_metrics} onChange={e => setS('requested_metrics', e.target.value)} maxLength={1000}
-            placeholder={s.package_key === 'custom' ? 'e.g. pitch velocity for our two starters, and home-to-first times' : ''} />
+        <Field label={s.package_key === 'custom' ? 'What would you like measured?' : 'Notes for our analysts'}>
+          <TextArea value={s.requested_metrics} onChange={e => setS('requested_metrics', e.target.value)} maxLength={1000} rows={2}
+            placeholder={s.package_key === 'custom' ? 'e.g. pitch velocity for our two starters, and home-to-first times' : 'Optional'} />
         </Field>
-        <Field label="Receipt or order number (optional)">
-          <TextInput value={s.order_reference} onChange={e => setS('order_reference', e.target.value)} maxLength={80} placeholder="From your purchase confirmation, if you have one" />
-          <p className="text-xs mt-1.5" style={faint}>No payment is taken here. If you haven’t purchased yet, our team confirms your package and payment with you before analysis starts.</p>
+        <Field label="Order number" hint="From your purchase confirmation. No payment is taken here — if you haven’t purchased yet, our team confirms your package and payment with you before analysis starts.">
+          <TextInput value={s.order_reference} onChange={e => setS('order_reference', e.target.value)} maxLength={80} placeholder="Optional" />
         </Field>
       </div>
     </div>
+  );
+}
+
+function PackageDetails({ p }) {
+  return (
+    <span className="flex flex-col gap-1.5">
+      <span><b className="text-white">Upload</b> · {p.upload}</span>
+      <span><b className="text-white">Delivers</b> · {p.delivers}</span>
+      <span><b className="text-white">Footage</b> · {p.expectation}</span>
+      {p.note && <span style={{ color: '#fbbf24' }}>{p.note}</span>}
+    </span>
   );
 }
 
@@ -136,7 +154,6 @@ export function GameStep({ form, update, me }) {
   const max = inquiry ? undefined : `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
   return (
     <div className="flex flex-col gap-5">
-      {inquiry && <p className="text-sm" style={muted}>Tell us what you have in mind — all optional. We’ll go through the details with you.</p>}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <Field label={inquiry ? 'Date (if known)' : 'Game date'}>
           <TextInput type="date" value={g.date} max={max} onChange={e => setG('date', e.target.value)} data-testid="game-date" />
@@ -151,7 +168,7 @@ export function GameStep({ form, update, me }) {
           <TextInput value={g.event_label} onChange={e => setG('event_label', e.target.value)} disabled={g.no_event} placeholder={g.no_event ? 'Regular-season game' : 'e.g. Fall Classic'} />
         </Field>
         <CheckRow checked={g.no_event} onChange={v => update(f => ({ ...f, game: { ...f.game, no_event: v, event_label: v ? '' : f.game.event_label } }))}>
-          This was a regular-season game, not part of an event or tournament
+          Regular-season game (no event)
         </CheckRow>
       </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -169,8 +186,8 @@ export function GameStep({ form, update, me }) {
             </div>
           )}
         </Field>
-        <Field label="Opponent (optional)"><TextInput value={g.opponent_label} onChange={e => setG('opponent_label', e.target.value)} /></Field>
-        <Field label="Field or location (optional)"><TextInput value={g.location} onChange={e => setG('location', e.target.value)} /></Field>
+        <Field label="Opponent"><TextInput value={g.opponent_label} onChange={e => setG('opponent_label', e.target.value)} placeholder="Optional" /></Field>
+        <Field label="Location"><TextInput value={g.location} onChange={e => setG('location', e.target.value)} placeholder="Optional" /></Field>
       </div>
     </div>
   );
@@ -196,12 +213,11 @@ export function AthletesStep({ form, update, config, me }) {
 
   return (
     <div className="flex flex-col gap-5">
-      <p className="text-sm" style={muted}>
-        {group === 'family'
-          ? 'Which athlete is this footage for? Add anyone else from your family who played in this game too.'
-          : 'Which athletes are in this footage? Listing them helps us match the right players — or attach a roster file in the upload step instead.'}
-        {' '}Nothing here is published: athlete profiles stay private until our team verifies who they are.
-      </p>
+      <SectionTitle hint={`${group === 'family'
+        ? 'Add each athlete from your family who played in this game.'
+        : 'Listing athletes helps us match the right players — or attach a roster file on the Upload step.'} Nothing is published: profiles stay private until our team verifies who they are.`}>
+        {group === 'family' ? 'Who is this footage for?' : 'Athletes in this game'}
+      </SectionTitle>
       {mine.length > 0 && (
         <div>
           <p className="text-xs font-bold uppercase tracking-wider mb-2" style={faint}>Your athletes</p>
@@ -216,19 +232,20 @@ export function AthletesStep({ form, update, config, me }) {
       )}
       {group !== 'family' && form.athletes.length > 1 && (
         <div className="flex items-end gap-3 flex-wrap">
-          <Field label="Same age group for everyone without a birth year"><TextInput value={everyone} onChange={e => setEveryone(e.target.value)} list="dm-levels" placeholder="e.g. 12U" /></Field>
+          <Field label="Age group for everyone" hint="Applies to every athlete without a birth year."><TextInput value={everyone} onChange={e => setEveryone(e.target.value)} list="dm-levels" placeholder="e.g. 12U" /></Field>
           <GhostButton type="button" onClick={() => update(f => ({ ...f, athletes: f.athletes.map(a => (a.birth_year ? a : { ...a, age_band: everyone })) }))} disabled={!everyone.trim()}>Apply</GhostButton>
         </div>
       )}
       {form.athletes.map((a, i) => (
         <Card key={i} className="p-4" data-testid={`athlete-${i}`}>
           <div className="flex items-center justify-between gap-3 mb-3">
-            <p className="text-sm font-bold text-white">{a.player_id ? `${a.first_name} ${a.last_name}` : form.athletes.length > 1 ? `Athlete ${i + 1}` : 'Athlete'}</p>
+            <p className="text-sm font-bold text-white flex items-center gap-2">
+              {a.player_id ? `${a.first_name} ${a.last_name}` : form.athletes.length > 1 ? `Athlete ${i + 1}` : 'Athlete'}
+              {a.player_id && <Verified ok tip="Linked to your account — already verified by our team." />}
+            </p>
             <button type="button" onClick={() => remove(i)} className="text-xs hover:underline cursor-pointer" style={faint}>Remove</button>
           </div>
-          {a.player_id ? (
-            <p className="text-xs mb-3" style={{ color: '#4ade80' }}>Linked to your account — already verified by our team.</p>
-          ) : (
+          {a.player_id ? null : (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
               <Field label="First name"><TextInput value={a.first_name} onChange={e => setA(i, 'first_name', e.target.value)} /></Field>
               <Field label="Last name"><TextInput value={a.last_name} onChange={e => setA(i, 'last_name', e.target.value)} /></Field>
@@ -240,19 +257,19 @@ export function AthletesStep({ form, update, config, me }) {
             </div>
           )}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-            <Field label="Your relationship">
+            <Field label="Relationship">
               <Select value={a.relationship} onChange={e => setA(i, 'relationship', e.target.value)}>
                 <option value="">Choose…</option>
                 {config.relationships.map(r => <option key={r.key} value={r.key}>{r.label}</option>)}
               </Select>
             </Field>
-            <Field label="Primary team (optional)"><TextInput value={a.team_label} onChange={e => setA(i, 'team_label', e.target.value)} /></Field>
-            <Field label="Jersey number (optional)"><TextInput value={a.jersey} onChange={e => setA(i, 'jersey', e.target.value)} maxLength={6} /></Field>
+            <Field label="Team"><TextInput value={a.team_label} onChange={e => setA(i, 'team_label', e.target.value)} placeholder="Optional" /></Field>
+            <Field label="Jersey #"><TextInput value={a.jersey} onChange={e => setA(i, 'jersey', e.target.value)} maxLength={6} placeholder="Optional" /></Field>
           </div>
         </Card>
       ))}
       {form.athletes.length === 0 && group !== 'family' && !inquiry && (
-        <p className="text-sm" style={faint}>No athletes listed — that’s fine if you’ll attach a roster file.</p>
+        <p className="text-sm" style={faint}>No athletes yet — a roster file works too.</p>
       )}
       <datalist id="dm-levels">{LEVELS.map(l => <option key={l} value={l} />)}</datalist>
       <div><GhostButton type="button" onClick={add} data-testid="add-athlete">{form.athletes.length ? 'Add another athlete' : 'Add an athlete'}</GhostButton></div>
@@ -271,11 +288,12 @@ export function FootageStep({ form, update }) {
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <Choice selected={ft.coverage === 'full'} onClick={() => setF('coverage', 'full')} testId="coverage-full">
             <span className="text-sm font-bold text-white">The full game</span>
-            <p className="text-xs mt-1" style={muted}>One continuous recording, or a few files that cover the whole game.</p>
+            <p className="text-xs mt-1" style={muted}>Every inning, in one or more files</p>
           </Choice>
-          <Choice selected={ft.coverage === 'clips'} onClick={() => setF('coverage', 'clips')} testId="coverage-clips">
+          <Choice selected={ft.coverage === 'clips'} onClick={() => setF('coverage', 'clips')} testId="coverage-clips"
+            corner={<InfoTip label="About clips">Metrics outside the clips will be unavailable.</InfoTip>}>
             <span className="text-sm font-bold text-white">Clips</span>
-            <p className="text-xs mt-1" style={muted}>Selected at-bats or plays. Metrics outside the clips will be unavailable.</p>
+            <p className="text-xs mt-1" style={muted}>Selected at-bats or plays</p>
           </Choice>
         </div>
       </div>
@@ -287,13 +305,13 @@ export function FootageStep({ form, update }) {
             <option value="portrait">Vertical (portrait)</option>
           </Select>
         </Field>
-        <Field label="Resolution, if you know it">
+        <Field label="Resolution" hint="Not sure? Leave it — we check every file after upload.">
           <Select value={ft.known_resolution} onChange={e => setF('known_resolution', e.target.value)}>
             <option value="">Not sure</option>
             {['720p', '1080p', '1440p', '4K'].map(r => <option key={r} value={r}>{r}</option>)}
           </Select>
         </Field>
-        <Field label="Frame rate, if you know it">
+        <Field label="Frame rate">
           <Select value={ft.known_fps} onChange={e => setF('known_fps', e.target.value)}>
             <option value="">Not sure</option>
             {['24', '30', '60', '120', '240'].map(r => <option key={r} value={r}>{r} fps</option>)}
@@ -302,14 +320,13 @@ export function FootageStep({ form, update }) {
       </div>
       {form.service.package_key === 'pro' && (
         <CheckRow checked={ft.side_angle} onChange={v => setF('side_angle', v)}>
-          I also filmed a side angle (first- or third-base line) — recommended for Pro
+          I also filmed a side angle (first- or third-base line)
         </CheckRow>
       )}
-      <Field label="Anything we should know? (optional)">
-        <TextArea value={ft.key_plays} onChange={e => setF('key_plays', e.target.value)} maxLength={2000} rows={4}
-          placeholder="e.g. Rae bats 4th and pitches the 3rd inning; the camera stopped for a few minutes in the 5th." />
+      <Field label="Notes">
+        <TextArea value={ft.key_plays} onChange={e => setF('key_plays', e.target.value)} maxLength={2000} rows={3}
+          placeholder="Optional — e.g. Rae bats 4th; the camera stopped for a few minutes in the 5th." />
       </Field>
-      <p className="text-xs" style={faint}>We check resolution, frame rate and length ourselves after you upload — you’ll choose each file’s camera angle there.</p>
     </div>
   );
 }
@@ -348,7 +365,7 @@ export function TermsStep({ publicId, sub, form, config, onAccepted }) {
   return (
     <div className="flex flex-col gap-6">
       <Card className="p-5" data-testid="filming-guide">
-        <SectionTitle aside={<span className="text-xs" style={faint}>Version {config.guide_version}</span>}>{guide.title}</SectionTitle>
+        <SectionTitle hint={`${guide.insufficient ? `${guide.insufficient} ` : ''}Guide version ${config.guide_version}.`}>{guide.title}</SectionTitle>
         <p className="text-sm font-bold text-white mb-3">{guide.summary}</p>
         {guide.images.length > 0 && (
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-4">
@@ -360,37 +377,35 @@ export function TermsStep({ publicId, sub, form, config, onAccepted }) {
         <ul className="flex flex-col gap-2 text-sm list-disc pl-5" style={{ color: '#cbd5e1' }}>
           {guide.points.map(p => <li key={p}>{p}</li>)}
         </ul>
-        {guide.insufficient && <p className="text-xs mt-3" style={muted}>{guide.insufficient}</p>}
         <Link to="/blog/how-to-record-baseball-game-video-analysis" target="_blank" rel="noopener" className="inline-block text-xs font-bold mt-3 hover:underline" style={{ color: '#38bdf8' }}>
           Read the full filming guide ↗
         </Link>
       </Card>
 
       {accepted ? (
-        <Banner tone="success" title="Terms accepted">
-          You accepted the footage terms (version {sub.rights.version}) on {fmtDateTime(sub.rights.accepted_at)}. Continue to upload your footage.
-        </Banner>
+        <Banner tone="success" title="Footage terms accepted">{fmtDateTime(sub.rights.accepted_at)} · version {sub.rights.version}</Banner>
       ) : !terms ? (
-        <Banner tone="warn" title="Choose your role first">Go back to “About you” — the terms depend on who is submitting.</Banner>
+        <Banner tone="warn" title="Choose your role first">The terms depend on who is submitting — see “About you”.</Banner>
       ) : (
         <Card className="p-5" data-testid="footage-terms">
-          <SectionTitle aside={<span className="text-xs" style={faint}>Version {terms.version}</span>}>Footage terms</SectionTitle>
-          {roleChanged && <Banner tone="warn" className="mb-3" title="Your role changed">You accepted these terms as a different role. Please review and accept them again.</Banner>}
-          {terms.pending_legal && (
-            <p className="text-xs mb-3" style={{ color: '#fbbf24' }}>This wording is a draft awaiting legal approval. Your acceptance is recorded with its version.</p>
-          )}
-          <CheckRow checked={ack.guide} onChange={v => setAck(a => ({ ...a, guide: v }))} hint="Required" testId="ack-guide">{terms.guide}</CheckRow>
-          <CheckRow checked={ack.attest} onChange={v => setAck(a => ({ ...a, attest: v }))} hint="Required" testId="ack-attest">{terms.attestation}</CheckRow>
+          <SectionTitle aside={terms.pending_legal ? (
+            <Tooltip content={`This wording is a draft awaiting legal approval. Your acceptance is recorded with its version (${terms.version}).`}>
+              <span className="text-[11px] font-bold px-2 py-0.5 rounded-full" style={{ backgroundColor: 'rgba(251, 191, 36, 0.12)', color: '#fbbf24' }} data-testid="terms-draft">Draft wording</span>
+            </Tooltip>
+          ) : <span className="text-xs" style={faint}>Version {terms.version}</span>}>Footage terms</SectionTitle>
+          {roleChanged && <Banner tone="warn" className="mb-3" title="Your role changed">Please accept the terms again.</Banner>}
+          <CheckRow checked={ack.guide} onChange={v => setAck(a => ({ ...a, guide: v }))} testId="ack-guide">{terms.guide}</CheckRow>
+          <CheckRow checked={ack.attest} onChange={v => setAck(a => ({ ...a, attest: v }))} testId="ack-attest">{terms.attestation}</CheckRow>
           {terms.uses.map(u => (
-            <CheckRow key={u.key} checked={ack.uses[u.key]} onChange={v => setAck(a => ({ ...a, uses: { ...a.uses, [u.key]: v } }))} hint={u.required ? 'Required' : 'Optional'} testId={`ack-use-${u.key}`}>
+            <CheckRow key={u.key} checked={ack.uses[u.key]} onChange={v => setAck(a => ({ ...a, uses: { ...a.uses, [u.key]: v } }))} optional={!u.required} testId={`ack-use-${u.key}`}>
               {u.text}
             </CheckRow>
           ))}
-          <CheckRow checked={ack.retention} onChange={v => setAck(a => ({ ...a, retention: v }))} hint="Required" testId="ack-retention">{terms.retention}</CheckRow>
-          <CheckRow checked={ack.contact} onChange={v => setAck(a => ({ ...a, contact: v }))} hint="Optional">{terms.contact}</CheckRow>
+          <CheckRow checked={ack.retention} onChange={v => setAck(a => ({ ...a, retention: v }))} testId="ack-retention">{terms.retention}</CheckRow>
+          <CheckRow checked={ack.contact} onChange={v => setAck(a => ({ ...a, contact: v }))} optional>{terms.contact}</CheckRow>
           <div className="mt-3">
-            <Field label="Anything we should not do with this footage? (optional)">
-              <TextArea value={ack.restrictions} onChange={e => setAck(a => ({ ...a, restrictions: e.target.value }))} maxLength={1000} rows={2} />
+            <Field label="Anything we shouldn’t do with this footage?">
+              <TextArea value={ack.restrictions} onChange={e => setAck(a => ({ ...a, restrictions: e.target.value }))} maxLength={1000} rows={2} placeholder="Optional" />
             </Field>
           </div>
           <ErrorNote>{error}</ErrorNote>
@@ -424,12 +439,14 @@ export function ReviewStep({ form, sub, config, me, profile, steps, onEdit }) {
   const views = Object.fromEntries(config.camera_views.map(v => [v.key, v.label]));
   const has = key => steps.some(s => s.key === key);
   const g = form.game;
+  // The verify-your-email banner above already covers that one.
+  const readiness = sub.readiness.filter(m => m.code !== 'email_unverified');
   return (
     <div className="flex flex-col gap-5">
-      {sub.readiness.length > 0 && (
+      {readiness.length > 0 && (
         <Banner tone="warn" title="Before you can submit">
           <ul className="mt-1 flex flex-col gap-1" data-testid="readiness">
-            {sub.readiness.map(m => {
+            {readiness.map(m => {
               const step = stepForReadiness(m.code);
               return (
                 <li key={m.code}>
@@ -449,7 +466,6 @@ export function ReviewStep({ form, sub, config, me, profile, steps, onEdit }) {
         <Summary title="Service" step="service" onEdit={onEdit}>
           {pkg ? pkg.label : 'Not chosen'}{form.service.order_reference ? <span style={muted}> · order {form.service.order_reference}</span> : ''}
           {form.service.requested_metrics && <p className="mt-1" style={muted}>“{form.service.requested_metrics}”</p>}
-          {pkg?.note && <p className="text-xs mt-1" style={{ color: '#fbbf24' }}>{pkg.note}</p>}
         </Summary>
         <Summary title={inquiry ? 'Event' : 'Game'} step="game" onEdit={onEdit}>
           {g.date ? fmtDate(g.date) : <span style={faint}>No date</span>}
@@ -481,16 +497,13 @@ export function ReviewStep({ form, sub, config, me, profile, steps, onEdit }) {
               <ul>{sub.files.map(f => (
                 <li key={f.id}>{f.kind === 'video' ? (views[f.camera_view] || 'Video') : config.file_kinds.find(k => k.key === f.kind)?.label}
                   <span style={muted}> · {f.original_name} · {f.status_label}</span>
-                  {f.issues.filter(i => i.severity !== 'tip').map(i => <IssueLine key={i.text} issue={i} />)}
+                  <Issues issues={f.issues.filter(i => i.severity !== 'tip')} />
                 </li>
               ))}</ul>
             )}
           </Summary>
         )}
       </Card>
-      <p className="text-xs" style={faint}>
-        After you submit, our team checks the footage and the athlete and game details, and tells you here if anything is needed. Every result is reviewed by a person; if a measurement can’t be verified from your footage, you’ll see why — never a zero.
-      </p>
     </div>
   );
 }

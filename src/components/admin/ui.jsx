@@ -1,5 +1,6 @@
 // Small shared form primitives for the admin, matching the site's dark theme.
 import { Children, cloneElement, isValidElement, useId } from 'react';
+import { InfoTip } from '../Tooltip';
 import { inputStyle } from './theme';
 
 const NATIVE_CONTROLS = new Set(['input', 'select', 'textarea']);
@@ -7,15 +8,17 @@ const NATIVE_CONTROLS = new Set(['input', 'select', 'textarea']);
 // The label names its control: when the first child is an input, select or
 // textarea (or a component marked `labelable`), it gets an id the label
 // points at, so screen readers announce it and clicking the label focuses it.
-export function Field({ label, children }) {
+// `hint` puts the field's explanation behind an ⓘ beside the label.
+export function Field({ label, hint, children }) {
   const autoId = useId();
   const kids = Children.toArray(children);
   const first = kids[0];
   const labelable = isValidElement(first) && (NATIVE_CONTROLS.has(first.type) || first.type?.labelable === true);
   const id = labelable ? first.props.id || autoId : undefined;
+  const text = <label htmlFor={id} className="text-xs font-bold" style={{ color: '#cfe8ff' }}>{label}</label>;
   return (
     <div className="flex flex-col gap-1.5">
-      <label htmlFor={id} className="text-xs font-bold" style={{ color: '#cfe8ff' }}>{label}</label>
+      {hint ? <div className="flex items-center gap-1.5">{text}<InfoTip label={typeof label === 'string' ? `Help: ${label}` : 'Help'} size={13}>{hint}</InfoTip></div> : text}
       {labelable ? [cloneElement(first, { id }), ...kids.slice(1)] : children}
     </div>
   );

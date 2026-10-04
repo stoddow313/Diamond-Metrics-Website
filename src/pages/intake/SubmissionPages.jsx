@@ -8,7 +8,8 @@ import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { api } from '../../lib/api';
 import { useIntakeConfig, fmtDate, fmtDateTime, timeAgo, GAME_RECORD_LABEL } from '../../lib/intake';
 import { PrimaryButton, GhostButton, ErrorNote } from '../../components/admin/ui';
-import { Card, PageTitle, Banner, StatusPill, TextArea, SectionTitle, IssueLine } from './ui';
+import { InfoTip } from '../../components/Tooltip';
+import { Card, PageTitle, Banner, StatusPill, TextArea, SectionTitle, Issues } from './ui';
 import { EmailVerifyBanner } from './AccountPages';
 import UploadPanel from './UploadPanel';
 
@@ -30,10 +31,8 @@ export function MySubmissionsPage() {
   const sent = list.filter(s => s.status.key !== 'draft');
   return (
     <div className="flex flex-col gap-6">
-      <PageTitle eyebrow="Your footage" title="My submissions"
-        actions={<Link to="/submit?source=my_submissions" className="px-4 py-2 rounded-xl font-bold text-sm" style={{ backgroundColor: '#38bdf8', color: '#0f172a' }}>Submit footage</Link>}>
-        Follow each game from upload to verified results.
-      </PageTitle>
+      <PageTitle title="My submissions"
+        actions={<Link to="/submit?source=my_submissions" className="px-4 py-2 rounded-xl font-bold text-sm" style={{ backgroundColor: '#38bdf8', color: '#0f172a' }}>Submit footage</Link>} />
       <EmailVerifyBanner me={me} onChecked={load} />
       {drafts.length > 0 && (
         <div>
@@ -47,8 +46,7 @@ export function MySubmissionsPage() {
         {drafts.length > 0 && <SectionTitle>Sent</SectionTitle>}
         {sent.length === 0 ? (
           <Card className="p-10 text-center">
-            <p className="text-white font-bold mb-1">No submissions yet</p>
-            <p className="text-sm mb-4" style={muted}>Upload a game and our analysts will turn it into verified, human-reviewed results.</p>
+            <p className="text-white font-bold mb-4">No submissions yet</p>
             <Link to="/submit?source=my_submissions" className="inline-block px-4 py-2 rounded-xl font-bold text-sm" style={{ backgroundColor: '#38bdf8', color: '#0f172a' }}>Submit footage</Link>
           </Card>
         ) : (
@@ -72,12 +70,11 @@ function SubmissionCard({ s, to, action }) {
             {s.test && <span className="ml-2 text-[9px] font-bold uppercase tracking-widest px-1.5 py-0.5 rounded align-middle" style={{ backgroundColor: 'rgba(251, 191, 36, 0.15)', color: '#fbbf24' }}>test</span>}
           </p>
           <p className="text-xs mt-1" style={muted}>
-            {s.public_id}{s.package_label ? ` · ${s.package_label}` : ''}{s.athletes.length ? ` · ${s.athletes.join(', ')}` : ''}{s.files ? ` · ${s.files} file${s.files === 1 ? '' : 's'}` : ''}
+            {s.public_id}{s.package_label ? ` · ${s.package_label}` : ''}{s.athletes.length ? ` · ${s.athletes.join(', ')}` : ''}
           </p>
-          <p className="text-xs mt-1" style={faint}>{s.status.detail}</p>
         </div>
         <div className="flex sm:flex-col items-center sm:items-end gap-2 shrink-0">
-          <StatusPill status={s.status} />
+          <StatusPill status={s.status} focusable={false} />
           <span className="text-xs" style={faint}>{action ? <span className="font-bold" style={{ color: '#38bdf8' }}>{action} →</span> : `updated ${timeAgo(s.updated_at)}`}</span>
         </div>
       </div>
@@ -118,14 +115,14 @@ function Progress({ sub }) {
         })}
       </ol>
       <div className="mt-4 pt-4 border-t flex items-center justify-between gap-3 flex-wrap" style={{ borderColor: '#1e3a5f' }} data-testid="game-record">
-        <span className="text-sm" style={{ color: '#cbd5e1' }}>Full game record (box score)</span>
+        <span className="text-sm flex items-center gap-1.5" style={{ color: '#cbd5e1' }}>
+          Full game record (box score)
+          <InfoTip label="About the game record">The box score is finished separately from your metrics, so metrics can be ready first.</InfoTip>
+        </span>
         <span className="text-sm font-bold" style={{ color: record === 'complete' ? '#4ade80' : record === 'in_progress' ? '#38bdf8' : '#94a3b8' }}>
-          {record ? GAME_RECORD_LABEL[record] : 'Starts once analysis begins'}
+          {record ? GAME_RECORD_LABEL[record] : 'Not started'}
         </span>
       </div>
-      {key === 'metrics_ready' && (
-        <p className="text-xs mt-2" style={faint}>Your verified metrics are ready below. The box score is finished separately and will show here when it’s complete.</p>
-      )}
     </Card>
   );
 }
@@ -133,11 +130,11 @@ function Progress({ sub }) {
 function Results({ results }) {
   if (!results) return null;
   if (results.athletes.length === 0) {
-    return <Card className="p-5"><SectionTitle>Results</SectionTitle><p className="text-sm" style={muted}>Results appear here once the athletes in this game are confirmed.</p></Card>;
+    return <Card className="p-5"><SectionTitle>Results</SectionTitle><p className="text-sm" style={muted}>Results appear once the athletes in this game are confirmed.</p></Card>;
   }
   return (
     <Card className="p-5" data-testid="results">
-      <SectionTitle>Results</SectionTitle>
+      <SectionTitle hint="Every result is reviewed by an analyst. An unavailable metric is never counted as zero in your averages.">Results</SectionTitle>
       <div className="flex flex-col gap-6">
         {results.athletes.map(a => (
           <div key={a.name}>
@@ -154,10 +151,10 @@ function Results({ results }) {
                       <p className="text-[10px] font-bold uppercase tracking-wider mt-0.5" style={{ color: '#4ade80' }}>{m.source}</p>
                     </div>
                   ) : (
-                    <div>
-                      <p className="text-sm font-bold" style={{ color: '#fbbf24' }}>Unavailable</p>
-                      {m.reasons.map(r => <p key={r} className="text-xs" style={muted}>{r}</p>)}
-                    </div>
+                    <p className="text-sm font-bold flex items-center gap-1.5" style={{ color: '#fbbf24' }} data-testid="unavailable">
+                      Unavailable
+                      {m.reasons.length > 0 && <InfoTip label={`Why ${m.metric} is unavailable`}>{m.reasons.join(' ')}</InfoTip>}
+                    </p>
                   )}
                 </div>
               ))}
@@ -165,7 +162,6 @@ function Results({ results }) {
           </div>
         ))}
       </div>
-      <p className="text-xs mt-4" style={faint}>Every result is reviewed by an analyst. An unavailable metric is never counted as zero in your averages.</p>
     </Card>
   );
 }
@@ -189,14 +185,25 @@ function Reply({ publicId, onSent, prompt }) {
   );
 }
 
+function MessageUs({ publicId, onSent }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="mt-4 pt-4 border-t" style={{ borderColor: '#1e3a5f' }}>
+      {open
+        ? <Reply publicId={publicId} onSent={x => { setOpen(false); onSent(x); }} prompt="A question or something we should know about this game…" />
+        : <button type="button" onClick={() => setOpen(true)} className="text-sm font-bold hover:underline cursor-pointer" style={{ color: '#38bdf8' }}>Send us a message</button>}
+    </div>
+  );
+}
+
 function Deletion({ sub, publicId, onDone }) {
   const [open, setOpen] = useState(false);
   const [note, setNote] = useState('');
   const [error, setError] = useState('');
   if (sub.deletion?.status === 'open') {
-    return <p className="text-sm" style={muted}>You asked us to delete this footage on {fmtDate(sub.deletion.created_at)}. Our team will confirm when it’s done.</p>;
+    return <p className="text-xs" style={muted}>Deletion requested {fmtDate(sub.deletion.created_at)} — we’ll confirm when it’s done.</p>;
   }
-  if (sub.deletion?.status === 'completed') return <p className="text-sm" style={muted}>Your deletion request was completed.</p>;
+  if (sub.deletion?.status === 'completed') return <p className="text-xs" style={muted}>Deletion completed.</p>;
   if (!sub.can.request_deletion) return null;
   async function request() {
     setError('');
@@ -205,8 +212,9 @@ function Deletion({ sub, publicId, onDone }) {
   }
   return open ? (
     <div className="flex flex-col gap-3">
-      <p className="text-sm" style={{ color: '#cbd5e1' }}>
-        We’ll delete the footage and every copy made from it, and confirm with you. Results already delivered may stay unless you ask us to withdraw them.
+      <p className="text-sm flex items-center gap-1.5" style={{ color: '#cbd5e1' }}>
+        We’ll delete the footage and every copy made from it.
+        <InfoTip>We confirm with you when it’s done. Results already delivered may stay unless you ask us to withdraw them.</InfoTip>
       </p>
       <TextArea value={note} onChange={e => setNote(e.target.value)} placeholder="Anything we should know? (optional)" rows={2} />
       <ErrorNote>{error}</ErrorNote>
@@ -216,7 +224,7 @@ function Deletion({ sub, publicId, onDone }) {
       </div>
     </div>
   ) : (
-    <button type="button" onClick={() => setOpen(true)} className="text-sm font-bold hover:underline cursor-pointer" style={{ color: '#94a3b8' }}>Ask us to delete this footage</button>
+    <button type="button" onClick={() => setOpen(true)} className="text-xs font-bold hover:underline cursor-pointer" style={{ color: '#94a3b8' }}>Ask us to delete this footage</button>
   );
 }
 
@@ -262,15 +270,14 @@ export function SubmissionStatusPage() {
     <div className="flex flex-col gap-6" data-testid="submission-status" data-status={s.key}>
       {justSent && (
         <Banner tone="success" title={sub.kind === 'inquiry' ? 'Request received' : 'Submission received'}>
-          Your submission number is <b className="text-white" data-testid="public-id">{sub.public_id}</b>. {sub.kind === 'inquiry'
-            ? 'Our team will contact you to plan your Hall of Fame capture.'
-            : 'Our team checks your footage and the athlete and game details next. If we need anything, we’ll ask you here and contact you the way you prefer. Each step shows on this page.'}
+          Your number is <b className="text-white" data-testid="public-id">{sub.public_id}</b>. {sub.kind === 'inquiry'
+            ? 'Our team will contact you to plan the capture.'
+            : 'We’ll keep this page updated, and ask here if we need anything.'}
         </Banner>
       )}
       <PageTitle eyebrow={`Submission ${sub.public_id}`} title={[g.date && fmtDate(g.date), g.team && `${g.team}${g.opponent ? ` vs ${g.opponent}` : ''}`].filter(Boolean).join(' · ') || (sub.kind === 'inquiry' ? 'Hall of Fame request' : 'Your submission')}
         actions={<StatusPill status={s} />}>
-        {sub.test && <span className="text-[10px] font-bold uppercase tracking-widest px-1.5 py-0.5 rounded mr-2" style={{ backgroundColor: 'rgba(251, 191, 36, 0.15)', color: '#fbbf24' }}>Test</span>}
-        {s.detail}
+        {sub.test && <span className="text-[10px] font-bold uppercase tracking-widest px-1.5 py-0.5 rounded" style={{ backgroundColor: 'rgba(251, 191, 36, 0.15)', color: '#fbbf24' }}>Test</span>}
       </PageTitle>
 
       <Progress sub={sub} />
@@ -302,17 +309,12 @@ export function SubmissionStatusPage() {
                 </li>
               ))}
             </ol>
-            {sub.can.reply && !action && (
-              <div className="mt-4 pt-4 border-t" style={{ borderColor: '#1e3a5f' }}>
-                <p className="text-xs font-bold mb-2" style={{ color: '#cfe8ff' }}>Send us a message</p>
-                <Reply publicId={publicId} onSent={setSub} prompt="A question or something we should know about this game…" />
-              </div>
-            )}
+            {sub.can.reply && !action && <MessageUs publicId={publicId} onSent={setSub} />}
           </Card>
           {!(action && sub.can.add_files) && sub.files.length > 0 && (
             <Card className="p-5">
               <SectionTitle>Files</SectionTitle>
-              {sub.capture_notes.map(n => <IssueLine key={n.code} issue={n} />)}
+              <Issues issues={sub.capture_notes} className="mb-1" />
               {sub.files.map(f => (
                 <div key={f.id} className="py-2.5 border-t first:border-t-0" style={{ borderColor: '#1e3a5f' }} data-testid={`file-${f.id}`}>
                   <div className="flex justify-between gap-3">
@@ -320,7 +322,7 @@ export function SubmissionStatusPage() {
                     <span className="text-xs font-bold shrink-0" style={{ color: f.status === 'ready' ? '#4ade80' : f.status === 'needs_customer_action' ? '#f87171' : '#38bdf8' }}>{f.status_label}</span>
                   </div>
                   <p className="text-xs truncate" style={faint}>{f.original_name}{f.summary ? ` · ${f.summary}` : ''}</p>
-                  {f.issues.map(i => <IssueLine key={i.text} issue={i} />)}
+                  <Issues issues={f.issues} />
                 </div>
               ))}
             </Card>
@@ -330,26 +332,27 @@ export function SubmissionStatusPage() {
           <Card className="p-5">
             <SectionTitle>Details</SectionTitle>
             <dl className="text-sm flex flex-col gap-2">
-              <div><dt className="text-xs" style={faint}>Service</dt><dd style={{ color: '#e2e8f0' }}>{sub.package?.label || '—'}</dd></div>
-              {sub.package?.note && <p className="text-xs" style={{ color: '#fbbf24' }}>{sub.package.note}</p>}
+              <div><dt className="text-xs" style={faint}>Package</dt><dd style={{ color: '#e2e8f0' }}>{sub.package?.label || '—'}</dd></div>
               {(g.event || g.level) && <div><dt className="text-xs" style={faint}>Event</dt><dd style={{ color: '#e2e8f0' }}>{[g.event, g.level].filter(Boolean).join(' · ')}</dd></div>}
               {g.location && <div><dt className="text-xs" style={faint}>Location</dt><dd style={{ color: '#e2e8f0' }}>{g.location}</dd></div>}
               {sub.athletes.length > 0 && <div><dt className="text-xs" style={faint}>Athletes</dt><dd style={{ color: '#e2e8f0' }}>{sub.athletes.map(a => `${a.first_name} ${a.last_name}`.trim()).join(', ')}</dd></div>}
               <div><dt className="text-xs" style={faint}>Submitted</dt><dd style={{ color: '#e2e8f0' }}>{fmtDateTime(sub.submitted_at)}</dd></div>
+              {sub.rights && (
+                <div>
+                  <dt className="text-xs" style={faint}>Footage terms</dt>
+                  <dd className="flex items-center gap-1.5" style={{ color: '#e2e8f0' }}>
+                    {sub.rights.action === 'revoke' ? 'Withdrawn' : `Accepted ${fmtDate(sub.rights.accepted_at)}`}
+                    <InfoTip label="About the footage terms">
+                      {`Version ${sub.rights.version}. Kept ${sub.rights.retention_days} days after upload.${sub.rights.permitted_uses?.improvement ? ' You allowed use to improve our tools.' : ''}${sub.rights.contact_permission ? '' : ' You asked us not to contact you about it.'}`}
+                    </InfoTip>
+                  </dd>
+                </div>
+              )}
             </dl>
+            {(sub.deletion || sub.can.request_deletion) && (
+              <div className="mt-4 pt-3 border-t" style={{ borderColor: '#1e3a5f' }}><Deletion sub={sub} publicId={publicId} onDone={setSub} /></div>
+            )}
           </Card>
-          {sub.rights && (
-            <Card className="p-5">
-              <SectionTitle>Footage terms</SectionTitle>
-              <p className="text-sm" style={{ color: '#cbd5e1' }}>
-                {sub.rights.action === 'revoke' ? 'Withdrawn' : `Accepted ${fmtDate(sub.rights.accepted_at)}`} · version {sub.rights.version}
-              </p>
-              <p className="text-xs mt-1" style={faint}>
-                Kept {sub.rights.retention_days} days after upload.{sub.rights.permitted_uses?.improvement ? ' You allowed use to improve our tools.' : ''}{sub.rights.contact_permission ? '' : ' You asked us not to contact you about it.'}
-              </p>
-            </Card>
-          )}
-          <Card className="p-5"><SectionTitle>Privacy</SectionTitle><Deletion sub={sub} publicId={publicId} onDone={setSub} /></Card>
         </div>
       </div>
     </div>

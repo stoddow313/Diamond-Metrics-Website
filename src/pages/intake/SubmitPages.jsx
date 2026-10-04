@@ -4,7 +4,9 @@
 // sequence that survives sign-out, refresh and an interrupted upload.
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { Check, LoaderCircle } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
+import { InfoTip, Tooltip } from '../../components/Tooltip';
 import { api } from '../../lib/api';
 import { useIntakeConfig, SUBMITTER_ROLES, timeAgo, fmtDate } from '../../lib/intake';
 import { PrimaryButton, GhostButton, ErrorNote } from '../../components/admin/ui';
@@ -16,13 +18,8 @@ import { stepsFor, stepProblems } from './wizard';
 import { RoleStep, ServiceStep, GameStep, AthletesStep, FootageStep, TermsStep, ReviewStep } from './WizardSteps';
 
 const muted = { color: '#94a3b8' };
-const PATH = [
-  'Choose your analysis path',
-  'Create an account or sign in',
-  'Tell us about the player and the game',
-  'Upload your footage',
-  'We review it and deliver verified results',
-];
+const PATH = ['Choose a package', 'Tell us about the game', 'Upload your footage', 'Get verified results'];
+const REVIEWED = 'Every result is reviewed by a person. Anything we can’t verify from your footage is shown with the reason — never as a zero.';
 
 // What the link carried: source page, package, player, order (§3 step 1, §4).
 function intakeParams(params) {
@@ -101,20 +98,16 @@ export function SubmitStartPage() {
     return (
       <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(0,28rem)] gap-8 items-start">
         <div>
-          <PageTitle eyebrow="Submit footage" title="Turn your game footage into verified results">
-            Create a free account or sign in first — your submission saves as you go, so you can stop and come back any time.
-          </PageTitle>
-          <ol className="flex flex-col gap-3 mt-2">
+          <PageTitle eyebrow="Submit footage" title="Turn game footage into verified results" />
+          <ol className="flex flex-col gap-3">
             {PATH.map((step, i) => (
               <li key={step} className="flex items-center gap-3 text-sm" style={{ color: '#cbd5e1' }}>
                 <span className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold shrink-0" style={{ backgroundColor: 'rgba(56, 189, 248, 0.12)', color: '#38bdf8' }}>{i + 1}</span>
                 {step}
+                {i === PATH.length - 1 && <InfoTip label="How results are verified">{REVIEWED}</InfoTip>}
               </li>
             ))}
           </ol>
-          <p className="text-xs mt-6 max-w-md" style={{ color: '#64748b' }}>
-            Every result is reviewed by a person. You’ll see the measurement source where it matters, and any metric we can’t verify from your footage is shown with the reason — never as a zero.
-          </p>
         </div>
         <Card className="p-6">
           <AuthPanel config={config} next={`/submit?${params.toString()}`} onDone={() => { /* the effect above takes over once signed in */ }} />
@@ -126,12 +119,12 @@ export function SubmitStartPage() {
   if (drafts) {
     return (
       <div className="max-w-2xl">
-        <PageTitle eyebrow="Submit footage" title="Pick up where you left off?">You have a draft that hasn’t been sent yet.</PageTitle>
+        <PageTitle eyebrow="Submit footage" title="Pick up where you left off?" />
         <div className="flex flex-col gap-3">
           {drafts.map(d => (
             <Card key={d.public_id} className="p-4 flex items-center justify-between gap-4 flex-wrap">
               <div className="min-w-0">
-                <p className="text-sm font-bold text-white">{d.public_id} <StatusPill status={d.status} /></p>
+                <p className="text-sm font-bold text-white flex items-center gap-2">{d.public_id} <StatusPill status={d.status} /></p>
                 <p className="text-xs mt-1" style={muted}>
                   {[d.package_label, d.game_date && fmtDate(d.game_date), d.team, d.athletes.join(', ')].filter(Boolean).join(' · ') || 'Just started'} · updated {timeAgo(d.updated_at)}
                 </p>
@@ -245,6 +238,8 @@ export function SubmitWizardPage() {
   const ctx = { config, profile, rightsOk };
   const dirty = JSON.stringify(form) !== savedJson;
   const inquiry = form.service.package_key === 'hall_of_fame';
+  // After a blocked "Next", the list tracks the form: fixed items drop off.
+  const missing = problems.length ? stepProblems(step, form, ctx) : [];
 
   async function saveProfile() {
     const json = JSON.stringify(profile);
@@ -315,9 +310,8 @@ export function SubmitWizardPage() {
   return (
     <div className="flex flex-col gap-6" data-testid="intake-wizard" data-step={step}>
       <PageTitle eyebrow={`Submission ${sub.public_id}`} title={inquiry ? 'Hall of Fame request' : 'Submit footage'}
-        actions={<span className="text-xs self-center" style={{ color: saving ? '#94a3b8' : dirty ? '#fbbf24' : '#4ade80' }} data-testid="save-state">{saving ? 'Saving…' : dirty ? 'Unsaved changes' : 'All changes saved'}</span>}>
-        {sub.test && <span className="text-[10px] font-bold uppercase tracking-widest px-1.5 py-0.5 rounded mr-2" style={{ backgroundColor: 'rgba(251, 191, 36, 0.15)', color: '#fbbf24' }}>Test</span>}
-        Your progress saves automatically.
+        actions={<SaveState saving={saving} dirty={dirty} />}>
+        {sub.test && <span className="text-[10px] font-bold uppercase tracking-widest px-1.5 py-0.5 rounded" style={{ backgroundColor: 'rgba(251, 191, 36, 0.15)', color: '#fbbf24' }}>Test</span>}
       </PageTitle>
 
       <nav aria-label="Steps">
@@ -341,12 +335,12 @@ export function SubmitWizardPage() {
       </nav>
 
       {step === 'review' && <EmailVerifyBanner me={me} onChecked={refreshMe} />}
-      {problems.length > 0 && (
+      {missing.length > 0 && (
         <Banner tone="warn" title="A few things to fill in first">
-          <ul className="list-disc pl-5" data-testid="step-problems">{problems.map(p => <li key={p}>{p}</li>)}</ul>
+          <ul className="list-disc pl-5" data-testid="step-problems">{missing.map(p => <li key={p}>{p}</li>)}</ul>
         </Banner>
       )}
-      {uploadBusy && step !== 'upload' && <Banner tone="info">An upload is still running on the Upload step — keep this page open until it finishes.</Banner>}
+      {uploadBusy && step !== 'upload' && <Banner tone="info">Upload in progress — keep this page open until it finishes.</Banner>}
 
       <Card className="p-6">
         {step === 'role' && <RoleStep {...stepProps} />}
@@ -360,13 +354,10 @@ export function SubmitWizardPage() {
         )}
         {uploadMounted && (
           <div hidden={step !== 'upload'}>
-            <p className="text-sm mb-4" style={muted}>
-              Add the original files — each camera angle separately. Large files upload in parts; if your connection drops, choose the same file again and it continues where it stopped.
-            </p>
             <UploadPanel publicId={publicId} config={config} sub={sub} onRefresh={refresh} onBusyChange={setUploadBusy} />
           </div>
         )}
-        {step === 'upload' && !uploadMounted && <Banner tone="warn" title="Accept the footage terms first">Go back to “Guide & terms” — uploads open once they’re accepted.</Banner>}
+        {step === 'upload' && !uploadMounted && <Banner tone="warn" title="Accept the footage terms first">Uploads open once the terms on “Guide & terms” are accepted.</Banner>}
         {step === 'review' && <ReviewStep {...stepProps} steps={steps} onEdit={go} />}
       </Card>
 
@@ -388,5 +379,18 @@ export function SubmitWizardPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+// Autosave state: a quiet tick when everything is saved.
+function SaveState({ saving, dirty }) {
+  const [Icon, label, color] = saving ? [LoaderCircle, 'Saving…', '#94a3b8'] : dirty ? [null, 'Unsaved', '#fbbf24'] : [Check, 'Saved', '#4ade80'];
+  return (
+    <Tooltip content="Your progress saves as you go — close the tab and pick up where you left off.">
+      <span className="inline-flex items-center gap-1 text-xs font-bold" style={{ color }} data-testid="save-state">
+        {Icon ? <Icon size={14} strokeWidth={2.6} className={saving ? 'animate-spin' : ''} aria-hidden="true" /> : <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: color }} aria-hidden="true" />}
+        {label}
+      </span>
+    </Tooltip>
   );
 }
