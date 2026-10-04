@@ -23,6 +23,20 @@ export function AuthProvider({ children }) {
     return admin;
   }
 
+  // Sign-up returns a session of its own (customer accounts).
+  function adoptSession(token, nextUser) {
+    setToken(token);
+    setUser(nextUser);
+  }
+
+  // Re-read who is signed in — e.g. after the email address is verified.
+  async function refresh() {
+    if (!getToken()) return null;
+    const { admin } = await api.me();
+    setUser(admin);
+    return admin;
+  }
+
   async function logout() {
     try { await api.logout(); } catch { /* token may already be invalid */ }
     setToken(null);
@@ -30,7 +44,7 @@ export function AuthProvider({ children }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, logout }}>
+    <AuthContext.Provider value={{ user, loading, login, logout, adoptSession, refresh }}>
       {children}
     </AuthContext.Provider>
   );

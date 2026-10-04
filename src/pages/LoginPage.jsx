@@ -1,7 +1,8 @@
 import { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import BrandMark from '../components/BrandMark';
+import { HOME_BY_ROLE, INTERNAL_ROLES, safeNext, useIntakeConfig } from '../lib/intake';
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
@@ -9,13 +10,21 @@ export default function LoginPage() {
   const [error, setError] = useState('');
   const { login } = useAuth();
   const navigate = useNavigate();
+  const [params] = useSearchParams();
+  const config = useIntakeConfig();
+  // ?next= returns the person to where they were (e.g. a saved submission).
+  const next = safeNext(params.get('next'));
+  const withNext = path => (next ? `${path}?next=${encodeURIComponent(next)}` : path);
 
   async function handleSubmit(e) {
     e.preventDefault();
     setError('');
     try {
       const user = await login(email, password);
-      navigate({ player: '/me', staff: '/staff', analyst: '/command', reviewer: '/command' }[user.role] || '/admin');
+      // A Command login never follows a customer link, and vice versa.
+      const internal = INTERNAL_ROLES.includes(user.role);
+      const fits = next && (internal ? next.startsWith('/command') || next.startsWith('/admin') : !next.startsWith('/command') && !next.startsWith('/admin'));
+      navigate(fits ? next : HOME_BY_ROLE[user.role] || '/admin', { replace: true });
     } catch (err) {
       setError(err.message || 'Invalid email or password.');
     }
@@ -74,13 +83,20 @@ export default function LoginPage() {
             >
               Sign In
             </button>
+            {config?.enabled && (
+              <Link to={`/forgot-password${email ? `?email=${encodeURIComponent(email)}` : ''}`} className="text-xs font-bold hover:underline self-start" style={{ color: '#38bdf8' }}>
+                Forgot your password?
+              </Link>
+            )}
           </form>
 
         </div>
 
         <p className="text-center text-sm mt-6" style={{ color: '#94a3b8' }}>
           New here?{' '}
-          <Link to="/signup" className="font-bold hover:underline" style={{ color: '#38bdf8' }}>Get your player account</Link>
+          <Link to={withNext('/signup')} className="font-bold hover:underline" style={{ color: '#38bdf8' }}>
+            {config?.enabled ? 'Create an account' : 'Get your player account'}
+          </Link>
         </p>
         <p className="text-center text-xs mt-3" style={{ color: '#475569' }}>
           <Link to="/" className="hover:underline" style={{ color: '#64748b' }}>Back to homepage</Link>

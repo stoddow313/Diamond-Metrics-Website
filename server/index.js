@@ -2,7 +2,7 @@ import express from 'express';
 import { randomBytes } from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
-import { db, hashPassword, verifyPassword, newSlug, UPLOADS_DIR } from './db.js';
+import { db, hashPassword, newSlug, UPLOADS_DIR } from './db.js';
 import {
   METRICS, CATEGORIES, ATTRIBUTES, GAME_TYPES,
   VALID_METRIC_KEYS, ZERO_UNMEASURED_KEYS, heroSetForPosition, positionGroup,
@@ -12,6 +12,13 @@ import { resolveEventRoster, slugify } from './rosterLogic.js';
 import { IMPORT_KINDS, planImport, applyImport } from './importEngine.js';
 import { deletePlayers } from './playerDelete.js';
 import { findInvalidZeroEntries, excludeInvalidZeroEntries, summarizeZeroReport } from './zeroCleanup.js';
+import { makePrincipals } from './principals.js';
+import { mountCustomerAuthRoutes, makeSubmitterGuard } from './customerAuth.js';
+import { mountAuthRoutes } from './authRoutes.js';
+import { mountIntakeRoutes, mountIntakeConfigRoute, intakeEnabled } from './intakeRoutes.js';
+import { mountIntakeCommandRoutes } from './intakeCommandRoutes.js';
+import { mountTeamRoutes } from './teamRoutes.js';
+import { startIntakeProber } from './intakeMedia.js';
 import { mountCommandRoutes } from './commandRoutes.js';
 import { mountCommandMediaRoutes } from './commandMediaRoutes.js';
 import { mountCommandRadarRoutes } from './commandRadarRoutes.js';
@@ -34,7 +41,6 @@ import {
 const app = express();
 // Render (and most hosts) inject PORT; DM_API_PORT is the local-dev override.
 const PORT = process.env.PORT || process.env.DM_API_PORT || 3001;
-const SESSION_TTL_DAYS = 30;
 
 // Structured request logging (M6) sits ahead of every route.
 installProcessHandlers();
@@ -49,124 +55,14 @@ app.use('/api/uploads', express.static(UPLOADS_DIR, { maxAge: '7d', immutable: t
 app.get('/api/health', (_req, res) => res.json({ ok: true }));
 
 // ── Auth ─────────────────────────────────────────────────────────────────
-
-function createSession(adminId) {
-  const token = randomBytes(32).toString('hex');
-  db.prepare(
-    `INSERT INTO sessions (token, admin_id, expires_at)
-     VALUES (?, ?, datetime('now', '+${SESSION_TTL_DAYS} days'))`
-  ).run(token, adminId);
-  return token;
-}
-
-function internalFromToken(token) {
-  if (!token) return null;
-  return db.prepare(
-    `SELECT s.token, a.id, a.email, a.name, a.role FROM sessions s
-     JOIN admins a ON a.id = s.admin_id
-     WHERE s.token = ? AND s.expires_at > datetime('now')`
-  ).get(token) || null;
-}
-
-function requireAdmin(req, res, next) {
-  const header = req.headers.authorization || '';
-  const token = header.startsWith('Bearer ') ? header.slice(7) : null;
-  if (!token) return res.status(401).json({ error: 'Not authenticated' });
-
-  const row = internalFromToken(token);
-  if (!row) return res.status(401).json({ error: 'Session expired or invalid' });
-  // Analysts/reviewers are internal but do not manage the admin surface.
-  if (row.role !== 'admin') return res.status(403).json({ error: 'Admin role required' });
-
-  req.admin = { id: row.id, email: row.email, name: row.name, role: row.role };
-  req.sessionToken = token;
-  next();
-}
-
-// Command workspace access: any internal role (admin | analyst | reviewer).
-// Any signed-in principal, staff or player. Playback gating cares that someone
-// is signed in, not which kind — team scoping is a separate, unbuilt step.
-function currentUser(req) {
-  const header = req.headers.authorization || '';
-  const token = header.startsWith('Bearer ') ? header.slice(7) : null;
-  if (!token) return null;
-  const internal = internalFromToken(token);
-  if (internal) return { kind: 'internal', id: internal.id, role: internal.role };
-  const player = playerFromToken(token);
-  return player ? { kind: 'player', id: player.player_user_id } : null;
-}
-
-function requireInternal(req, res, next) {
-  const header = req.headers.authorization || '';
-  const token = header.startsWith('Bearer ') ? header.slice(7) : null;
-  if (!token) return res.status(401).json({ error: 'Not authenticated' });
-  const row = internalFromToken(token);
-  if (!row) return res.status(401).json({ error: 'Session expired or invalid' });
-  req.internal = { id: row.id, email: row.email, name: row.name, role: row.role };
-  req.sessionToken = token;
-  next();
-}
-
-// Player (claimed-account) sessions are stored separately from admin sessions
-// so a portal token can never reach admin routes.
-function createPlayerSession(playerUserId) {
-  const token = randomBytes(32).toString('hex');
-  db.prepare(
-    `INSERT INTO player_sessions (token, player_user_id, expires_at)
-     VALUES (?, ?, datetime('now', '+${SESSION_TTL_DAYS} days'))`
-  ).run(token, playerUserId);
-  return token;
-}
-
-function playerFromToken(token) {
-  return db.prepare(
-    `SELECT ps.token, pu.id AS player_user_id, pu.email, p.*
-     FROM player_sessions ps
-     JOIN player_users pu ON pu.id = ps.player_user_id
-     JOIN players p ON p.id = pu.player_id
-     WHERE ps.token = ? AND ps.expires_at > datetime('now')`
-  ).get(token);
-}
-
-function requirePlayer(req, res, next) {
-  const header = req.headers.authorization || '';
-  const token = header.startsWith('Bearer ') ? header.slice(7) : null;
-  if (!token) return res.status(401).json({ error: 'Not authenticated' });
-  const row = playerFromToken(token);
-  if (!row) return res.status(401).json({ error: 'Session expired or invalid' });
-  req.player = row;
-  req.sessionToken = token;
-  next();
-}
-
-// Coach/director (staff) sessions — separate table, same pattern as players.
-function createStaffSession(staffUserId) {
-  const token = randomBytes(32).toString('hex');
-  db.prepare(
-    `INSERT INTO staff_sessions (token, staff_user_id, expires_at)
-     VALUES (?, ?, datetime('now', '+${SESSION_TTL_DAYS} days'))`
-  ).run(token, staffUserId);
-  return token;
-}
-
-function staffFromToken(token) {
-  return db.prepare(
-    `SELECT ss.token, su.id AS staff_user_id, su.email, su.name
-     FROM staff_sessions ss JOIN staff_users su ON su.id = ss.staff_user_id
-     WHERE ss.token = ? AND ss.expires_at > datetime('now')`
-  ).get(token);
-}
-
-function requireStaff(req, res, next) {
-  const header = req.headers.authorization || '';
-  const token = header.startsWith('Bearer ') ? header.slice(7) : null;
-  if (!token) return res.status(401).json({ error: 'Not authenticated' });
-  const row = staffFromToken(token);
-  if (!row) return res.status(401).json({ error: 'Session expired or invalid' });
-  req.staff = row;
-  req.sessionToken = token;
-  next();
-}
+// Session lookup and route guards for every principal kind live in
+// principals.js so route modules and their tests share one definition.
+const principals = makePrincipals(db);
+const {
+  requireAdmin, currentUser, requireInternal, requireInternalRole,
+  createPlayerSession, playerFromToken, requirePlayer,
+  createStaffSession, staffFromToken, requireStaff,
+} = principals;
 
 // Permission rule (requirements §2): assignment-scoped access, enforced at
 // the API layer. Assignments are email-keyed rows in team_users /
@@ -179,74 +75,7 @@ function staffCanViewTournament(staff, tournamentId) {
   return !!db.prepare('SELECT 1 FROM tournament_users WHERE tournament_id = ? AND email = ?').get(tournamentId, staff.email);
 }
 
-// One login endpoint for all roles: admins, then players, then staff.
-app.post('/api/auth/login', (req, res) => {
-  const { email, password } = req.body || {};
-  if (!email || !password) return res.status(400).json({ error: 'Email and password are required' });
-  const normEmail = String(email).toLowerCase().trim();
-
-  const admin = db.prepare('SELECT * FROM admins WHERE email = ?').get(normEmail);
-  if (admin && verifyPassword(password, admin.password_hash)) {
-    const token = createSession(admin.id);
-    return res.json({ token, admin: { id: admin.id, email: admin.email, name: admin.name, role: admin.role || 'admin' } });
-  }
-
-  const pu = db.prepare(
-    `SELECT pu.*, p.first_name, p.last_name, p.slug FROM player_users pu
-     JOIN players p ON p.id = pu.player_id WHERE pu.email = ?`
-  ).get(normEmail);
-  if (pu && verifyPassword(password, pu.password_hash)) {
-    const token = createPlayerSession(pu.id);
-    return res.json({
-      token,
-      admin: { email: pu.email, name: `${pu.first_name} ${pu.last_name}`, role: 'player', slug: pu.slug },
-    });
-  }
-
-  const su = db.prepare('SELECT * FROM staff_users WHERE email = ?').get(normEmail);
-  if (su && verifyPassword(password, su.password_hash)) {
-    const token = createStaffSession(su.id);
-    return res.json({ token, admin: { email: su.email, name: su.name, role: 'staff' } });
-  }
-
-  res.status(401).json({ error: 'Invalid email or password' });
-});
-
-app.get('/api/auth/me', (req, res) => {
-  const header = req.headers.authorization || '';
-  const token = header.startsWith('Bearer ') ? header.slice(7) : null;
-  if (!token) return res.status(401).json({ error: 'Not authenticated' });
-
-  const adminRow = db.prepare(
-    `SELECT a.id, a.email, a.name, a.role FROM sessions s JOIN admins a ON a.id = s.admin_id
-     WHERE s.token = ? AND s.expires_at > datetime('now')`
-  ).get(token);
-  if (adminRow) return res.json({ admin: { ...adminRow, role: adminRow.role || 'admin' } });
-
-  const playerRow = playerFromToken(token);
-  if (playerRow) {
-    return res.json({
-      admin: { email: playerRow.email, name: `${playerRow.first_name} ${playerRow.last_name}`, role: 'player', slug: playerRow.slug },
-    });
-  }
-
-  const staffRow = staffFromToken(token);
-  if (staffRow) {
-    return res.json({ admin: { email: staffRow.email, name: staffRow.name, role: 'staff' } });
-  }
-  res.status(401).json({ error: 'Session expired or invalid' });
-});
-
-app.post('/api/auth/logout', (req, res) => {
-  const header = req.headers.authorization || '';
-  const token = header.startsWith('Bearer ') ? header.slice(7) : null;
-  if (token) {
-    db.prepare('DELETE FROM sessions WHERE token = ?').run(token);
-    db.prepare('DELETE FROM player_sessions WHERE token = ?').run(token);
-    db.prepare('DELETE FROM staff_sessions WHERE token = ?').run(token);
-  }
-  res.json({ ok: true });
-});
+mountAuthRoutes(app, { db, principals });
 
 // ── Metric catalog (public — the profile renderer needs it too) ─────────
 
@@ -1797,6 +1626,19 @@ mountCommandReviewRoutes(app, { db, requireInternal });
 mountCommandOpsRoutes(app, { db, requireInternal, createJob });
 mountScorebookRoutes(app, { db, requireInternal });
 
+// Customer footage intake (docs/COMMAND_TDR.md §8). Will's queue and the
+// internal team page are always mounted (internal only); the customer-facing
+// half — self-serve sign-up and the intake API — ships dark in production
+// until DM_INTAKE_ENABLED=1 (legal wording and email are launch blockers).
+mountIntakeCommandRoutes(app, { db, requireInternal, requireInternalRole, createJob });
+mountTeamRoutes(app, { db, requireInternalRole });
+mountIntakeConfigRoute(app);
+if (intakeEnabled()) {
+  const { requireSubmitter } = makeSubmitterGuard(db, principals);
+  mountCustomerAuthRoutes(app, { db, principals, requireSubmitter });
+  mountIntakeRoutes(app, { db, requireSubmitter });
+}
+
 // Field Live (M7). Off unless DM_LIVE_ENABLED is set, so this ships dark and the
 // relay simply gets 404s until someone turns it on deliberately.
 if (process.env.DM_LIVE_ENABLED === '1') {
@@ -1809,7 +1651,12 @@ if (process.env.DM_LIVE_ENABLED === '1') {
 }
 // Media processing: inline worker in dev / single-service deployments;
 // DM_INLINE_WORKER=0 turns it off when the dedicated Render worker runs.
-if (process.env.DM_INLINE_WORKER !== '0') startInlineWorker(db);
+if (process.env.DM_INLINE_WORKER !== '0') {
+  startInlineWorker(db);
+  // Technical check of customer uploads (probe only; the proxy is made when a
+  // file becomes a Command feed).
+  startIntakeProber(db);
+}
 
 // Nightly SQLite snapshot to the storage adapter (DM_BACKUPS=0 disables).
 startBackupScheduler(db);

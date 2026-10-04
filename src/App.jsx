@@ -1,5 +1,6 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { AuthProvider, useAuth } from './context/AuthContext';
+import { HOME_BY_ROLE, INTERNAL_ROLES, SUBMITTER_ROLES } from './lib/intake';
 import LandingPage from './pages/LandingPage';
 import HowItWorksPage from './pages/HowItWorksPage';
 import SampleProfilePage from './pages/SampleProfilePage';
@@ -8,7 +9,6 @@ import ProgramsPage from './pages/ProgramsPage';
 import LoginPage from './pages/LoginPage';
 import ClaimPage from './pages/ClaimPage';
 import ClaimStaffPage from './pages/ClaimStaffPage';
-import SignupInfoPage from './pages/SignupInfoPage';
 import { StaffLayout, StaffHomePage, StaffTeamPage, StaffTournamentPage } from './pages/staff/StaffPages';
 import { CommandLayout, ProductionQueuePage, NewJobPage, JobDetailPage } from './pages/command/CommandPages';
 import FeedViewerPage from './pages/command/FeedViewerPage';
@@ -18,6 +18,10 @@ import ReviewPage from './pages/command/ReviewPage';
 import OpsPage from './pages/command/OpsPage';
 import BulkJobsPage from './pages/command/BulkJobsPage';
 import ScorebookPage from './pages/command/ScorebookPage';
+import IntakeQueuePage from './pages/command/IntakeQueuePage';
+import IntakeRecordPage from './pages/command/IntakeRecordPage';
+import { IntakeDeletionsPage, IntakeDeletionRequestPage } from './pages/command/IntakeDeletionsPage';
+import TeamPage from './pages/command/TeamPage';
 import AdminLayout from './components/admin/AdminLayout';
 import AdminPlayersPage from './pages/admin/AdminPlayersPage';
 import AdminPlayerEditorPage from './pages/admin/AdminPlayerEditorPage';
@@ -35,8 +39,10 @@ import BlogPage from './pages/BlogPage';
 import BaseballFilmingGuidePage from './pages/BaseballFilmingGuidePage';
 import YouthBaseballVideoAnalysisPage from './pages/YouthBaseballVideoAnalysisPage';
 import BaseballMetricsAges1318Page from './pages/BaseballMetricsAges1318Page';
-
-const HOME_BY_ROLE = { admin: '/admin', analyst: '/command', reviewer: '/command', player: '/me', staff: '/staff' };
+import { IntakeShell } from './pages/intake/ui';
+import { SubmitStartPage, SubmitWizardPage, InternalSubmitterNotice } from './pages/intake/SubmitPages';
+import { MySubmissionsPage, SubmissionStatusPage } from './pages/intake/SubmissionPages';
+import { SignupRoute, ForgotPasswordPage, ResetPasswordPage, VerifyEmailPage, AccountPage } from './pages/intake/AccountPages';
 
 function RoleRoute({ role, children }) {
   const { user, loading } = useAuth();
@@ -46,14 +52,25 @@ function RoleRoute({ role, children }) {
   return children;
 }
 
-// Internal-only surfaces (Command): any of admin | analyst | reviewer.
-function InternalRoute({ children }) {
+// Internal-only surfaces (Command): admin | analyst | reviewer | fulfillment.
+// Pass `roles` to narrow further (the server enforces the same rules).
+function InternalRoute({ children, roles = INTERNAL_ROLES }) {
   const { user, loading } = useAuth();
   if (loading) return null;
   if (!user) return <Navigate to="/login" replace />;
-  if (!['admin', 'analyst', 'reviewer'].includes(user.role)) {
-    return <Navigate to={HOME_BY_ROLE[user.role] || '/login'} replace />;
-  }
+  if (!INTERNAL_ROLES.includes(user.role)) return <Navigate to={HOME_BY_ROLE[user.role] || '/login'} replace />;
+  if (!roles.includes(user.role)) return <Navigate to="/command" replace />;
+  return children;
+}
+
+// Footage submitters: a customer account, or a coach/player login (each
+// resolves to one customer contact). Signing in returns to the same page.
+function SubmitterRoute({ children }) {
+  const { user, loading } = useAuth();
+  const location = useLocation();
+  if (loading) return null;
+  if (!user) return <Navigate to={`/login?next=${encodeURIComponent(location.pathname + location.search)}`} replace />;
+  if (!SUBMITTER_ROLES.includes(user.role)) return <InternalSubmitterNotice />;
   return children;
 }
 
@@ -70,7 +87,10 @@ function AppRoutes() {
       <Route path="/blog/why-youth-baseball-video-analysis-matters"element={<YouthBaseballVideoAnalysisPage />} />
       <Route path="/blog/baseball-metrics-ages-13-18" element={<BaseballMetricsAges1318Page />} />
       <Route path="/login" element={<LoginPage />} />
-      <Route path="/signup" element={<SignupInfoPage />} />
+      <Route path="/signup" element={<SignupRoute />} />
+      <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+      <Route path="/account/reset" element={<ResetPasswordPage />} />
+      <Route path="/account/verify" element={<VerifyEmailPage />} />
       <Route path="/claim/:token" element={<ClaimPage />} />
       <Route path="/claim-staff/:token" element={<ClaimStaffPage />} />
       <Route path="/p/:slug" element={<PublicProfilePage />} />
@@ -78,6 +98,14 @@ function AppRoutes() {
       <Route path="/teams/:slug" element={<TeamDashboardPage />} />
       <Route path="/tournaments/:slug" element={<TournamentDashboardPage />} />
       <Route path="/me" element={<RoleRoute role="player"><PublicProfilePage portal /></RoleRoute>} />
+      {/* Customer footage intake (docs/COMMAND_TDR.md §8) */}
+      <Route element={<IntakeShell />}>
+        <Route path="/submit" element={<SubmitStartPage />} />
+        <Route path="/submit/:publicId" element={<SubmitterRoute><SubmitWizardPage /></SubmitterRoute>} />
+        <Route path="/submissions" element={<SubmitterRoute><MySubmissionsPage /></SubmitterRoute>} />
+        <Route path="/submissions/:publicId" element={<SubmitterRoute><SubmissionStatusPage /></SubmitterRoute>} />
+        <Route path="/account" element={<SubmitterRoute><AccountPage /></SubmitterRoute>} />
+      </Route>
       <Route path="/staff" element={<RoleRoute role="staff"><StaffLayout /></RoleRoute>}>
         <Route index element={<StaffHomePage />} />
         <Route path="teams/:teamId" element={<StaffTeamPage />} />
@@ -94,6 +122,11 @@ function AppRoutes() {
         <Route path="jobs/:jobId/review" element={<ReviewPage />} />
         <Route path="bulk" element={<BulkJobsPage />} />
         <Route path="ops" element={<OpsPage />} />
+        <Route path="intake" element={<IntakeQueuePage />} />
+        <Route path="intake/deletions" element={<IntakeDeletionsPage />} />
+        <Route path="intake/deletions/:requestId" element={<IntakeDeletionRequestPage />} />
+        <Route path="intake/:id" element={<IntakeRecordPage />} />
+        <Route path="team" element={<InternalRoute roles={['admin']}><TeamPage /></InternalRoute>} />
       </Route>
       <Route path="/admin" element={<RoleRoute role="admin"><AdminLayout /></RoleRoute>}>
         <Route index element={<AdminPlayersPage />} />

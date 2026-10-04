@@ -1,46 +1,23 @@
 // Command M3 routes: radar CSV import (idempotent, raw preserved), manual
 // readings (owner directive field set), classification queue, and live
 // per-player rollup previews via the TDR §5a mapping.
-import { createHash } from 'node:crypto';
-import { parseRadarCsv, classifyReading, PITCH_TYPES, suggestMatches } from './radarImport.js';
+import { classifyReading, PITCH_TYPES, suggestMatches, importRadarCsv } from './radarImport.js';
 import { velocityRollup } from './metricRelease.js';
 import { commandRoster } from './commandRoster.js';
 
 export function mountCommandRadarRoutes(app, { db, requireInternal }) {
-  const audit = (jobId, actorId, action, note) =>
-    db.prepare("INSERT INTO cmd_review_actions (target_table, target_id, actor_id, action, note) VALUES ('cmd_jobs', ?, ?, ?, ?)")
-      .run(jobId, actorId, action, note);
-
   app.post('/api/command/jobs/:id/radar-imports', requireInternal, (req, res) => {
     const job = db.prepare('SELECT id FROM cmd_jobs WHERE id = ?').get(req.params.id);
     if (!job) return res.status(404).json({ error: 'Job not found' });
     const { filename = 'radar.csv', content } = req.body || {};
     if (!content || typeof content !== 'string') return res.status(400).json({ error: 'content (CSV text) is required' });
 
-    const hash = createHash('sha256').update(content).digest('hex');
-    const existing = db.prepare('SELECT id, row_count FROM cmd_radar_imports WHERE job_id = ? AND file_hash = ?').get(job.id, hash);
-    if (existing) return res.json({ import_id: existing.id, duplicate: true, rows: existing.row_count });
-
-    const { rows, header_detected } = parseRadarCsv(content);
-    if (!rows.length) return res.status(400).json({ error: 'No data rows found in the file' });
-
-    const create = db.transaction(() => {
-      const importId = db.prepare(
-        'INSERT INTO cmd_radar_imports (job_id, filename, file_hash, raw_content, row_count, created_by) VALUES (?, ?, ?, ?, ?, ?)'
-      ).run(job.id, String(filename), hash, content, rows.length, req.internal.id).lastInsertRowid;
-      const ins = db.prepare(
-        `INSERT INTO cmd_radar_readings (job_id, source, import_id, row_index, velocity, source_timestamp, raw_row, status, note, created_by)
-         VALUES (?, 'csv_import', ?, ?, ?, ?, ?, ?, ?, ?)`
-      );
-      for (const r of rows) {
-        ins.run(job.id, importId, r.row_index, r.velocity, r.source_timestamp, r.raw_row,
-          r.parse_ok ? 'unmatched' : 'invalid', r.parse_ok ? '' : 'no readable velocity in row', req.internal.id);
-      }
-      audit(job.id, req.internal.id, 'radar_import', `${filename} — ${rows.length} rows (${rows.filter(r => r.parse_ok).length} readable)`);
-      return importId;
-    });
-    const importId = create();
-    res.status(201).json({ import_id: importId, duplicate: false, rows: rows.length, readable: rows.filter(r => r.parse_ok).length, header_detected });
+    try {
+      const r = importRadarCsv(db, job.id, { filename, content }, req.internal.id);
+      res.status(r.duplicate ? 200 : 201).json(r);
+    } catch (err) {
+      res.status(err.status || 500).json({ error: err.message });
+    }
   });
 
   // Manual entry — directive fields: player, velocity, pitch/exit, pitch

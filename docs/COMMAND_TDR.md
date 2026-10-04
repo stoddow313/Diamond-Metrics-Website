@@ -167,10 +167,60 @@ Pitch location and heatmaps, 150+ standard-stat parity, splits, box-score
 outputs for opponents, automatic game-over, and any suggestion that changes a
 result without the scorer.
 
+## 8. Customer footage submission (decision record, 2026-10-01)
+
+**Source:** *Customer Footage Submission Developer Requirements* (cited §n in
+the code). **Built:** the §11 P0 scope — Submit Footage CTA, sign in / create
+account, guided intake, consent records, resumable upload, processing states,
+customer confirmation and status, Will's queue, identity candidates, duplicate
+warnings, create/link Command job, audit log. The §12 acceptance scenarios are
+`server/footageIntakeAcceptance.test.js` (§12.1–§12.7). It is a CRM-lite
+layer on the existing records, not a second database: every submission ends in
+the same players, teams, orders, jobs, feeds and audit trail Command uses.
+
+### 8.1 Decisions
+
+| Area | Decision | Why |
+|---|---|---|
+| Switch | `DM_INTAKE_ENABLED` (`1` on, `0` off; default on outside production, **off in production until set**). Customer routes and self-serve sign-up mount only when on; Command's intake, Team and `/api/intake/config` always mount, and every CTA reads the config. | Ships dark: the legal wording and email provider must be in place before customers see it. |
+| One person, one identity | `customer_accounts` keyed by normalized email. A coach-portal or player-portal login resolves to the same contact by email (provisioned, no second password). Internal `admins` never submit. | §1 "one customer record"; §8 never a second contact without review. |
+| Will's access | New internal role **`fulfillment`**: reads Command, works the intake queue, creates/links jobs; cannot approve or release, execute deletions or clear escalations. Admins create internal logins on **Command → Team**; the default owner of new submissions is an admin setting. | §2 least privilege; the owner gave no email for Will, so his login is created in-product. |
+| Drafts | A server-side draft (form JSON + step) exists from the first screen after sign-in, autosaves, and survives sign-out, refresh and an interrupted upload. `/submit` keeps the source page, package, player and order from the link. | §3 steps 1–3, §4 "save and resume". |
+| Packages | Rookie; Pro (accepted and fulfilled as Rookie, with a customer note and a fulfillment note, until its modules ship); Hall of Fame (an inquiry — no upload, sales follow-up); Custom (free text that Will scopes). | Owner decision 2026-10-01; §7 "do not promise advanced results"; §5 "do not invent a custom workflow". |
+| Payment | Submit first; Will confirms payment on the record. Optional receipt/order number; a `payment unconfirmed` flag on the queue. No checkout here. | Owner decision 2026-10-01; §11 defers checkout. |
+| Rights and consent | `intake_rights` is immutable (triggers block UPDATE and DELETE). Each acceptance stores the policy version, a SHA-256 of the exact wording served, `pending_legal`, the affirmed attestation, permitted uses, contact permission, retention days and deadline, restrictions, the athletes covered, the filming-guide version, actor, IP and user agent. Changing role requires accepting again; revocation appends a `revoke` row. | §4 step 4, §5, §10 "versioned data, not a static checkbox". |
+| Upload | The Command direct-to-R2 multipart path through one shared client engine (50 MB parts, retries, stall timeout, ETag check, labelled stages). Resume by choosing the same file (fingerprint = SHA-256 of the first MB + size); completed parts are never re-sent. A repeat of the same file is refused in the submission and pointed out across the customer's submissions; another customer's copy is visible to staff only. | §6 reliability; §8 file-hash duplicates. |
+| Technical check | Probe only on landing (`server/intakeMedia.js`, three attempts; broken files fail at once). The customer sees plain findings (resolution, frame rate, orientation, short clip, missing side angle for Pro); diagnostics stay internal. A file found unreadable after submitting moves the request to *Needs customer action* so the customer can replace it. | §6 technical validation, §7 capture QA. |
+| Hand-off | Will creates or links the job. Each video becomes a `cmd_video_feeds` row on the **same stored object** (no copy) carrying submission, file, rights record, deletion date and uploader, then runs the normal probe → proxy pipeline. An identical live feed is reused; a deleted or unfinished one never is. Files added after linking attach on request. Named athletes join the job roster (`cmd_job_participants`); guests become job placeholders; a coach gains a team link, never athlete ownership; a parent's, guardian's or adult athlete's confirmed link becomes "my athletes". | §9 one source of truth; §2 coach limits. |
+| Identity | Candidates scored on name, short forms, one-letter typos, birth or grad year, and roster for the game date, with confidence and reasons. Nothing links automatically; a new player when a reasonable match exists needs a written reason; new players are private. | §8 identity resolution, "no automatic merge for ambiguous minors". |
+| Duplicates | Contact (verified email, normalized phone, name), game (same team ± 1 day, opponent/event; the opponent's job for the same game is flagged, not linkable), other submissions of the same game, and file hash. | §8 duplicate prevention rules. |
+| Status | The stored intake stage plus a fulfillment stage derived from the job's two release tracks, so the queue can never disagree with Command. The customer sees received → checking → analysis → metrics ready, with the full game record as its own line. | §3 step 7, §9 metrics before box score, §12.6. |
+| Customer view | An allowlist: no internal notes, match confidence, diagnostics, staff names, payment state or anyone else's data. Customer-visible events are separate from internal notes on one immutable timeline. | §10. |
+| Email | The Resend adapter. Without a provider, account links are logged in non-production only, and staff may mark an email verified with a recorded note (audited). | Owner decision 2026-10-01. |
+| Audit | `intake_events` is append-only (DELETE blocked; the only permitted UPDATE redacts what a customer wrote when their account is closed). | §10 immutable event log. |
+| Deletion | Request (customer or staff) → inventory of the account, submissions, files, Command feeds, derived renditions, jobs, evidence, public profiles and retention exceptions → an admin executes the chosen actions → each step's outcome is recorded. | §10 controlled deletion workflow, §12.7. |
+| Retention | 180 days by default (`DM_INTAKE_RETENTION_DAYS`), an explicit deletion date on every file and feed. Nothing deletes automatically in this release: files past their date are listed for a request. The R2 lifecycle on `originals/` (730 days) is the backstop. | §6 retention; deleting customer media is a decision a person makes. |
+| Test isolation | A test account's submissions are synthetic end to end; a test submission never joins a real job (or the reverse); notifications are suppressed. | §9 synthetic data. |
+| Abuse limits | In-memory fixed windows on sign-in, sign-up, verification, password reset, drafts and writes (`DM_RATE_LIMITS=0` disables, for tests). | Self-serve sign-up is public. |
+
+### 8.2 Deferred (§11 P1/P2)
+
+Email provider activation, request-for-information templates, households and
+team management, staff dashboards and reporting, configurable turnaround copy,
+automatic retention deletion, self-serve checkout, external CRM sync, and
+sharing evidence clips with customers (clips stay internal per 2026-08-20).
+
 ## 6. Decision log
 
 | Date | Decision | Status |
 |---|---|---|
+| 2026-10-01 | **Customer footage submission (P0) built behind `DM_INTAKE_ENABLED`** — accounts, guided intake, consent records, resumable upload, technical check, status, Will's queue, identity and duplicate signals, create/link job, deletion workflow (§8) | Shipped dark — enable after the legal text and email provider |
+| 2026-10-01 | Packages: Rookie, Pro (fulfilled as Rookie with notes until its modules ship), Hall of Fame (inquiry, no upload), Custom (scoped by staff) | Confirmed by owner |
+| 2026-10-01 | Payment: submit first; fulfillment confirms payment; optional order reference; unconfirmed payment is a queue flag | Confirmed by owner |
+| 2026-10-01 | Email: Resend adapter; until it is live, staff may verify an email manually with a recorded note | Confirmed by owner |
+| 2026-10-01 | New internal role `fulfillment` for Will; admins create internal logins on Command → Team; default owner of new submissions is an admin setting | Confirmed by owner |
+| 2026-10-01 | Uploaded files stay on the submission until hand-off, then become Command feeds on the same stored object; deleted or unfinished feeds are never reused | Decided |
+| 2026-10-01 | Footage terms ship as versioned draft wording (`2026-10-draft-1`, `pending_legal`); every acceptance is identifiable once legal approves the final text | **Pending legal** |
 | 2026-08-20 | Analysts/reviewers are roles on the internal `admins` table; one person may review+publish in V1 | Confirmed by owner |
 | 2026-08-20 | `steal_time` added as a new public metric key (profiles Running tab); radar pitch velocity publishes to existing `max_velo`/`avg_velo` | Confirmed by owner |
 | 2026-08-20 | Phase 1 publishes numbers only; evidence clips stay internal/role-gated | Confirmed by owner |

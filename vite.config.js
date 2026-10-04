@@ -10,7 +10,8 @@ export default defineConfig({
     // Honor an assigned port (preview harness / busy-port fallback); 5173 default.
     port: Number(process.env.PORT) || 5173,
     proxy: {
-      '/api': 'http://localhost:3001',
+      // DM_API_PROXY points the dev site at an API on another port (when 3001 is taken).
+      '/api': process.env.DM_API_PROXY || 'http://localhost:3001',
     },
   },
 })
