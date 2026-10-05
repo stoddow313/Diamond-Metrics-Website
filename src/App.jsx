@@ -36,6 +36,8 @@ import BaseballFilmingGuidePage from './pages/BaseballFilmingGuidePage';
 import YouthBaseballVideoAnalysisPage from './pages/YouthBaseballVideoAnalysisPage';
 import BaseballMetricsAges1318Page from './pages/BaseballMetricsAges1318Page';
 import FindYourPlayerPage from './pages/FindYourPlayerPage';
+import PlayerIntakeCompletePage from './pages/PlayerIntakeCompletePage';
+import PrivacyPage from './pages/PrivacyPage';
 
 const HOME_BY_ROLE = { admin: '/admin', analyst: '/command', reviewer: '/command', player: '/me', staff: '/staff' };
 
@@ -73,6 +75,8 @@ function AppRoutes() {
       <Route path="/login" element={<LoginPage />} />
       <Route path="/signup" element={<SignupInfoPage />} />
       <Route path="/find-your-player" element={<FindYourPlayerPage />} />
+      <Route path="/find-your-player/complete" element={<PlayerIntakeCompletePage />} />
+      <Route path="/privacy" element={<PrivacyPage />} />
       <Route path="/claim/:token" element={<ClaimPage />} />
       <Route path="/claim-staff/:token" element={<ClaimStaffPage />} />
       <Route path="/p/:slug" element={<PublicProfilePage />} />
