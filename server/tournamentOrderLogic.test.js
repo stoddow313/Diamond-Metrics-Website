@@ -4,7 +4,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   PACKAGES, PACKAGE_KEYS, TOURNAMENTS, validateCheckout, validateDetails, keyMode, choosePrice,
-  parsePrices, priceProblem, PRICE_VARIABLES, newOrderId, packageLabel, tournamentLabel,
+  parseTestPrices, priceSettings, priceProblem, missingPriceProblem, LIVE_PRICE_VARIABLES,
+  newOrderId, packageLabel, tournamentLabel,
 } from './tournamentOrderLogic.js';
 
 const VALID = {
@@ -81,40 +82,101 @@ test('the key mode comes from the key prefix only', () => {
   for (const k of ['', undefined, null, 'pk_test_abc', 'sk_test', 'whsec_abc', 'live_sk_abc']) assert.equal(keyMode(k), null, String(k));
 });
 
-test('a live key charges only STRIPE_LIVE_PRICES; a test key only STRIPE_TEST_PRICES', () => {
-  assert.deepEqual(PRICE_VARIABLES, { live: 'STRIPE_LIVE_PRICES', test: 'STRIPE_TEST_PRICES' });
-  const live = { individual_basic: 'price_LiveA', individual_pro: 'price_LiveB', tournament_basic: 'price_LiveC', tournament_pro: 'price_LiveD' };
+const TEST_MAP = JSON.stringify({ individual_basic: 'price_TestA', individual_pro: 'price_TestB', tournament_basic: 'price_TestC', tournament_pro: 'price_TestD' });
+const LIVE_ENV = {
+  STRIPE_LIVE_PRICE_INDIVIDUAL_BASIC: 'price_LiveA', STRIPE_LIVE_PRICE_INDIVIDUAL_PRO: 'price_LiveB',
+  STRIPE_LIVE_PRICE_TOURNAMENT_BASIC: 'price_LiveC', STRIPE_LIVE_PRICE_TOURNAMENT_PRO: 'price_LiveD',
+};
+
+test('production’s four live Prices are one named setting each', () => {
+  assert.deepEqual(LIVE_PRICE_VARIABLES, {
+    individual_basic: 'STRIPE_LIVE_PRICE_INDIVIDUAL_BASIC', individual_pro: 'STRIPE_LIVE_PRICE_INDIVIDUAL_PRO',
+    tournament_basic: 'STRIPE_LIVE_PRICE_TOURNAMENT_BASIC', tournament_pro: 'STRIPE_LIVE_PRICE_TOURNAMENT_PRO',
+  });
+  for (const [key, pkg] of Object.entries(PACKAGES)) assert.deepEqual(Object.keys(pkg).sort(), ['amount', 'label'], `${key}: no Price in code`);
+});
+
+test('the key decides the mode: a live key reads only the live settings, a test key only the test map', () => {
+  const live = priceSettings({ STRIPE_SECRET_KEY: 'sk_live_x', ...LIVE_ENV });
+  assert.deepEqual(live, {
+    mode: 'live', source: 'STRIPE_LIVE_PRICE_*', mismatch: '', missing: [], problems: {},
+    prices: { individual_basic: 'price_LiveA', individual_pro: 'price_LiveB', tournament_basic: 'price_LiveC', tournament_pro: 'price_LiveD' },
+  });
+  assert.deepEqual(priceSettings({ STRIPE_SECRET_KEY: 'rk_live_x', ...LIVE_ENV }).prices, live.prices, 'a restricted live key too');
+  const test_ = priceSettings({ STRIPE_SECRET_KEY: 'sk_test_x', STRIPE_TEST_PRICES: TEST_MAP });
+  assert.equal(test_.mode, 'test');
+  assert.equal(test_.source, 'STRIPE_TEST_PRICES');
+  assert.equal(test_.prices.tournament_pro, 'price_TestD');
   for (const key of PACKAGE_KEYS) {
-    assert.deepEqual(choosePrice(key, { mode: 'live', prices: live }), { priceId: live[key] }, `${key}: the map the caller read for the key`);
+    assert.deepEqual(choosePrice(key, live), { priceId: live.prices[key] });
+    assert.deepEqual(choosePrice(key, test_), { priceId: test_.prices[key] });
   }
-  assert.deepEqual(choosePrice('tournament_pro', { mode: 'live', prices: {} }), { error: 'price_missing' }, 'no map: no live price, and no fallback in code');
-  assert.deepEqual(choosePrice('tournament_pro', { mode: 'test', prices: { individual_basic: 'price_TestA' } }), { error: 'price_missing' });
-  assert.deepEqual(choosePrice('tournament_pro', { mode: 'test', prices: { tournament_pro: 'prod_NotAPrice' } }), { error: 'price_missing' });
-  assert.deepEqual(choosePrice('tournament_pro', { mode: null, prices: live }), { error: 'not_configured' });
-  assert.deepEqual(choosePrice('tournament_pro', { mode: 'constructor', prices: live }), { error: 'not_configured' });
-  assert.deepEqual(choosePrice('tournament_pro', {}), { error: 'not_configured' });
-  assert.deepEqual(choosePrice('gold', { mode: 'live', prices: live }), { error: 'unknown_package' });
+  assert.deepEqual(priceSettings({ ...LIVE_ENV, STRIPE_TEST_PRICES: TEST_MAP }), {
+    mode: null, source: null, prices: {}, missing: [], problems: {}, mismatch: '',
+  }, 'no key: nothing is read');
+  assert.deepEqual(choosePrice('tournament_pro', priceSettings({ STRIPE_SECRET_KEY: 'pk_live_x', ...LIVE_ENV })), { error: 'not_configured' }, 'a publishable key is not a secret key');
+  assert.deepEqual(choosePrice('gold', live), { error: 'unknown_package' });
+  assert.deepEqual(choosePrice('constructor', live), { error: 'unknown_package' });
 });
 
-test('no Stripe Price is written into the package rules', () => {
-  for (const [key, pkg] of Object.entries(PACKAGES)) assert.deepEqual(Object.keys(pkg).sort(), ['amount', 'label'], key);
+test('a live key with test Prices, or a test key with live Prices, is a mismatch that names both', () => {
+  const liveWithTest = priceSettings({ STRIPE_SECRET_KEY: 'sk_live_x', ...LIVE_ENV, STRIPE_TEST_PRICES: TEST_MAP });
+  assert.equal(liveWithTest.mismatch, 'STRIPE_SECRET_KEY is a live key, but STRIPE_TEST_PRICES is set: a live key never charges test Prices. '
+    + 'Remove STRIPE_TEST_PRICES; live Prices come from the four STRIPE_LIVE_PRICE_* settings.');
+  assert.deepEqual(liveWithTest.prices, {}, 'nothing is charged, not even the live settings beside it');
+  const testWithLive = priceSettings({ STRIPE_SECRET_KEY: 'sk_test_x', STRIPE_TEST_PRICES: TEST_MAP, STRIPE_LIVE_PRICE_TOURNAMENT_PRO: 'price_LiveD' });
+  assert.equal(testWithLive.mismatch, 'STRIPE_SECRET_KEY is a test key, but STRIPE_LIVE_PRICE_TOURNAMENT_PRO is set: a test key never charges live Prices. '
+    + 'Remove it; test Prices come from STRIPE_TEST_PRICES.');
+  assert.deepEqual(testWithLive.prices, {});
+  const testWithAllLive = priceSettings({ STRIPE_SECRET_KEY: 'rk_test_x', ...LIVE_ENV });
+  assert.match(testWithAllLive.mismatch, /^STRIPE_SECRET_KEY is a test key, but STRIPE_LIVE_PRICE_INDIVIDUAL_BASIC, STRIPE_LIVE_PRICE_INDIVIDUAL_PRO, STRIPE_LIVE_PRICE_TOURNAMENT_BASIC, STRIPE_LIVE_PRICE_TOURNAMENT_PRO are set: .* Remove them;/);
+  for (const settings of [liveWithTest, testWithLive, testWithAllLive]) {
+    for (const key of PACKAGE_KEYS) assert.deepEqual(choosePrice(key, settings), { error: 'mismatch' }, `${key} refused`);
+    assert.ok(!/price_(Live|Test)/.test(settings.mismatch), 'the mismatch names settings, never values');
+  }
+  assert.equal(priceSettings({ STRIPE_SECRET_KEY: 'sk_test_x', STRIPE_TEST_PRICES: TEST_MAP, STRIPE_LIVE_PRICE_TOURNAMENT_PRO: '  ' }).mismatch, '', 'a blank setting is not set');
 });
 
-test('a Price map is parsed without ever echoing a value, and names its variable', () => {
+test('a live setting that is missing, a product ID or not a Price ID refuses its package by name', () => {
+  const settings = priceSettings({
+    STRIPE_SECRET_KEY: 'sk_live_x', STRIPE_LIVE_PRICE_INDIVIDUAL_BASIC: ' price_LiveA\n',
+    STRIPE_LIVE_PRICE_INDIVIDUAL_PRO: 'prod_SomeProduct', STRIPE_LIVE_PRICE_TOURNAMENT_BASIC: 'Tournament Basic',
+  });
+  assert.deepEqual(settings.prices, { individual_basic: 'price_LiveA' }, 'pasted spaces are trimmed');
+  assert.deepEqual(settings.missing, ['individual_pro', 'tournament_basic', 'tournament_pro']);
+  assert.deepEqual(settings.problems, {
+    individual_pro: 'STRIPE_LIVE_PRICE_INDIVIDUAL_PRO holds a product ID (prod_…), not the product\'s Price ID (price_…)',
+    tournament_basic: 'STRIPE_LIVE_PRICE_TOURNAMENT_BASIC is not a Price ID (price_…)',
+    tournament_pro: 'STRIPE_LIVE_PRICE_TOURNAMENT_PRO is not set',
+  });
+  assert.deepEqual(choosePrice('individual_basic', settings), { priceId: 'price_LiveA' });
+  assert.deepEqual(choosePrice('tournament_pro', settings), { error: 'price_missing' });
+  assert.ok(!JSON.stringify(settings.problems).includes('prod_SomeProduct'), 'never echoed');
+});
+
+test('the test price map is parsed as before, without ever echoing a value', () => {
   const full = JSON.stringify({ individual_basic: 'price_A1', individual_pro: 'price_B2', tournament_basic: 'price_C3', tournament_pro: 'price_D4' });
-  for (const variable of ['STRIPE_LIVE_PRICES', 'STRIPE_TEST_PRICES']) {
-    assert.deepEqual(parsePrices(full, variable), {
-      prices: { individual_basic: 'price_A1', individual_pro: 'price_B2', tournament_basic: 'price_C3', tournament_pro: 'price_D4' },
-      missing: [], problem: '',
-    });
-    assert.equal(parsePrices('', variable).problem, `${variable} is not set`);
-    assert.equal(parsePrices('{not json', variable).problem, `${variable} is not a JSON object`);
-    assert.equal(parsePrices('["price_A1"]', variable).problem, `${variable} is not a JSON object`);
-  }
-  const partial = parsePrices(JSON.stringify({ individual_basic: 'price_A1', tournament_pro: 'prod_SECRETISH' }), 'STRIPE_LIVE_PRICES');
+  assert.deepEqual(parseTestPrices(full), {
+    prices: { individual_basic: 'price_A1', individual_pro: 'price_B2', tournament_basic: 'price_C3', tournament_pro: 'price_D4' },
+    missing: [], problem: '', problems: {},
+  });
+  assert.equal(parseTestPrices('').problem, 'STRIPE_TEST_PRICES is not set');
+  assert.equal(parseTestPrices('{not json').problem, 'STRIPE_TEST_PRICES is not a JSON object');
+  assert.equal(parseTestPrices('["price_A1"]').problems.tournament_pro, 'STRIPE_TEST_PRICES is not a JSON object');
+  const partial = parseTestPrices(JSON.stringify({ individual_basic: 'price_A1', tournament_pro: 'prod_SECRETISH' }));
   assert.deepEqual(partial.missing, ['individual_pro', 'tournament_basic', 'tournament_pro']);
-  assert.equal(partial.problem, 'STRIPE_LIVE_PRICES has no price_ id for individual_pro, tournament_basic, tournament_pro');
-  assert.ok(!partial.problem.includes('prod_SECRETISH') && !partial.problem.includes('price_A1'));
+  assert.equal(partial.problem, 'STRIPE_TEST_PRICES has no price_ id for individual_pro, tournament_basic, tournament_pro');
+  assert.equal(partial.problems.tournament_pro, 'STRIPE_TEST_PRICES has no price_ id for tournament_pro');
+  assert.ok(!JSON.stringify(partial).includes('prod_SECRETISH'));
+});
+
+test('Stripe’s answer for a Price of the other mode is named as a mode mismatch', () => {
+  assert.equal(missingPriceProblem("No such price: 'price_X'; a similar object exists in test mode, but a live mode key was used to make this request.", 'live'),
+    'is a test-mode Price, but STRIPE_SECRET_KEY is a live key');
+  assert.equal(missingPriceProblem("No such price: 'price_X'; a similar object exists in live mode, but a test mode key was used to make this request.", 'test'),
+    'is a live-mode Price, but STRIPE_SECRET_KEY is a test key');
+  assert.equal(missingPriceProblem("No such price: 'price_X'", 'live'), 'was not found in Stripe with this live key');
+  assert.equal(missingPriceProblem(undefined, 'test'), 'was not found in Stripe with this test key');
 });
 
 test('a Price is fit to charge only when it is the card’s amount, once, in US dollars', () => {

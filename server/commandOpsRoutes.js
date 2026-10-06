@@ -75,7 +75,7 @@ export function mountCommandOpsRoutes(app, { db, requireInternal, createJob }) {
   });
 
   // The four tournament packages' Stripe Prices as Stripe has them: run it
-  // after setting or changing STRIPE_LIVE_PRICES, before a parent pays.
+  // after setting or changing a STRIPE_LIVE_PRICE_*, before a parent pays.
   app.post('/api/command/stripe/prices/check', requireAdminRole, async (_req, res) => {
     res.json({ check: await checkPrices() });
   });

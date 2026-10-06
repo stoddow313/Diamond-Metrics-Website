@@ -33,6 +33,7 @@ import { mountTournamentCheckoutRoutes } from './tournamentCheckoutRoutes.js';
 import { mountStripeWebhookRoutes } from './stripeWebhookRoutes.js';
 import { mountPostPurchaseRoutes } from './postPurchaseRoutes.js';
 import { mountTournamentOrderCommandRoutes } from './tournamentOrderCommandRoutes.js';
+import { checkStripeAtStartup } from './stripeConfig.js';
 import { makeProber } from './liveProbe.js';
 import { startBackupScheduler } from './backup.js';
 import { requestLogger, errorHandler, installProcessHandlers, log, ENV } from './observability.js';
@@ -1699,4 +1700,7 @@ app.listen(PORT, err => {
     process.exit(1);
   }
   log('info', 'api_started', { port: Number(PORT), env: ENV, storage: process.env.DM_STORAGE || 'local' });
+  // Tournament checkout: a Stripe key and Prices that cannot charge correctly
+  // are said now, at deploy time, rather than when a parent taps Pay.
+  checkStripeAtStartup().catch(e => log('warn', 'stripe_prices_unchecked', { type: e?.type || e?.name }));
 });

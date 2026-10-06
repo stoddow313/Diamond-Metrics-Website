@@ -238,17 +238,21 @@ test('prices follow the key: test prices with a test key, a missing one refused,
   assert.deepEqual(missing.body, { error: 'We could not start secure checkout. Please try again.' });
   assert.equal(seq, before, 'no session');
   process.env.STRIPE_SECRET_KEY = 'sk_live_acceptance';
-  const noLiveMap = await post('/api/create-checkout-session', details({ packageId: 'tournament_pro' }));
-  assert.ok(noLiveMap.status >= 500, 'a live key without STRIPE_LIVE_PRICES refuses');
+  const liveWithTestPrices = await post('/api/create-checkout-session', details({ packageId: 'tournament_pro' }));
+  assert.ok(liveWithTestPrices.status >= 500, 'a live key beside STRIPE_TEST_PRICES refuses');
+  delete process.env.STRIPE_TEST_PRICES;
+  const noLivePrices = await post('/api/create-checkout-session', details({ packageId: 'tournament_pro' }));
+  assert.ok(noLivePrices.status >= 500, 'a live key without its STRIPE_LIVE_PRICE_* settings refuses: no Price in code');
   assert.equal(seq, before, 'no session');
-  process.env.STRIPE_LIVE_PRICES = JSON.stringify(LIVE_PRICES);
+  const live = Object.entries(LIVE_PRICES).map(([key, id]) => [`STRIPE_LIVE_PRICE_${key.toUpperCase()}`, id]);
+  for (const [name, id] of live) process.env[name] = id;
   try {
     for (const [packageId, priceId] of Object.entries(LIVE_PRICES)) {
       const r = await startCheckout(details({ packageId }));
       assert.deepEqual(sessions.get(r.sessionId).line_items, [{ price: priceId, quantity: 1 }]);
     }
   } finally {
-    delete process.env.STRIPE_LIVE_PRICES;
+    for (const [name] of live) delete process.env[name];
   }
 });
 

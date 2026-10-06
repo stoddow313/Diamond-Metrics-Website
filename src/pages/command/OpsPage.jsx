@@ -20,14 +20,14 @@ const sameName = (a, b) => {
   return norm(a) === norm(b);
 };
 
-// Tournament checkout at a glance (COMMAND_OPS §3.18): which key and Price
-// map it runs on, and what the server says is still to set. Production needs
-// the live key.
+// Tournament checkout at a glance (COMMAND_OPS §3.18): which key and Prices
+// it runs on, and what the server says is still to set or fix. Production
+// needs the live key.
 function checkoutHealth(c, environment) {
   const gaps = c.problems.join(' · ');
   if (!c.mode) return { value: `not configured — ${gaps}`, ok: false };
   return {
-    value: `${c.mode} key · prices from ${c.prices_variable}${gaps ? ` — ${gaps}` : ''}`,
+    value: `${c.mode} key · prices from ${c.prices_from}${gaps ? ` — ${gaps}` : ''}`,
     ok: !gaps && (c.mode === 'live' || environment !== 'production'),
   };
 }

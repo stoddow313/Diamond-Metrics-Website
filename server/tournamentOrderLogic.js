@@ -17,10 +17,11 @@ export const PACKAGES = {
 };
 export const PACKAGE_KEYS = Object.keys(PACKAGES);
 
-// The variable that holds each kind of key's Price map. Production's live
-// Prices are set in Render beside the live key, so changing them is a setting,
-// not a code change (ship gate, round 2, 2026-10-06).
-export const PRICE_VARIABLES = { live: 'STRIPE_LIVE_PRICES', test: 'STRIPE_TEST_PRICES' };
+// Production's live Prices: one setting per package, each a live-mode
+// `price_…` ID set in Render beside the live key (ship gate, round 2,
+// 2026-10-06), so no live Price ID is ever in code, the repository or a
+// laptop: STRIPE_LIVE_PRICE_INDIVIDUAL_BASIC and so on.
+export const LIVE_PRICE_VARIABLES = Object.fromEntries(PACKAGE_KEYS.map(key => [key, `STRIPE_LIVE_PRICE_${key.toUpperCase()}`]));
 
 // The events a parent can buy for. Adding the next tournament is a code change
 // and a deploy (A21); the id is stored as text, not a tournaments row.
@@ -105,33 +106,90 @@ export function keyMode(secretKey) {
 
 const isPriceId = value => typeof value === 'string' && /^price_[A-Za-z0-9]+$/.test(value);
 
-// A Price map, STRIPE_LIVE_PRICES or STRIPE_TEST_PRICES (named by variable):
-// {"individual_basic":"price_…", …}. Problems are named, never echoed, so a
-// log line cannot carry the configured values.
-export function parsePrices(raw, variable) {
-  if (!raw) return { prices: {}, missing: [...PACKAGE_KEYS], problem: `${variable} is not set` };
+// STRIPE_TEST_PRICES: {"individual_basic":"price_…", …}. Problems are named,
+// never echoed, so a log line cannot carry the configured values; problems
+// holds one per package that has no Price.
+export function parseTestPrices(raw) {
+  const none = problem => ({ prices: {}, missing: [...PACKAGE_KEYS], problem, problems: Object.fromEntries(PACKAGE_KEYS.map(key => [key, problem])) });
+  if (!raw) return none('STRIPE_TEST_PRICES is not set');
   let parsed;
   try { parsed = JSON.parse(raw); } catch { parsed = null; }
-  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-    return { prices: {}, missing: [...PACKAGE_KEYS], problem: `${variable} is not a JSON object` };
-  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return none('STRIPE_TEST_PRICES is not a JSON object');
   const prices = {};
   const missing = [];
   for (const key of PACKAGE_KEYS) {
     if (isPriceId(parsed[key])) prices[key] = parsed[key];
     else missing.push(key);
   }
-  return { prices, missing, problem: missing.length ? `${variable} has no price_ id for ${missing.join(', ')}` : '' };
+  return {
+    prices, missing,
+    problem: missing.length ? `STRIPE_TEST_PRICES has no price_ id for ${missing.join(', ')}` : '',
+    problems: Object.fromEntries(missing.map(key => [key, `STRIPE_TEST_PRICES has no price_ id for ${key}`])),
+  };
 }
 
-// Which Stripe Price a package is charged at (handoff §1). prices is the map
-// for the key's mode: a live key charges only STRIPE_LIVE_PRICES and a test
-// key only STRIPE_TEST_PRICES, so neither can charge the other's Prices.
-// Anything else refuses rather than charging a guess.
-export function choosePrice(packageKey, { mode, prices = {} } = {}) {
+// What is wrong with one live Price setting, or '': named, never echoed. A
+// product ID is the likely slip, since Stripe shows it first.
+function livePriceProblem(variable, value) {
+  if (!value) return `${variable} is not set`;
+  if (isPriceId(value)) return '';
+  if (value.startsWith('prod_')) return `${variable} holds a product ID (prod_…), not the product's Price ID (price_…)`;
+  return `${variable} is not a Price ID (price_…)`;
+}
+
+// The environment decides the mode: the key's prefix (keyMode) says live or
+// test, and each mode reads only its own Prices, a live key the four
+// STRIPE_LIVE_PRICE_* settings and a test key STRIPE_TEST_PRICES. The other
+// mode's Prices beside a key is a mismatch, named here so that every checkout
+// is refused before Stripe is asked: a live key never meets a test Price, or a
+// test key a live one, when a parent taps Pay.
+export function priceSettings(env = {}) {
+  const mode = keyMode(env.STRIPE_SECRET_KEY);
+  const source = { live: 'STRIPE_LIVE_PRICE_*', test: 'STRIPE_TEST_PRICES' }[mode] || null;
+  const settings = { mode, source, prices: {}, missing: [], problems: {}, mismatch: '' };
+  const liveSet = Object.values(LIVE_PRICE_VARIABLES).filter(name => String(env[name] ?? '').trim());
+  if (mode === 'live' && env.STRIPE_TEST_PRICES) {
+    settings.mismatch = 'STRIPE_SECRET_KEY is a live key, but STRIPE_TEST_PRICES is set: a live key never charges test Prices. '
+      + 'Remove STRIPE_TEST_PRICES; live Prices come from the four STRIPE_LIVE_PRICE_* settings.';
+  } else if (mode === 'test' && liveSet.length) {
+    const many = liveSet.length > 1;
+    settings.mismatch = `STRIPE_SECRET_KEY is a test key, but ${liveSet.join(', ')} ${many ? 'are' : 'is'} set: a test key never charges live Prices. `
+      + `Remove ${many ? 'them' : 'it'}; test Prices come from STRIPE_TEST_PRICES.`;
+  } else if (mode === 'live') {
+    for (const key of PACKAGE_KEYS) {
+      const value = String(env[LIVE_PRICE_VARIABLES[key]] ?? '').trim();
+      const problem = livePriceProblem(LIVE_PRICE_VARIABLES[key], value);
+      if (problem) {
+        settings.missing.push(key);
+        settings.problems[key] = problem;
+      } else {
+        settings.prices[key] = value;
+      }
+    }
+  } else if (mode === 'test') {
+    const test = parseTestPrices(env.STRIPE_TEST_PRICES);
+    Object.assign(settings, { prices: test.prices, missing: test.missing, problems: test.problems });
+  }
+  return settings;
+}
+
+// Which Stripe Price a package is charged at (handoff §1), from the Prices
+// priceSettings read for the key's mode. Anything else refuses rather than
+// charging a guess.
+export function choosePrice(packageKey, { mode, prices = {}, mismatch = '' } = {}) {
   if (!Object.hasOwn(PACKAGES, packageKey)) return { error: 'unknown_package' };
-  if (!Object.hasOwn(PRICE_VARIABLES, String(mode))) return { error: 'not_configured' };
+  if (mode !== 'live' && mode !== 'test') return { error: 'not_configured' };
+  if (mismatch) return { error: 'mismatch' };
   return isPriceId(prices[packageKey]) ? { priceId: prices[packageKey] } : { error: 'price_missing' };
+}
+
+// Stripe answers a Price of the other mode as missing, adding "a similar
+// object exists in test mode, but a live mode key was used". Says which,
+// without Stripe's message, which names the ID.
+export function missingPriceProblem(stripeMessage, mode) {
+  const other = /similar object exists in (live|test) mode/i.exec(String(stripeMessage || ''))?.[1]?.toLowerCase();
+  if (other && other !== mode) return `is a ${other}-mode Price, but STRIPE_SECRET_KEY is a ${mode} key`;
+  return `was not found in Stripe with this ${mode} key`;
 }
 
 const dollars = cents => `$${(cents / 100).toFixed(2)}`;
