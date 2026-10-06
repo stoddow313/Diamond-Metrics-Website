@@ -217,8 +217,9 @@ sharing evidence clips with customers (clips stay internal per 2026-08-20).
 `feature/find-your-player-landing`, and the studio PRD (R1–R10). **Built:**
 Will's three pages merged onto `main`; `POST /api/create-checkout-session`,
 `POST /api/stripe/webhook`, `POST /api/post-purchase-intake`; tournament
-orders as their own records; a read-only **Tournament orders** list in
-Command. The handoff's §7 test list is
+orders as their own records; a **Tournament orders** list in Command whose
+one action is the Delivered mark (ship gate, 2026-10-06). The handoff's §7
+test list is
 `server/tournamentCheckoutAcceptance.test.js`; go-live steps are
 COMMAND_OPS §3.18.
 
@@ -230,7 +231,9 @@ COMMAND_OPS §3.18.
 | Price | The browser sends a package key. A live key (`sk_live_`/`rk_live_`) charges only handoff §1's live Price IDs (in code; they are not secret); a test key charges only `STRIPE_TEST_PRICES`; anything else refuses before saving. Amounts and Price IDs from the browser are ignored. | Handoff §1, §7. |
 | Paid | Only `checkout.session.completed` with `payment_status: paid`, its `Stripe-Signature` verified over the raw body (the route sits ahead of `express.json`), for the order's own session. One transaction: the event id is recorded first (`stripe_events`), then pending → paid once, with the session, PaymentIntent, amount, currency, status, event id and arrival time, and one "paid" history row. Foreign sessions and other events are acknowledged and ignored; a database failure answers 500 so Stripe retries. The success redirect, the details step and Command never mark paid. | Handoff §2, §5. |
 | Details step | Saved for a webhook-paid order, or when Stripe itself reports that session paid for that order (the parent was faster than the webhook; the order stays unpaid until the webhook lands). An unknown or unpaid link gets one refusal, so the reply never reveals whether an order exists. A later send from the same link replaces the details. | Handoff §3 "verified payment"; A19. |
-| Command | **Tournament orders**, right after Intake, for every internal role: paid orders only, newest paid first, read-only. Unpaid and abandoned checkouts are never listed or counted. | A16; actions come later (9.2). |
+| Command | **Tournament orders**, right after Intake, for every internal role: paid orders only, newest paid first. Unpaid and abandoned checkouts are never listed or counted. One action: **Delivered**, ticked once an order's analysis has gone to the parent (admin and fulfillment, as on intake; analysts and reviewers see it). Unticking takes it back; each change is a history row naming who (`actor_id`). Delivered orders stay listed; **Hide delivered** leaves the work still to do. Nothing in Command touches payment. | A16; the team's ship-gate note (2026-10-06): without a mark, progress through a tournament's orders ends up in a spreadsheet (story garbage 11). Other states and notes come later (9.2). |
+| Receipts | Every session sets `payment_intent_data.receipt_email` to the email the parent typed (Stripe already has it as `customer_email`), so in live mode Stripe emails a receipt for every payment whatever the account's email settings. Test mode never emails receipts. | Ship-gate note: "turn on Stripe receipts". No Diamond Metrics email is sent (A18). |
+| Order received | A verified details reply carries the order id, and the page shows it as the order number, then one line: "Stripe will email your receipt, and we’ll use your details to deliver your player’s analysis." Will's three lines stay word for word. Refusals never carry an order id. | Ship-gate note: no order number, no next step. The id is random and holds no personal data; the line uses Will's "deliver their analysis" and promises no channel or date. Will approves the copy (handoff §8). |
 | Return addresses | `DM_PUBLIC_BASE_URL` (production: `https://diamondmetrics.ai`, the handoff's addresses). Outside production when it is unset, the calling page's `Origin`, else `http://localhost:5173`. Production never reads `Origin`. | A27. Spike S1: Stripe test mode accepts `.local`, LAN and localhost addresses, so a phone on the studio's link comes back to it. |
 | Live webhook | Registered at the Render address, not through Vercel's `/api` rewrite. | A11: no proof the rewrite keeps the body and signature intact. |
 | Cancel | The page keeps the five details and the package in the tab's `sessionStorage` just before Stripe, restores them onto the package step at `?checkout=cancelled`, and clears them once the details step succeeds. A fresh tab opens empty without the "still here" notice. | A20. |
@@ -241,9 +244,10 @@ COMMAND_OPS §3.18.
 
 ### 9.2 Deferred
 
-Fulfillment states and notes on tournament orders; linking an order to a
-player or job; a Diamond Metrics confirmation email; refund and dispute
-status from Stripe events; a staff-managed tournament list; delayed payment
+Fulfillment states beyond Delivered (in progress, owner) and notes on
+tournament orders; linking an order to a player or job; a Diamond Metrics
+confirmation email; refund and dispute status from Stripe events; a
+staff-managed tournament list; delayed payment
 methods (`checkout.session.async_payment_*`); reconciliation of paid
 sessions whose webhook never arrived; marking test orders; checking the order
 when the success page opens; deletion and retention for tournament orders;
@@ -255,7 +259,8 @@ intake; a consent checkbox; an order detail page with its history.
 | Date | Decision | Status |
 |---|---|---|
 | 2026-10-06 | **Tournament checkout (QR "Find your player") built** — Will's pages merged; checkout at the server's price; Stripe's signed webhook is the only paid signal; player details only after a verified payment; read-only Tournament orders in Command (§9) | Built — go live per COMMAND_OPS §3.18 before 2026-10-09 |
-| 2026-10-06 | Tournament orders are their own records, matched by order id and session, never by name or email; the Command list is read-only in v1 | Decided (A16, A17) |
+| 2026-10-06 | Tournament orders are their own records, matched by order id and session, never by name or email; the Command list is read-only in v1 | Decided (A16, A17); "read-only" superseded the same day by the Delivered mark |
+| 2026-10-06 | Ship gate, round 1 (Wes): a **Delivered** mark and **Hide delivered** on Tournament orders (admin and fulfillment, audited); Stripe receipts for every payment (`receipt_email`); "Order received" shows the order number and one line on what comes next (§9.1) | Built |
 | 2026-10-06 | Prices follow the key: a live key charges only the handoff's live prices, a test key only `STRIPE_TEST_PRICES` | Decided |
 | 2026-10-06 | The live webhook endpoint is the Render address, not the Vercel `/api` rewrite | Decided (A11) |
 | 2026-10-01 | **Customer footage submission (P0) built behind `DM_INTAKE_ENABLED`** — accounts, guided intake, consent records, resumable upload, technical check, status, Will's queue, identity and duplicate signals, create/link job, deletion workflow (§8) | Shipped dark — enable after the legal text and email provider |

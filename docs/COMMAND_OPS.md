@@ -767,8 +767,10 @@ A parent at a filmed tournament scans the QR code to `/find-your-player`,
 enters their details, picks one of four packages and pays on Stripe
 Checkout. Stripe's signed `checkout.session.completed` webhook marks the
 order paid; the success page then collects team or club, jersey and
-position. Will sees paid orders at **Command → Tournament orders**, right
-after Intake. The browser sends a package key only: the server picks the
+position, and shows the parent their order number. Stripe emails the parent a
+receipt for every payment. Will sees paid orders at **Command → Tournament
+orders**, right after Intake, and marks each one delivered once its analysis
+has gone out. The browser sends a package key only: the server picks the
 Price, and nothing but Stripe's signed webhook marks an order paid.
 
 **Go-live order (before 2026-10-09).** Each step depends on the one before.
@@ -805,6 +807,9 @@ Price, and nothing but Stripe's signed webhook marks an order paid.
 | Production admin password is not the README default | Wes | |
 | Checkout offers only payment methods that settle at checkout (test mode offered card, Cash App Pay, Affirm, Klarna, Amazon Pay, Link and Link's "Bank"); a delayed method would leave an order unpaid | Will | |
 | The four live prices are one-time USD at $50, $75, $125 and $150 | Will | |
+| The four Stripe product names match the package cards ("Individual Game — Basic" and so on), in test and live: Checkout shows the product name, and test mode still says "Tournament Pro" for "Single Tournament — Pro" | Will | |
+| Link's "Save my information for faster checkout" box is off in Stripe's Link settings, in test and live. Pre-ticked, it fails a parent's first Pay until they untick it or add a phone number, and the server cannot switch it off | Will | |
+| Receipts: the server asks Stripe to email one for every payment (`receipt_email`), whatever the "Successful payments" setting. Check that the receipt shows Diamond Metrics' name, support email and logo (Settings → Business → Public details, and Branding → Email receipts) | Will | |
 | `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `DM_PUBLIC_BASE_URL` set on Render | Wes | |
 | Live endpoint registered at the Render address | Wes | |
 | API deployed and `/api/health` checked before the pages reach `main` | Wes | |
@@ -829,6 +834,9 @@ Price, and nothing but Stripe's signed webhook marks an order paid.
   `http://<this-mac>.local:<port>`. Stripe test mode accepts `.local`, LAN
   and localhost return addresses.
 - Pay with `4242 4242 4242 4242`, any future expiry, any CVC.
+- Stripe emails no receipts in test mode, even with `receipt_email` set; a
+  test payment's receipt is on the payment in the dashboard (Receipt history,
+  where "Send receipt" sends one by hand).
 - `stripe events resend <evt_…>` redelivers an event through a running
   listener.
 
@@ -848,14 +856,23 @@ Price, and nothing but Stripe's signed webhook marks an order paid.
 
 **Working the list (Will).** Each row shows when Stripe confirmed the payment
 and the order id (`TO-XXXX-XXXX`, also on the Stripe Checkout Session and
-PaymentIntent as `order_id`), the package and amount paid, the player, the
-identification the parent sent (team, jersey, position, bats/throws, game,
-note), the guardian's name, email and phone, the tournament, and the Stripe
-session and PaymentIntent ids. **Details missing** means the parent paid but
-has not sent the identification step: follow up by email or phone. The same
-success link still works for them, and sending again replaces the details.
-The list is read-only; refunds and disputes are handled in Stripe and do not
-change a row.
+PaymentIntent as `order_id`, and the order number the parent saw on "Order
+received"), the package and amount paid, the player, the identification the
+parent sent (team, jersey, position, bats/throws, game, note), the guardian's
+name, email and phone, the tournament, and the Stripe session and
+PaymentIntent ids. **Details missing** means the parent paid but has not sent
+the identification step: follow up by email or phone. The same success link
+still works for them, and sending again replaces the details.
+
+Tick **Delivered** on a row once its analysis has gone to the parent. The row
+stays on the list, its reference line says when and by whom, and the count
+line adds "· n delivered". **Hide delivered** leaves only the work still to
+do (`/command/tournament-orders?hide=delivered` keeps it on as a bookmark); a
+row ticked while it is on stays in view until the page reloads, so a slip can
+be unticked. Admin and fulfillment can tick or untick; analysts and
+reviewers see the mark only. Every tick and untick is a history row naming
+who made it (`tournament_order_events`). Refunds and disputes are handled in
+Stripe and do not change a row.
 
 **When something is wrong.**
 
