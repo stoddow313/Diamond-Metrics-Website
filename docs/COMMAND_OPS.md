@@ -110,6 +110,15 @@ Without it, the same events still appear in the structured log as
 | `DM_INTAKE_TRIAGE_HOURS` | 24 | Due time for the first review of a new submission |
 | `DM_RATE_LIMITS` | on | `0` disables the sign-in/sign-up/upload rate limits (tests only) |
 
+### Tournament checkout (§3.18)
+| Variable | Default | Purpose |
+|---|---|---|
+| `STRIPE_SECRET_KEY` | — | Server only. Production: the **live** key (`sk_live_…`), which charges only the handoff's four live prices. Locally: a test key (`sk_test_…`). Unset: checkout refuses, the webhook changes nothing, everything else runs |
+| `STRIPE_WEBHOOK_SECRET` | — | Signing secret of the endpoint that calls `/api/stripe/webhook`: the live endpoint's in production, `stripe listen`'s locally |
+| `STRIPE_TEST_PRICES` | — | Test keys only: `{"individual_basic":"price_…","individual_pro":"price_…","tournament_basic":"price_…","tournament_pro":"price_…"}`. Ignored with a live key; a package missing from it refuses checkout |
+| `DM_PUBLIC_BASE_URL` | — | (Also above.) Where Stripe sends the parent back. Production: `https://diamondmetrics.ai`, which gives the handoff's success and cancel addresses. Unset outside production, the parent returns to the page they started on |
+| `STRIPE_CLI` | `stripe` | Local `npm run dev` only: the Stripe CLI it runs to forward test webhooks |
+
 ---
 
 ## 3. Setting up Cloudflare R2
@@ -751,6 +760,111 @@ no customer notifications. Test jobs keep the Synthetic badge.
 | Will's login and default owner | Command → Team |
 | Turnaround wording | Sales/ops decision (doc §14); the product promises no turnaround until then |
 | Smoke test | A test account submits a short clip end to end on the synthetic path; delete it with a deletion request afterwards |
+
+### 3.18 Tournament checkout (QR "Find your player", TDR §9)
+
+A parent at a filmed tournament scans the QR code to `/find-your-player`,
+enters their details, picks one of four packages and pays on Stripe
+Checkout. Stripe's signed `checkout.session.completed` webhook marks the
+order paid; the success page then collects team or club, jersey and
+position. Will sees paid orders at **Command → Tournament orders**, right
+after Intake. The browser sends a package key only: the server picks the
+Price, and nothing but Stripe's signed webhook marks an order paid.
+
+**Go-live order (before 2026-10-09).** Each step depends on the one before.
+
+1. Run the handoff §7 test list in test mode on a local copy (below) and
+   record the result; Will approves the checkout and success pages.
+2. Confirm the production admin password is not the default published in
+   the public README. The list shows parent contacts and players' details to
+   anyone signed in to Command.
+3. In Render, set `STRIPE_SECRET_KEY` (live), `STRIPE_WEBHOOK_SECRET` (from
+   step 4) and `DM_PUBLIC_BASE_URL=https://diamondmetrics.ai`. The last one
+   also moves account-email links from `www.` to the bare domain, which is
+   harmless while production email is off; both hosts serve the site.
+4. In Stripe **live** mode, add a webhook endpoint for
+   `checkout.session.completed` at
+   `https://diamond-metrics-api.onrender.com/api/stripe/webhook`: the Render
+   address, not the site's `/api` rewrite. Its signing secret is
+   `STRIPE_WEBHOOK_SECRET`.
+5. Deploy the API by hand and check `/api/health`. A POST of `{}` to
+   `/api/create-checkout-session` should answer 400 "Enter the parent or
+   guardian name." (the route exists; nothing is created). **Only then**
+   merge the pages to `main`: Vercel publishes `main` at once, and a
+   checkout button whose endpoint is missing fails for every parent.
+6. Make one live $50 purchase at `https://diamondmetrics.ai/find-your-player`
+   under a guardian name that marks it as a test. It must return to
+   `https://diamondmetrics.ai/find-your-player/complete?session_id=cs_live_…`
+   and appear paid in Tournament orders with its details. Then refund it in
+   Stripe; it stays listed as paid, because refunds show only in Stripe.
+
+| Before real money | Owner | Done |
+|---|---|---|
+| Handoff §7 test list passes in test mode (result below) | Wes | |
+| Checkout and success pages approved | Will | |
+| Production admin password is not the README default | Wes | |
+| Checkout offers only payment methods that settle at checkout (test mode offered card, Cash App Pay, Affirm, Klarna, Amazon Pay, Link and Link's "Bank"); a delayed method would leave an order unpaid | Will | |
+| The four live prices are one-time USD at $50, $75, $125 and $150 | Will | |
+| `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `DM_PUBLIC_BASE_URL` set on Render | Wes | |
+| Live endpoint registered at the Render address | Wes | |
+| API deployed and `/api/health` checked before the pages reach `main` | Wes | |
+| Live $50 purchase seen in Tournament orders with its details, then refunded | Wes | |
+
+**Local test mode.**
+
+- Install the Stripe CLI: `brew install stripe/stripe-cli/stripe`.
+- Export `STRIPE_SECRET_KEY` (test) and `STRIPE_TEST_PRICES`, leave
+  `STRIPE_WEBHOOK_SECRET` unset, and run `npm run dev`. It runs `stripe listen`
+  itself, forwards `checkout.session.completed` to the API and hands the
+  CLI's signing secret to the API only (it never prints the secret). To
+  forward yourself instead: `stripe listen --events checkout.session.completed
+  --forward-to localhost:<api port>/api/stripe/webhook`, then set
+  `STRIPE_WEBHOOK_SECRET` to the value of `stripe listen --print-secret`,
+  which stays the same for a given key.
+- When another process holds :3001, `npm run dev` moves the API to a free port
+  and says which. If you forward webhooks yourself, pin the port with
+  `DM_API_PORT` and `DM_API_PROXY`.
+- With `DM_PUBLIC_BASE_URL` unset, Stripe returns the parent to the page they
+  started on: `http://localhost:5173`, or a phone on
+  `http://<this-mac>.local:<port>`. Stripe test mode accepts `.local`, LAN
+  and localhost return addresses.
+- Pay with `4242 4242 4242 4242`, any future expiry, any CVC.
+- `stripe events resend <evt_…>` redelivers an event through a running
+  listener.
+
+**Handoff §7 test list: result (2026-10-06, Stripe test mode).**
+
+| Case | Result |
+|---|---|
+| Each package | Real test sessions totaled $50.00, $75.00, $125.00 and $150.00, with one line item, quantity 1, the typed email, and `client_reference_id` equal to the order id. Automated: `server/tournamentCheckoutAcceptance.test.js` |
+| Canceled checkout | Stripe's "←" returned to `/find-your-player?checkout=cancelled` on the package step with every detail and the package restored. A fresh tab at that address shows the empty form without the notice. The order stays pending and unlisted |
+| Successful checkout | 4242 on a 390 × 844 phone view: paid by the signed webhook (`[200]`), details saved, "Order received" and "Thank you."; the order listed with $150.00, the session and PaymentIntent ids |
+| Duplicate webhook delivery | `stripe events resend` twice: `[200]` each, still one order with its first paid time and one "paid" history entry |
+| Success URL without payment | An unpaid session and a made-up one both answer "We could not confirm a payment for this order…"; nothing stored, never listed |
+| Forged webhook | No signature and a made-up signature: 400 both; nothing changes |
+| Tampered price | `"amount":100` and another package's Price ID in the body still open a $150.00 session; an unknown package answers 400 "Choose a package." |
+| Unconfigured server | No Stripe variables: the API boots, checkout answers 503 with Will's sentence and stores nothing, the webhook answers 400 |
+| Logs | No name, email or phone number in the API log for a full run (ids only) |
+
+**Working the list (Will).** Each row shows when Stripe confirmed the payment
+and the order id (`TO-XXXX-XXXX`, also on the Stripe Checkout Session and
+PaymentIntent as `order_id`), the package and amount paid, the player, the
+identification the parent sent (team, jersey, position, bats/throws, game,
+note), the guardian's name, email and phone, the tournament, and the Stripe
+session and PaymentIntent ids. **Details missing** means the parent paid but
+has not sent the identification step: follow up by email or phone. The same
+success link still works for them, and sending again replaces the details.
+The list is read-only; refunds and disputes are handled in Stripe and do not
+change a row.
+
+**When something is wrong.**
+
+| Symptom | Look for | Fix |
+|---|---|---|
+| Every parent sees "We could not start secure checkout" | `stripe_not_configured` or `stripe_test_price_missing` in the log (setting named, never its value), or `tournament_checkout_failed` with Stripe's error type and code | Set or correct the variable and restart; an `authentication_error` is a wrong key |
+| Paid in Stripe, missing from Tournament orders | `stripe_webhook_rejected` (signature) or nothing at all; Stripe dashboard → Webhooks → the endpoint's deliveries | Make `STRIPE_WEBHOOK_SECRET` match the live endpoint, then resend the event from the dashboard. A redelivery never makes a second order |
+| `stripe_webhook_not_paid` | A payment method that settles later | The order stays pending until delayed methods are supported (TDR §9.2); check the payment in Stripe |
+| "Too many checkout attempts…" at the field | 60 checkouts per network address per 10 minutes, 10 per email per hour | Limits reset with the window (and on restart); the parent can retry |
 
 ---
 

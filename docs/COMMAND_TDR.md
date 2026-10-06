@@ -210,10 +210,54 @@ team management, staff dashboards and reporting, configurable turnaround copy,
 automatic retention deletion, self-serve checkout, external CRM sync, and
 sharing evidence clips with customers (clips stay internal per 2026-08-20).
 
+## 9. Tournament checkout — QR "Find your player" (decision record, 2026-10-06)
+
+**Source:** the *Diamond Metrics Tournament Checkout Developer Handoff*
+(2026-10-06, cited "handoff §n"), Will's pages from
+`feature/find-your-player-landing`, and the studio PRD (R1–R10). **Built:**
+Will's three pages merged onto `main`; `POST /api/create-checkout-session`,
+`POST /api/stripe/webhook`, `POST /api/post-purchase-intake`; tournament
+orders as their own records; a read-only **Tournament orders** list in
+Command. The handoff's §7 test list is
+`server/tournamentCheckoutAcceptance.test.js`; go-live steps are
+COMMAND_OPS §3.18.
+
+### 9.1 Decisions
+
+| Area | Decision | Why |
+|---|---|---|
+| Orders | `tournament_orders` rows of their own, not intake submissions or customer accounts. A pending order (guardian, player, email, phone, tournament, package, Price, time) is saved before Stripe hears of it. Its random `TO-XXXX-XXXX` id is Stripe's `client_reference_id` and the only metadata besides the package key; names, phone and tournament stay in our database. | Handoff §4–§5; a QR buyer has no account or consent record (A17). |
+| Price | The browser sends a package key. A live key (`sk_live_`/`rk_live_`) charges only handoff §1's live Price IDs (in code; they are not secret); a test key charges only `STRIPE_TEST_PRICES`; anything else refuses before saving. Amounts and Price IDs from the browser are ignored. | Handoff §1, §7. |
+| Paid | Only `checkout.session.completed` with `payment_status: paid`, its `Stripe-Signature` verified over the raw body (the route sits ahead of `express.json`), for the order's own session. One transaction: the event id is recorded first (`stripe_events`), then pending → paid once, with the session, PaymentIntent, amount, currency, status, event id and arrival time, and one "paid" history row. Foreign sessions and other events are acknowledged and ignored; a database failure answers 500 so Stripe retries. The success redirect, the details step and Command never mark paid. | Handoff §2, §5. |
+| Details step | Saved for a webhook-paid order, or when Stripe itself reports that session paid for that order (the parent was faster than the webhook; the order stays unpaid until the webhook lands). An unknown or unpaid link gets one refusal, so the reply never reveals whether an order exists. A later send from the same link replaces the details. | Handoff §3 "verified payment"; A19. |
+| Command | **Tournament orders**, right after Intake, for every internal role: paid orders only, newest paid first, read-only. Unpaid and abandoned checkouts are never listed or counted. | A16; actions come later (9.2). |
+| Return addresses | `DM_PUBLIC_BASE_URL` (production: `https://diamondmetrics.ai`, the handoff's addresses). Outside production when it is unset, the calling page's `Origin`, else `http://localhost:5173`. Production never reads `Origin`. | A27. Spike S1: Stripe test mode accepts `.local`, LAN and localhost addresses, so a phone on the studio's link comes back to it. |
+| Live webhook | Registered at the Render address, not through Vercel's `/api` rewrite. | A11: no proof the rewrite keeps the body and signature intact. |
+| Cancel | The page keeps the five details and the package in the tab's `sessionStorage` just before Stripe, restores them onto the package step at `?checkout=cancelled`, and clears them once the details step succeeds. A fresh tab opens empty without the "still here" notice. | A20. |
+| Limits | 60 checkouts per address per 10 minutes and 10 per email per hour; 60 details calls per address per 10 minutes; the webhook is never limited. | A26: many parents share a carrier's address at one field. |
+| Logs | Ids only (order, session, event). Stripe's error messages are not logged, because they can echo the email. | Minors' data; handoff §4. |
+| Payment methods | v1 assumes methods that settle at checkout. A completed session that is not yet paid stays pending, with a warning in the log. | A30; delayed methods are 9.2. |
+| Local runs | `npm run dev` forwards Stripe test webhooks through the Stripe CLI and moves the API off :3001 when another process holds it. | Spike S1; one command runs the whole flow. |
+
+### 9.2 Deferred
+
+Fulfillment states and notes on tournament orders; linking an order to a
+player or job; a Diamond Metrics confirmation email; refund and dispute
+status from Stripe events; a staff-managed tournament list; delayed payment
+methods (`checkout.session.async_payment_*`); reconciliation of paid
+sessions whose webhook never arrived; marking test orders; checking the order
+when the success page opens; deletion and retention for tournament orders;
+season packages through Checkout; one customer record across orders and
+intake; a consent checkbox; an order detail page with its history.
+
 ## 6. Decision log
 
 | Date | Decision | Status |
 |---|---|---|
+| 2026-10-06 | **Tournament checkout (QR "Find your player") built** — Will's pages merged; checkout at the server's price; Stripe's signed webhook is the only paid signal; player details only after a verified payment; read-only Tournament orders in Command (§9) | Built — go live per COMMAND_OPS §3.18 before 2026-10-09 |
+| 2026-10-06 | Tournament orders are their own records, matched by order id and session, never by name or email; the Command list is read-only in v1 | Decided (A16, A17) |
+| 2026-10-06 | Prices follow the key: a live key charges only the handoff's live prices, a test key only `STRIPE_TEST_PRICES` | Decided |
+| 2026-10-06 | The live webhook endpoint is the Render address, not the Vercel `/api` rewrite | Decided (A11) |
 | 2026-10-01 | **Customer footage submission (P0) built behind `DM_INTAKE_ENABLED`** — accounts, guided intake, consent records, resumable upload, technical check, status, Will's queue, identity and duplicate signals, create/link job, deletion workflow (§8) | Shipped dark — enable after the legal text and email provider |
 | 2026-10-01 | Packages: Rookie, Pro (fulfilled as Rookie with notes until its modules ship), Hall of Fame (inquiry, no upload), Custom (scoped by staff) | Confirmed by owner |
 | 2026-10-01 | Payment: submit first; fulfillment confirms payment; optional order reference; unconfirmed payment is a queue flag | Confirmed by owner |
