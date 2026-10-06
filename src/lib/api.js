@@ -219,8 +219,10 @@ export const api = {
   intakeRequestDeletion: (pid, note) => request(`/api/intake/submissions/${pid}/deletion-request`, { method: 'POST', body: { note } }),
   intakeRequestAccountDeletion: (note) => request('/api/intake/account/deletion-request', { method: 'POST', body: { note } }),
 
-  // Paid tournament (QR checkout) orders, read-only (Command)
+  // Paid tournament (QR checkout) orders (Command); admin and fulfillment mark one delivered
   commandTournamentOrders: () => request('/api/command/tournament-orders'),
+  commandSetTournamentOrderDelivered: (orderId, delivered) =>
+    request(`/api/command/tournament-orders/${encodeURIComponent(orderId)}/delivered`, { method: 'PUT', body: { delivered } }),
 
   // Will's intake queue (Command)
   commandIntakeQueue: (params = {}) => request(`/api/command/intake${query(params)}`),
