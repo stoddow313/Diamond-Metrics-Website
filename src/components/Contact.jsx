@@ -23,7 +23,7 @@ function Contact() {
       <p className="eyebrow">Let’s Get Started</p>
       <h2 id="contact-title">Ready to see what your performance can say?</h2>
       <p className="section-text">
-        Tell us whether you’re a player, parent, coach, or program, and we’ll
+        Tell us whether you’re a player, parent, coach, tournament director, or program, and we’ll
         help identify the right next step.
       </p>
 
@@ -122,6 +122,7 @@ function Contact() {
               <option>Player</option>
               <option>Coach</option>
               <option>Athletic Director</option>
+              <option>Tournament Director</option>
               <option>Other</option>
             </select>
           </div>
