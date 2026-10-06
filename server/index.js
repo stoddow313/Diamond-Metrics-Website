@@ -29,6 +29,9 @@ import { gatewayUrlFor } from './mediaGateway.js';
 import { mountCommandOpsRoutes } from './commandOpsRoutes.js';
 import { mountScorebookRoutes } from './scorebookRoutes.js';
 import { mountLiveRoutes } from './liveRoutes.js';
+import { mountTournamentCheckoutRoutes } from './tournamentCheckoutRoutes.js';
+import { mountStripeWebhookRoutes } from './stripeWebhookRoutes.js';
+import { mountPostPurchaseRoutes } from './postPurchaseRoutes.js';
 import { makeProber } from './liveProbe.js';
 import { startBackupScheduler } from './backup.js';
 import { requestLogger, errorHandler, installProcessHandlers, log, ENV } from './observability.js';
@@ -45,6 +48,10 @@ const PORT = process.env.PORT || process.env.DM_API_PORT || 3001;
 // Structured request logging (M6) sits ahead of every route.
 installProcessHandlers();
 app.use(requestLogger);
+
+// Stripe's webhook checks its signature over the exact request bytes, so it is
+// registered before the global JSON parser below.
+mountStripeWebhookRoutes(app, { db });
 
 // Limit sized for base64 photo uploads (clients downscale before sending).
 app.use(express.json({ limit: '8mb' }));
@@ -1638,6 +1645,12 @@ if (intakeEnabled()) {
   mountCustomerAuthRoutes(app, { db, principals, requireSubmitter });
   mountIntakeRoutes(app, { db, requireSubmitter });
 }
+
+// Tournament checkout (QR "Find your player", docs/COMMAND_TDR.md): the two
+// public endpoints Will's pages call. The webhook is mounted above, ahead of
+// the JSON parser.
+mountTournamentCheckoutRoutes(app, { db });
+mountPostPurchaseRoutes(app, { db });
 
 // Field Live (M7). Off unless DM_LIVE_ENABLED is set, so this ships dark and the
 // relay simply gets 404s until someone turns it on deliberately.

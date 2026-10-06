@@ -65,6 +65,13 @@ services:
         sync: false
       - key: DM_LIVE_PLAYBACK_ACCESS
         value: authenticated
+      # ── Tournament checkout (QR "Find your player") ──────────────────
+      # Unset, checkout refuses and the webhook changes nothing. Values live
+      # only in the dashboard: the repository is public.
+      - key: STRIPE_SECRET_KEY
+        sync: false # the live secret key (sk_live_…); a live key charges only the handoff's live prices
+      - key: STRIPE_WEBHOOK_SECRET
+        sync: false # signing secret of the live endpoint at https://diamond-metrics-api.onrender.com/api/stripe/webhook
 
       - key: DM_ENV
         value: production
