@@ -326,9 +326,9 @@ export default function OpsPage() {
                 <li key={p.package_key} className="flex flex-wrap justify-between gap-x-3">
                   <span style={{ color: '#cfe8ff' }}>{p.label} · {usd(p.card_amount)}</span>
                   {p.problem ? (
-                    <span className="min-w-0 text-right" style={{ color: '#f87171' }}>✗ {p.problem}</span>
+                    <span className="min-w-0 ml-auto text-right" style={{ color: '#f87171' }}>✗ {p.problem}</span>
                   ) : (
-                    <span className="min-w-0 text-right" style={{ color: '#4ade80' }}>
+                    <span className="min-w-0 ml-auto text-right" style={{ color: '#4ade80' }}>
                       ✓ {usd(p.amount)} one-time
                       {p.product_name && (sameName(p.product_name, p.label)
                         ? <span style={{ color: '#94a3b8' }}> · “{p.product_name}”</span>
