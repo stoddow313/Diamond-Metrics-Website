@@ -3,7 +3,9 @@
 // payment Stripe has confirmed: the order the webhook marked paid or, when the
 // parent is faster than the webhook, a session Stripe itself reports paid for
 // that order (A19). This endpoint never marks an order paid, and its replies
-// never echo what was saved.
+// never echo what was saved: a verified reply carries only the order number,
+// which "Order received" shows the parent to keep (ship gate, 2026-10-06). It
+// is random and holds no personal data.
 import { validateDetails } from './tournamentOrderLogic.js';
 import { getOrderBySessionId, saveDetails } from './tournamentOrderStore.js';
 import { readStripeConfig, stripeClient } from './stripeConfig.js';
@@ -53,7 +55,7 @@ async function savePlayerDetails(db, req, res) {
   }
   const how = saveDetails(db, order.id, checked.value);
   log('info', `tournament_details_${how}`, { order_id: order.order_id, verified_by: verifiedBy });
-  return res.json({ ok: true });
+  return res.json({ ok: true, orderId: order.order_id });
 }
 
 // 'paid' only when Stripe reports this very session paid for this very order.

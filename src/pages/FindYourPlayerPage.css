@@ -16,3 +16,8 @@
 .player-finder-selection .player-finder-checkout-error { margin: 14px 0 -3px; color: #fca5a5; }
 @media (max-width: 850px) { .player-finder-grid { grid-template-columns: 1fr; gap: 28px; }.player-finder-image { height: 270px; }.player-finder-package-grid { grid-template-columns: 1fr; max-width: 500px; margin: 0 auto; }.player-package { min-height: auto; }.player-package-description { min-height: auto; } }
 @media (max-width: 540px) { .player-finder { padding-top: 2px; }.player-finder-image { height: 222px; border-radius: 17px; }.player-finder-grid { gap: 22px; }.player-finder h1 { font-size: 42px; }.player-finder-intro { font-size: 16px; }.player-finder-card { padding: 22px 18px; }.player-finder-fields { grid-template-columns: 1fr; }.player-finder-fields .full { grid-column: auto; }.player-finder-package-grid { gap: 22px; }.player-finder-packages h1 { font-size: 42px; } }
+/* Order received: the order number to keep, in the look of the package summary, and the line on what comes next. */
+.player-intake-order { margin-top: 26px; padding: 15px 20px 17px; border: 1px solid rgba(56, 189, 248, .35); border-radius: 12px; background: rgba(11, 60, 96, .30); }
+.player-intake-order .player-finder-eyebrow { margin: 0 0 6px; }
+.player-intake-order-id { margin: 0; color: #fff; font-size: 24px; font-weight: 800; letter-spacing: .06em; overflow-wrap: anywhere; }
+.player-intake-page>p.player-intake-next { margin-top: 18px; font-size: 16px; }

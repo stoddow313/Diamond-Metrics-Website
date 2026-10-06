@@ -77,7 +77,7 @@ test('a webhook-paid order takes the details; sending again replaces them', asyn
   const o = order({ paid: true });
   const first = await send({ sessionId: o.sessionId, ...DETAILS });
   assert.equal(first.status, 200);
-  assert.deepEqual(first.body, { ok: true });
+  assert.deepEqual(first.body, { ok: true, orderId: o.order_id }, 'the order number, for "Order received", and nothing else');
   noPii(first);
   let row = getOrder(db, o.id);
   assert.equal(row.team_club, 'Example Hawks 14U');
@@ -123,6 +123,7 @@ test('faster than the webhook: Stripe’s own word saves the details, and only t
   atStripe.set(o.sessionId, { id: o.sessionId, payment_status: 'paid', client_reference_id: o.order_id });
   const r = await send({ sessionId: o.sessionId, ...DETAILS });
   assert.equal(r.status, 200);
+  assert.deepEqual(r.body, { ok: true, orderId: o.order_id });
   assert.deepEqual(retrieved, [o.sessionId]);
   let row = getOrder(db, o.id);
   assert.equal(row.team_club, 'Example Hawks 14U');
@@ -148,6 +149,7 @@ test('Stripe reporting another order’s session as paid does not count', async 
   atStripe.set(o.sessionId, { id: o.sessionId, payment_status: 'paid', client_reference_id: 'TO-SOME-ONEE' });
   const r = await send({ sessionId: o.sessionId, ...DETAILS });
   assert.equal(r.status, 402);
+  assert.deepEqual(r.body, { error: NOT_CONFIRMED }, 'a refusal never carries an order number');
   assert.equal(getOrder(db, o.id).details_received_at, null);
 });
 

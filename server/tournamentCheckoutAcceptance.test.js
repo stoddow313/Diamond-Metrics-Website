@@ -162,7 +162,7 @@ test('§7 a successful checkout: paid only by the signed webhook, with Stripe’
   assert.equal(orderBySession(r.sessionId).payment_status, 'paid');
   const done = await sendDetails(r.sessionId, { batsThrows: 'L/R' });
   assert.equal(done.status, 200);
-  assert.deepEqual(done.body, { ok: true });
+  assert.deepEqual(done.body, { ok: true, orderId: r.body.orderId });
   const withDetails = (await paidList()).find(o => o.order_id === r.body.orderId);
   assert.deepEqual([withDetails.team_club, withDetails.jersey_number, withDetails.primary_position, withDetails.bats_throws], ['Example Hawks 14U', '9', 'Center Field', 'L/R']);
 });

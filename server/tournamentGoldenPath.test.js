@@ -100,9 +100,10 @@ test('golden path steps 1-6: one paid order at the server’s price, with the pl
   const details = await post('/api/post-purchase-intake', {
     sessionId, teamClub: 'Golden Path Test 14U', jerseyNumber: '12', primaryPosition: 'Shortstop', batsThrows: 'R/R', gameContext: '', notes: '',
   });
-  // Step 6: the page shows "Order received" / "Thank you." on { ok: true }.
+  // Step 6: the page shows "Order received" / "Thank you." on { ok: true },
+  // with the order number the reply carries.
   assert.equal(details.status, 200);
-  assert.deepEqual(details.body, { ok: true });
+  assert.deepEqual(details.body, { ok: true, orderId: checkout.body.orderId });
 
   // The one order, as golden-path.md step 7 expects it.
   const paid = listPaidOrders(db);
