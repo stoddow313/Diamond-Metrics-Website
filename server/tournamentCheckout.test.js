@@ -114,7 +114,10 @@ test('the session carries ids only, and the order id is random', async () => {
   assert.match(r.body.orderId, /^TO-[2-9A-HJKMNP-TV-Z]{4}-[2-9A-HJKMNP-TV-Z]{4}$/);
   assert.equal(params.client_reference_id, r.body.orderId);
   assert.deepEqual(params.metadata, { order_id: r.body.orderId, package_key: 'tournament_pro' });
-  assert.deepEqual(params.payment_intent_data, { metadata: { order_id: r.body.orderId, package_key: 'tournament_pro' } });
+  assert.deepEqual(params.payment_intent_data, {
+    metadata: { order_id: r.body.orderId, package_key: 'tournament_pro' },
+    receipt_email: 'jordan.example@example.com',
+  }, 'Stripe emails the receipt to the address it already has, whatever the account’s email settings');
   const sent = JSON.stringify(params);
   for (const pii of ['Jordan Example', 'Sky Example', '555-0100', 'Better Baseball', 'better-baseball-nephi-2026']) {
     assert.ok(!sent.includes(pii), `Stripe never receives ${pii}`);

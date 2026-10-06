@@ -69,8 +69,12 @@ async function startCheckout(db, req, res) {
       customer_email: input.email,
       client_reference_id: order.order_id,
       metadata: ids,
-      // On the payment too, so a refund in the dashboard leads back to the order.
-      payment_intent_data: { metadata: ids },
+      // On the payment too, so a refund in the dashboard leads back to the
+      // order. receipt_email has Stripe email the parent a receipt for this
+      // payment: in live mode whatever the account's email settings, so the
+      // receipt does not hang on a dashboard switch (ship gate, 2026-10-06).
+      // It is the email Stripe already holds for the checkout.
+      payment_intent_data: { metadata: ids, receipt_email: input.email },
       success_url: `${base}/find-your-player/complete?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${base}/find-your-player?checkout=cancelled`,
     });
