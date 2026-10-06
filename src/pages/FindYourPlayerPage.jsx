@@ -31,8 +31,11 @@ function validateDetails(form) {
 
 export default function FindYourPlayerPage() {
   const [searchParams] = useSearchParams();
+  const requestedPackage = searchParams.get('package');
   const [step, setStep] = useState('details');
-  const [selectedPackage, setSelectedPackage] = useState('individual_pro');
+  const [selectedPackage, setSelectedPackage] = useState(
+    packages.some((item) => item.id === requestedPackage) ? requestedPackage : 'individual_pro',
+  );
   const [form, setForm] = useState(emptyForm);
   const [errors, setErrors] = useState({});
   const [checkoutError, setCheckoutError] = useState('');
