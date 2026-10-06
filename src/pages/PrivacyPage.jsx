@@ -1,0 +1,6 @@
+import MarketingLayout from '../components/MarketingLayout';
+import './FindYourPlayerPage.css';
+
+export default function PrivacyPage() {
+  return <MarketingLayout contact={false}><section className="player-intake-page privacy-page"><p className="player-finder-eyebrow">Privacy</p><h1>Privacy Policy</h1><p>Last updated: October 5, 2026</p><h2>Information we collect</h2><p>When you request a player analysis, Diamond Metrics may collect parent or guardian contact information, player-identification details, tournament information, and information needed to provide the purchased analysis.</p><h2>How we use information</h2><p>We use this information to match a player to captured footage, process payment through Stripe, deliver the requested analysis, provide support, and improve our services.</p><h2>Sharing and security</h2><p>We share information only with service providers needed to operate the service, including payment processing and secure hosting providers. We do not sell personal information. Access is limited to personnel and providers who need it to provide the service.</p><h2>Questions or requests</h2><p>Contact <a href="mailto:info@diamondmetrics.ai">info@diamondmetrics.ai</a> with privacy questions or requests concerning your information.</p></section></MarketingLayout>;
+}

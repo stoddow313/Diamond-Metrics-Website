@@ -43,6 +43,9 @@ import { IntakeShell } from './pages/intake/ui';
 import { SubmitStartPage, SubmitWizardPage, InternalSubmitterNotice } from './pages/intake/SubmitPages';
 import { MySubmissionsPage, SubmissionStatusPage } from './pages/intake/SubmissionPages';
 import { SignupRoute, ForgotPasswordPage, ResetPasswordPage, VerifyEmailPage, AccountPage } from './pages/intake/AccountPages';
+import FindYourPlayerPage from './pages/FindYourPlayerPage';
+import PlayerIntakeCompletePage from './pages/PlayerIntakeCompletePage';
+import PrivacyPage from './pages/PrivacyPage';
 
 function RoleRoute({ role, children }) {
   const { user, loading } = useAuth();
@@ -91,6 +94,9 @@ function AppRoutes() {
       <Route path="/forgot-password" element={<ForgotPasswordPage />} />
       <Route path="/account/reset" element={<ResetPasswordPage />} />
       <Route path="/account/verify" element={<VerifyEmailPage />} />
+      <Route path="/find-your-player" element={<FindYourPlayerPage />} />
+      <Route path="/find-your-player/complete" element={<PlayerIntakeCompletePage />} />
+      <Route path="/privacy" element={<PrivacyPage />} />
       <Route path="/claim/:token" element={<ClaimPage />} />
       <Route path="/claim-staff/:token" element={<ClaimStaffPage />} />
       <Route path="/p/:slug" element={<PublicProfilePage />} />
