@@ -22,7 +22,11 @@ export default function PlayerIntakeCompletePage() {
       const data = await response.json().catch(() => ({}));
       // The server's reason when it refuses (API routes answer { error }).
       if (!response.ok) setError(data.error || data.message || SAVE_FAILED);
-      else setStatus('Thank you—your player details have been received. Our team will begin matching the footage.');
+      else {
+        setStatus('Thank you—your player details have been received. Our team will begin matching the footage.');
+        // The confirmation is short; bring its headline into view on a phone, as step 1 → 2 does.
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      }
     } catch { setError(SAVE_FAILED); } finally { setIsSubmitting(false); }
   }
 
