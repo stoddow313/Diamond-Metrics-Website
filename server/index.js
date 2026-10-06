@@ -32,6 +32,7 @@ import { mountLiveRoutes } from './liveRoutes.js';
 import { mountTournamentCheckoutRoutes } from './tournamentCheckoutRoutes.js';
 import { mountStripeWebhookRoutes } from './stripeWebhookRoutes.js';
 import { mountPostPurchaseRoutes } from './postPurchaseRoutes.js';
+import { mountTournamentOrderCommandRoutes } from './tournamentOrderCommandRoutes.js';
 import { makeProber } from './liveProbe.js';
 import { startBackupScheduler } from './backup.js';
 import { requestLogger, errorHandler, installProcessHandlers, log, ENV } from './observability.js';
@@ -1651,6 +1652,8 @@ if (intakeEnabled()) {
 // the JSON parser.
 mountTournamentCheckoutRoutes(app, { db });
 mountPostPurchaseRoutes(app, { db });
+// Will's read-only list of paid tournament orders in Command (internal only).
+mountTournamentOrderCommandRoutes(app, { db, requireInternal });
 
 // Field Live (M7). Off unless DM_LIVE_ENABLED is set, so this ships dark and the
 // relay simply gets 404s until someone turns it on deliberately.

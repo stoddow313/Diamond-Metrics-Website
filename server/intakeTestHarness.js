@@ -20,6 +20,7 @@ export async function startIntakeApp() {
   const { mountTournamentCheckoutRoutes } = await import('./tournamentCheckoutRoutes.js');
   const { mountStripeWebhookRoutes } = await import('./stripeWebhookRoutes.js');
   const { mountPostPurchaseRoutes } = await import('./postPurchaseRoutes.js');
+  const { mountTournamentOrderCommandRoutes } = await import('./tournamentOrderCommandRoutes.js');
 
   const app = express();
   // As in index.js: the Stripe webhook needs the raw body, so it precedes the JSON parser.
@@ -38,6 +39,7 @@ export async function startIntakeApp() {
   mountIntakeRoutes(app, { db, requireSubmitter });
   mountTournamentCheckoutRoutes(app, { db });
   mountPostPurchaseRoutes(app, { db });
+  mountTournamentOrderCommandRoutes(app, { db, requireInternal });
   const server = app.listen(0);
   await once(server, 'listening');
   const base = `http://127.0.0.1:${server.address().port}`;
