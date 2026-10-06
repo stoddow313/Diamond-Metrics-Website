@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import MarketingLayout from '../components/MarketingLayout';
+import { loadSavedPlayerDetails, savePlayerDetails } from '../lib/findYourPlayerSaved';
 import heroImage from '../assets/find-your-player-hero.jpeg';
 import './FindYourPlayerPage.css';
 
@@ -30,15 +31,27 @@ function validateDetails(form) {
   return errors;
 }
 
+// The details saved just before leaving for Stripe, if they still make a
+// complete details step; anything else counts as nothing saved.
+function restoreDetails() {
+  const saved = loadSavedPlayerDetails();
+  const form = Object.fromEntries(Object.keys(emptyForm).map((key) => [key, typeof saved?.form?.[key] === 'string' ? saved.form[key] : '']));
+  if (Object.keys(validateDetails(form)).length) return null;
+  return { form, packageId: packages.some((item) => item.id === saved.packageId) ? saved.packageId : 'individual_pro' };
+}
+
 export default function FindYourPlayerPage() {
   const [searchParams] = useSearchParams();
-  const [step, setStep] = useState('details');
-  const [selectedPackage, setSelectedPackage] = useState('individual_pro');
-  const [form, setForm] = useState(emptyForm);
+  const checkoutCancelled = searchParams.get('checkout') === 'cancelled';
+  // Back from a canceled checkout in the same tab: reopen on the package step
+  // with everything restored. A fresh tab has nothing saved and starts empty.
+  const [restored] = useState(() => (checkoutCancelled ? restoreDetails() : null));
+  const [step, setStep] = useState(restored ? 'packages' : 'details');
+  const [selectedPackage, setSelectedPackage] = useState(restored?.packageId || 'individual_pro');
+  const [form, setForm] = useState(restored?.form || emptyForm);
   const [errors, setErrors] = useState({});
   const [checkoutError, setCheckoutError] = useState('');
   const [isCreatingCheckout, setIsCreatingCheckout] = useState(false);
-  const checkoutCancelled = searchParams.get('checkout') === 'cancelled';
   const selected = packages.find((item) => item.id === selectedPackage);
   const tournamentLabel = useMemo(() => tournaments.find((item) => item.id === form.tournamentId)?.label, [form.tournamentId]);
 
@@ -70,7 +83,10 @@ export default function FindYourPlayerPage() {
       const data = await response.json().catch(() => ({}));
       // The server's reason when it refuses (API routes answer { error }).
       if (!response.ok || !(data.url || data.checkoutUrl)) setCheckoutError(data.error || data.message || CHECKOUT_FAILED);
-      else window.location.assign(data.url || data.checkoutUrl);
+      else {
+        savePlayerDetails({ form, packageId: selectedPackage });
+        window.location.assign(data.url || data.checkoutUrl);
+      }
     } catch {
       // The request never reached the server: never show the browser's "Failed to fetch".
       setCheckoutError(CHECKOUT_FAILED);
@@ -83,7 +99,7 @@ export default function FindYourPlayerPage() {
     <MarketingLayout contact={false}>
       <section className="player-finder" aria-labelledby="player-finder-title">
         <div className="player-finder-progress" aria-label={`Step ${step === 'details' ? 'one' : 'two'} of two`}><span className={step === 'details' ? 'is-active' : ''} /><span className={step === 'packages' ? 'is-active' : ''} /></div>
-        {checkoutCancelled && <div className="player-finder-alert" role="status">Checkout was canceled. Your player details are still here—choose a package whenever you’re ready.</div>}
+        {restored && <div className="player-finder-alert" role="status">Checkout was canceled. Your player details are still here—choose a package whenever you’re ready.</div>}
 
         {step === 'details' ? (
           <div className="player-finder-grid">
