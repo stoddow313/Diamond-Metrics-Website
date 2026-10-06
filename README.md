@@ -24,6 +24,8 @@ The QR checkout at `/find-your-player` reads its Stripe settings from the shell 
 
 Stripe returns the parent to the page they started on (`DM_PUBLIC_BASE_URL` overrides it; production sets `https://diamondmetrics.ai`). Pay with the test card `4242 4242 4242 4242`, any future expiry and any CVC.
 
+Production uses a live key and reads its four live Price IDs from `STRIPE_LIVE_PRICES` (same shape), set in Render; no Price ID lives in code. A checkout whose Price would not charge the card's amount, once, in US dollars is refused. **Command → Operations → Stripe prices → Check now** shows each Price as Stripe has it (docs/COMMAND_OPS.md §3.18).
+
 ## Admin
 
 Log in at `/login` with the seeded admin account:

@@ -113,9 +113,10 @@ Without it, the same events still appear in the structured log as
 ### Tournament checkout (§3.18)
 | Variable | Default | Purpose |
 |---|---|---|
-| `STRIPE_SECRET_KEY` | — | Server only. Production: the **live** key (`sk_live_…`), which charges only the handoff's four live prices. Locally: a test key (`sk_test_…`). Unset: checkout refuses, the webhook changes nothing, everything else runs |
+| `STRIPE_SECRET_KEY` | — | Server only. Production: the **live** key (`sk_live_…`), which charges only `STRIPE_LIVE_PRICES`. Locally: a test key (`sk_test_…`). Unset: checkout refuses, the webhook changes nothing, everything else runs |
 | `STRIPE_WEBHOOK_SECRET` | — | Signing secret of the endpoint that calls `/api/stripe/webhook`: the live endpoint's in production, `stripe listen`'s locally |
-| `STRIPE_TEST_PRICES` | — | Test keys only: `{"individual_basic":"price_…","individual_pro":"price_…","tournament_basic":"price_…","tournament_pro":"price_…"}`. Ignored with a live key; a package missing from it refuses checkout |
+| `STRIPE_LIVE_PRICES` | — | Live keys only (production, set in Render): the four live Price IDs, `{"individual_basic":"price_…","individual_pro":"price_…","tournament_basic":"price_…","tournament_pro":"price_…"}`. No Price ID lives in code, so changing one is this setting, not a deploy. Ignored with a test key; a package missing from it refuses checkout |
+| `STRIPE_TEST_PRICES` | — | Test keys only: the same shape, with test-mode Price IDs. Ignored with a live key; a package missing from it refuses checkout |
 | `DM_PUBLIC_BASE_URL` | — | (Also above.) Where Stripe sends the parent back. Production: `https://diamondmetrics.ai`, which gives the handoff's success and cancel addresses. Unset outside production, the parent returns to the page they started on |
 | `STRIPE_CLI` | `stripe` | Local `npm run dev` only: the Stripe CLI it runs to forward test webhooks |
 
@@ -771,7 +772,9 @@ position, and shows the parent their order number. Stripe emails the parent a
 receipt for every payment. Will sees paid orders at **Command → Tournament
 orders**, right after Intake, and marks each one delivered once its analysis
 has gone out. The browser sends a package key only: the server picks the
-Price, and nothing but Stripe's signed webhook marks an order paid.
+Price from `STRIPE_LIVE_PRICES` (live key) or `STRIPE_TEST_PRICES` (test key),
+refuses a Price that would not charge the card's amount, once, in US dollars,
+and nothing but Stripe's signed webhook marks an order paid.
 
 **Go-live order (before 2026-10-09).** Each step depends on the one before.
 
@@ -780,10 +783,11 @@ Price, and nothing but Stripe's signed webhook marks an order paid.
 2. Confirm the production admin password is not the default published in
    the public README. The list shows parent contacts and players' details to
    anyone signed in to Command.
-3. In Render, set `STRIPE_SECRET_KEY` (live), `STRIPE_WEBHOOK_SECRET` (from
-   step 4) and `DM_PUBLIC_BASE_URL=https://diamondmetrics.ai`. The last one
-   also moves account-email links from `www.` to the bare domain, which is
-   harmless while production email is off; both hosts serve the site.
+3. In Render, set `STRIPE_SECRET_KEY` (live), `STRIPE_LIVE_PRICES` (the four
+   live Price IDs, below), `STRIPE_WEBHOOK_SECRET` (from step 4) and
+   `DM_PUBLIC_BASE_URL=https://diamondmetrics.ai`. The last one also moves
+   account-email links from `www.` to the bare domain, which is harmless
+   while production email is off; both hosts serve the site.
 4. In Stripe **live** mode, add a webhook endpoint for
    `checkout.session.completed` at
    `https://diamond-metrics-api.onrender.com/api/stripe/webhook`: the Render
@@ -794,11 +798,34 @@ Price, and nothing but Stripe's signed webhook marks an order paid.
    guardian name." (the route exists; nothing is created). **Only then**
    merge the pages to `main`: Vercel publishes `main` at once, and a
    checkout button whose endpoint is missing fails for every parent.
-6. Make one live $50 purchase at `https://diamondmetrics.ai/find-your-player`
+6. Signed in to Command as an admin, open **Operations**. Service health's
+   **Tournament checkout** row must read "live key · prices from
+   STRIPE_LIVE_PRICES" in green; then **Stripe prices → Check now** must
+   show all four packages ✓ at $50.00, $75.00, $125.00 and $150.00 one-time.
+   This is the only check of the $75, $125 and $150 Prices before parents
+   pay, because step 7 buys the $50 package.
+7. Make one live $50 purchase at `https://diamondmetrics.ai/find-your-player`
    under a guardian name that marks it as a test. It must return to
    `https://diamondmetrics.ai/find-your-player/complete?session_id=cs_live_…`
-   and appear paid in Tournament orders with its details. Then refund it in
-   Stripe; it stays listed as paid, because refunds show only in Stripe.
+   and appear paid in Tournament orders with its details, and Stripe's
+   receipt email must reach the address typed. Then refund it in Stripe; it
+   stays listed as paid, because refunds show only in Stripe.
+
+**The live Price IDs (`STRIPE_LIVE_PRICES`).** One line of JSON naming each
+package's live Price, the same shape as the test map:
+`{"individual_basic":"price_…","individual_pro":"price_…","tournament_basic":"price_…","tournament_pro":"price_…"}`.
+Take each ID from Stripe in **live** mode (Product catalog → the product →
+its Price → copy the `price_…` ID); a test-mode ID is not found with the live
+key. Render → the API service → **Environment** → `STRIPE_LIVE_PRICES` →
+save, and let Render redeploy the API so it reads the new value. To change a
+Price later (new products, new IDs), change this setting the same way and run
+step 6's check again: no code change and no merge. The server never charges a
+Price that is not its card's amount (Individual Game — Basic $50, Individual
+Game — Pro $75, Single Tournament — Basic $125, Single Tournament — Pro $150),
+one-time, in US dollars: that package's checkout is refused and the log says
+why. So a new amount is a code change to the cards
+(src/pages/FindYourPlayerPage.jsx) and `PACKAGES`
+(server/tournamentOrderLogic.js) together.
 
 | Before real money | Owner | Done |
 |---|---|---|
@@ -807,13 +834,14 @@ Price, and nothing but Stripe's signed webhook marks an order paid.
 | Production admin password is not the README default | Wes | |
 | Checkout offers only payment methods that settle at checkout (test mode offered card, Cash App Pay, Affirm, Klarna, Amazon Pay, Link and Link's "Bank"); a delayed method would leave an order unpaid | Will | |
 | The four live prices are one-time USD at $50, $75, $125 and $150 | Will | |
-| The four Stripe product names match the package cards ("Individual Game — Basic" and so on), in test and live: Checkout shows the product name, and test mode still says "Tournament Pro" for "Single Tournament — Pro" | Will | |
+| `STRIPE_LIVE_PRICES` holds the four live Price IDs, and Operations → Stripe prices → Check now shows all four ✓ (step 6) | Wes | |
+| The four Stripe product names match the package cards ("Individual Game — Basic" and so on), in test and live: Checkout shows the product name, and test mode still says "Tournament Pro" for "Single Tournament — Pro". Stripe prices → Check now shows a name that differs in amber | Will | |
 | Link's "Save my information for faster checkout" box is off in Stripe's Link settings, in test and live. Pre-ticked, it fails a parent's first Pay until they untick it or add a phone number, and the server cannot switch it off | Will | |
 | Receipts: the server asks Stripe to email one for every payment (`receipt_email`), whatever the "Successful payments" setting. Check that the receipt shows Diamond Metrics' name, support email and logo (Settings → Business → Public details, and Branding → Email receipts) | Will | |
-| `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `DM_PUBLIC_BASE_URL` set on Render | Wes | |
+| `STRIPE_SECRET_KEY`, `STRIPE_LIVE_PRICES`, `STRIPE_WEBHOOK_SECRET`, `DM_PUBLIC_BASE_URL` set on Render | Wes | |
 | Live endpoint registered at the Render address | Wes | |
 | API deployed and `/api/health` checked before the pages reach `main` | Wes | |
-| Live $50 purchase seen in Tournament orders with its details, then refunded | Wes | |
+| Live $50 purchase seen in Tournament orders with its details, its receipt email received, then refunded | Wes | |
 
 **Local test mode.**
 
@@ -834,6 +862,8 @@ Price, and nothing but Stripe's signed webhook marks an order paid.
   `http://<this-mac>.local:<port>`. Stripe test mode accepts `.local`, LAN
   and localhost return addresses.
 - Pay with `4242 4242 4242 4242`, any future expiry, any CVC.
+- Command → Operations → **Stripe prices → Check now** (admin) checks the four
+  test Prices the same way step 6 checks the live ones.
 - Stripe emails no receipts in test mode, even with `receipt_email` set; a
   test payment's receipt is on the payment in the dashboard (Receipt history,
   where "Send receipt" sends one by hand).
@@ -878,7 +908,8 @@ Stripe and do not change a row.
 
 | Symptom | Look for | Fix |
 |---|---|---|
-| Every parent sees "We could not start secure checkout" | `stripe_not_configured` or `stripe_test_price_missing` in the log (setting named, never its value), or `tournament_checkout_failed` with Stripe's error type and code | Set or correct the variable and restart; an `authentication_error` is a wrong key |
+| Every parent sees "We could not start secure checkout" | `stripe_not_configured`, `stripe_live_price_missing` or `stripe_test_price_missing` in the log (setting named, never its value), or `tournament_checkout_failed` with Stripe's error type and code | Set or correct the variable and restart; an `authentication_error` is a wrong key |
+| Parents choosing one package see "We could not start secure checkout" | `stripe_price_mismatch` with the package and the problem ("charges $125.00, not the card’s $150.00", "was not found in Stripe", "is archived in Stripe") | Put that package's own Price in `STRIPE_LIVE_PRICES` (a swapped or test-mode ID is the usual cause), then Operations → Stripe prices → Check now |
 | Paid in Stripe, missing from Tournament orders | `stripe_webhook_rejected` (signature) or nothing at all; Stripe dashboard → Webhooks → the endpoint's deliveries | Make `STRIPE_WEBHOOK_SECRET` match the live endpoint, then resend the event from the dashboard. A redelivery never makes a second order |
 | `stripe_webhook_not_paid` | A payment method that settles later | The order stays pending until delayed methods are supported (TDR §9.2); check the payment in Stripe |
 | "Too many checkout attempts…" at the field | 60 checkouts per network address per 10 minutes, 10 per email per hour | Limits reset with the window (and on restart); the parent can retry |
