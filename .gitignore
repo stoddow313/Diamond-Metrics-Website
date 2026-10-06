@@ -26,3 +26,9 @@ dist-ssr
 
 # SQLite database
 server/data/
+
+# Local environment files, sample inputs and golden-path runs: Stripe keys
+# and customer data never enter this public repository.
+.env*
+inputs/
+.golden-path/

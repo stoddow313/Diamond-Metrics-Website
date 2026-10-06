@@ -32,6 +32,7 @@ function Footer() {
           <Link to="/programs">For Programs</Link>
           <Link to="/#contact">Contact</Link>
           <Link to="/login">Sign In</Link>
+          <Link to="/privacy">Privacy Policy</Link>
         </div>
         <div className="footer-contact">
           <a href="mailto:info@diamondmetrics.ai">info@diamondmetrics.ai</a>

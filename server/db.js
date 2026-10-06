@@ -1226,6 +1226,78 @@ addColumnIfMissing('cmd_video_feeds', 'rights_id', 'rights_id INTEGER');
 addColumnIfMissing('cmd_video_feeds', 'retention_deadline', 'retention_deadline TEXT');
 addColumnIfMissing('cmd_video_feeds', 'uploader_account_id', 'uploader_account_id INTEGER');
 
+// ═══ Tournament orders (QR checkout) ════════════════════════════════════
+// A parent at a filmed tournament scans a QR code, picks a package and pays
+// through Stripe Checkout (docs/COMMAND_TDR.md, tournament checkout). These
+// are their own records — not intake submissions, not customer accounts: one
+// row per checkout, created pending before Stripe sees it and marked paid
+// only by Stripe's signed webhook. Parent and player details stay here, never
+// in Stripe. Rules: tournamentOrderLogic.js; data access: tournamentOrderStore.js.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS tournament_orders (
+    id                       INTEGER PRIMARY KEY AUTOINCREMENT,
+    order_id                 TEXT NOT NULL UNIQUE,            -- TO-XXXX-XXXX, random; Stripe's client_reference_id
+    status                   TEXT NOT NULL DEFAULT 'pending', -- pending | paid (only the signed webhook sets paid)
+    guardian_name            TEXT NOT NULL,
+    player_name              TEXT NOT NULL,
+    email                    TEXT NOT NULL,
+    phone                    TEXT NOT NULL DEFAULT '',
+    tournament_id            TEXT NOT NULL,                   -- a key of TOURNAMENTS in tournamentOrderLogic.js
+    package_key              TEXT NOT NULL,                   -- individual_basic | individual_pro | tournament_basic | tournament_pro
+    price_id                 TEXT NOT NULL,                   -- the Stripe Price the server chose for the key
+    stripe_session_id        TEXT UNIQUE,
+    stripe_payment_intent_id TEXT,
+    amount_total             INTEGER,                         -- cents, as Stripe reported it
+    currency                 TEXT,
+    payment_status           TEXT,
+    paid_event_id            TEXT,
+    paid_at                  TEXT,                            -- when the first paid webhook arrived
+    team_club                TEXT NOT NULL DEFAULT '',        -- the post-purchase identification step
+    jersey_number            TEXT NOT NULL DEFAULT '',
+    primary_position         TEXT NOT NULL DEFAULT '',
+    bats_throws              TEXT NOT NULL DEFAULT '',
+    game_context             TEXT NOT NULL DEFAULT '',
+    notes                    TEXT NOT NULL DEFAULT '',
+    details_received_at      TEXT,                            -- NULL: "Details missing"
+    created_at               TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at               TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+  CREATE INDEX IF NOT EXISTS idx_tournament_orders_paid ON tournament_orders(status, paid_at);
+
+  -- Append-only history: created, checkout started, paid, details received or
+  -- replaced, delivered or delivery undone. data carries ids only, never
+  -- names, emails or phone numbers.
+  CREATE TABLE IF NOT EXISTS tournament_order_events (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    order_id   INTEGER NOT NULL REFERENCES tournament_orders(id),
+    event_type TEXT NOT NULL,
+    actor_kind TEXT NOT NULL,                                 -- parent | stripe | staff
+    data       TEXT NOT NULL DEFAULT '{}',
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+  CREATE INDEX IF NOT EXISTS idx_tournament_order_events_order ON tournament_order_events(order_id, id);
+  CREATE TRIGGER IF NOT EXISTS trg_tournament_order_events_no_update BEFORE UPDATE ON tournament_order_events
+  BEGIN SELECT RAISE(ABORT, 'the tournament order history is append-only'); END;
+  CREATE TRIGGER IF NOT EXISTS trg_tournament_order_events_no_delete BEFORE DELETE ON tournament_order_events
+  BEGIN SELECT RAISE(ABORT, 'the tournament order history is append-only'); END;
+
+  -- One row per Stripe event this server acted on, so a redelivered event is
+  -- recognised by its id before anything else happens (handoff §5).
+  CREATE TABLE IF NOT EXISTS stripe_events (
+    event_id    TEXT PRIMARY KEY,                             -- evt_…
+    type        TEXT NOT NULL,
+    order_id    INTEGER REFERENCES tournament_orders(id),
+    outcome     TEXT NOT NULL DEFAULT '',                     -- paid | already_paid | not_paid
+    received_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+`);
+// Fulfillment (ship gate, 2026-10-06): Will marks a paid order delivered once
+// its analysis has gone to the parent, so tournament progress stays in Command
+// rather than a spreadsheet. NULL: not delivered. The history row says who.
+addColumnIfMissing('tournament_orders', 'delivered_at', 'delivered_at TEXT');
+addColumnIfMissing('tournament_orders', 'delivered_by', 'delivered_by INTEGER REFERENCES admins(id)');
+addColumnIfMissing('tournament_order_events', 'actor_id', 'actor_id INTEGER REFERENCES admins(id)'); // staff actions only
+
 // ── Seed Command reference data (idempotent; active flags follow code) ──
 {
   const insSport = db.prepare('INSERT OR IGNORE INTO sports (key, name) VALUES (?, ?)');

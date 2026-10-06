@@ -189,6 +189,7 @@ export const api = {
   commandOps: () => request('/api/command/ops'),
   commandRunBackup: () => request('/api/command/backups/run', { method: 'POST' }),
   commandStorageCheck: () => request('/api/command/storage/check', { method: 'POST' }),
+  commandStripePriceCheck: () => request('/api/command/stripe/prices/check', { method: 'POST' }),
   commandBulkJobs: (body) => request('/api/command/jobs/bulk', { method: 'POST', body }),
 
   // Customer footage intake (docs/COMMAND_TDR.md §8). One config call says
@@ -218,6 +219,11 @@ export const api = {
   intakeReply: (pid, message) => request(`/api/intake/submissions/${pid}/reply`, { method: 'POST', body: { message } }),
   intakeRequestDeletion: (pid, note) => request(`/api/intake/submissions/${pid}/deletion-request`, { method: 'POST', body: { note } }),
   intakeRequestAccountDeletion: (note) => request('/api/intake/account/deletion-request', { method: 'POST', body: { note } }),
+
+  // Paid tournament (QR checkout) orders (Command); admin and fulfillment mark one delivered
+  commandTournamentOrders: () => request('/api/command/tournament-orders'),
+  commandSetTournamentOrderDelivered: (orderId, delivered) =>
+    request(`/api/command/tournament-orders/${encodeURIComponent(orderId)}/delivered`, { method: 'PUT', body: { delivered } }),
 
   // Will's intake queue (Command)
   commandIntakeQueue: (params = {}) => request(`/api/command/intake${query(params)}`),

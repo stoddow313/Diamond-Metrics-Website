@@ -283,13 +283,15 @@ export function CommandLayout() {
     <div className="min-h-screen" style={{ background: 'linear-gradient(180deg, #06122b 0%, #081a3d 100%)' }}>
       <header className="border-b" style={{ borderColor: '#1e3a5f', backgroundColor: 'rgba(6, 18, 43, 0.9)' }}>
         <div className="max-w-6xl mx-auto px-4 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-4 min-w-0">
             <Link to="/command"><BrandMark /></Link>
             <span className="text-xs font-bold tracking-widest uppercase px-2 py-1 rounded" style={{ backgroundColor: 'rgba(251, 191, 36, 0.12)', color: '#fbbf24' }}>
               Command
             </span>
-            <nav className="hidden md:flex items-center gap-3 xl:gap-4 text-sm font-bold whitespace-nowrap">
+            {/* When the links do not fit they wrap to a second row rather than overlapping the account or pushing the page sideways. */}
+            <nav className="hidden md:flex flex-wrap items-center gap-x-3 gap-y-1 text-sm font-bold whitespace-nowrap">
               <Link to="/command/intake" className="hover:underline" style={{ color: '#cfe8ff' }}>Intake</Link>
+              <Link to="/command/tournament-orders" className="hover:underline" style={{ color: '#cfe8ff' }}>Tournament orders</Link>
               <Link to="/command" className="hover:underline" style={{ color: '#cfe8ff' }}>Production Queue</Link>
               <Link to="/command/new" className="hover:underline" style={{ color: '#cfe8ff' }}>New Job</Link>
               <Link to="/command/bulk" className="hover:underline" style={{ color: '#cfe8ff' }}>Bulk</Link>
@@ -298,7 +300,7 @@ export function CommandLayout() {
               {user?.role === 'admin' && <Link to="/admin" className="hover:underline" style={{ color: '#64748b' }}>Admin ↗</Link>}
             </nav>
           </div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 shrink-0">
             <span className="text-sm hidden xl:inline whitespace-nowrap" style={{ color: '#94a3b8' }}>
               {user?.name || user?.email} · <span className="uppercase text-xs font-bold" style={{ color: '#38bdf8' }}>{user?.role}</span>
             </span>

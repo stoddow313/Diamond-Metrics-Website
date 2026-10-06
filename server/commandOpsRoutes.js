@@ -7,6 +7,7 @@ import { storageMode, selfTest, storageReady, missingStorageConfig } from './sto
 import { ENV, errorTrackingEnabled, alertsEnabled } from './observability.js';
 import { ffmpegStatus, STALL_MS, runningMediaJobs } from './mediaWorker.js';
 import { emailConfigured, emailMissingConfig, sendTestEmail } from './notifications.js';
+import { checkoutSummary, checkPrices } from './stripeConfig.js';
 
 export function mountCommandOpsRoutes(app, { db, requireInternal, createJob }) {
   const requireAdminRole = (req, res, next) => requireInternal(req, res, () => {
@@ -50,6 +51,7 @@ export function mountCommandOpsRoutes(app, { db, requireInternal, createJob }) {
       email_configured: emailConfigured(),
       email_missing_config: emailMissingConfig(),
       email_from: process.env.DM_EMAIL_FROM || null,
+      tournament_checkout: checkoutSummary(),
       backups: {
         enabled: process.env.DM_BACKUPS !== '0',
         retention_days: RETENTION_DAYS,
@@ -70,6 +72,12 @@ export function mountCommandOpsRoutes(app, { db, requireInternal, createJob }) {
   // after wiring R2, before anyone uploads a real game file.
   app.post('/api/command/storage/check', requireAdminRole, async (_req, res) => {
     res.json({ check: await selfTest() });
+  });
+
+  // The four tournament packages' Stripe Prices as Stripe has them: run it
+  // after setting or changing a STRIPE_LIVE_PRICE_*, before a parent pays.
+  app.post('/api/command/stripe/prices/check', requireAdminRole, async (_req, res) => {
+    res.json({ check: await checkPrices() });
   });
 
   app.post('/api/command/backups/run', requireAdminRole, async (_req, res) => {

@@ -19,6 +19,7 @@ import OpsPage from './pages/command/OpsPage';
 import BulkJobsPage from './pages/command/BulkJobsPage';
 import ScorebookPage from './pages/command/ScorebookPage';
 import IntakeQueuePage from './pages/command/IntakeQueuePage';
+import TournamentOrdersPage from './pages/command/TournamentOrdersPage';
 import IntakeRecordPage from './pages/command/IntakeRecordPage';
 import { IntakeDeletionsPage, IntakeDeletionRequestPage } from './pages/command/IntakeDeletionsPage';
 import TeamPage from './pages/command/TeamPage';
@@ -43,6 +44,9 @@ import { IntakeShell } from './pages/intake/ui';
 import { SubmitStartPage, SubmitWizardPage, InternalSubmitterNotice } from './pages/intake/SubmitPages';
 import { MySubmissionsPage, SubmissionStatusPage } from './pages/intake/SubmissionPages';
 import { SignupRoute, ForgotPasswordPage, ResetPasswordPage, VerifyEmailPage, AccountPage } from './pages/intake/AccountPages';
+import FindYourPlayerPage from './pages/FindYourPlayerPage';
+import PlayerIntakeCompletePage from './pages/PlayerIntakeCompletePage';
+import PrivacyPage from './pages/PrivacyPage';
 
 function RoleRoute({ role, children }) {
   const { user, loading } = useAuth();
@@ -91,6 +95,9 @@ function AppRoutes() {
       <Route path="/forgot-password" element={<ForgotPasswordPage />} />
       <Route path="/account/reset" element={<ResetPasswordPage />} />
       <Route path="/account/verify" element={<VerifyEmailPage />} />
+      <Route path="/find-your-player" element={<FindYourPlayerPage />} />
+      <Route path="/find-your-player/complete" element={<PlayerIntakeCompletePage />} />
+      <Route path="/privacy" element={<PrivacyPage />} />
       <Route path="/claim/:token" element={<ClaimPage />} />
       <Route path="/claim-staff/:token" element={<ClaimStaffPage />} />
       <Route path="/p/:slug" element={<PublicProfilePage />} />
@@ -126,6 +133,7 @@ function AppRoutes() {
         <Route path="intake/deletions" element={<IntakeDeletionsPage />} />
         <Route path="intake/deletions/:requestId" element={<IntakeDeletionRequestPage />} />
         <Route path="intake/:id" element={<IntakeRecordPage />} />
+        <Route path="tournament-orders" element={<TournamentOrdersPage />} />
         <Route path="team" element={<InternalRoute roles={['admin']}><TeamPage /></InternalRoute>} />
       </Route>
       <Route path="/admin" element={<RoleRoute role="admin"><AdminLayout /></RoleRoute>}>
