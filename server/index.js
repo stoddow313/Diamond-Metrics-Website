@@ -1653,7 +1653,7 @@ if (intakeEnabled()) {
 mountTournamentCheckoutRoutes(app, { db });
 mountPostPurchaseRoutes(app, { db });
 // Will's read-only list of paid tournament orders in Command (internal only).
-mountTournamentOrderCommandRoutes(app, { db, requireInternal });
+mountTournamentOrderCommandRoutes(app, { db, requireInternal, requireInternalRole });
 
 // Field Live (M7). Off unless DM_LIVE_ENABLED is set, so this ships dark and the
 // relay simply gets 404s until someone turns it on deliberately.

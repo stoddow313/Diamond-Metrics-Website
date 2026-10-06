@@ -39,7 +39,7 @@ export async function startIntakeApp() {
   mountIntakeRoutes(app, { db, requireSubmitter });
   mountTournamentCheckoutRoutes(app, { db });
   mountPostPurchaseRoutes(app, { db });
-  mountTournamentOrderCommandRoutes(app, { db, requireInternal });
+  mountTournamentOrderCommandRoutes(app, { db, requireInternal, requireInternalRole });
   const server = app.listen(0);
   await once(server, 'listening');
   const base = `http://127.0.0.1:${server.address().port}`;

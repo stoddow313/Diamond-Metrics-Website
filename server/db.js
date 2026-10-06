@@ -1265,12 +1265,13 @@ db.exec(`
   CREATE INDEX IF NOT EXISTS idx_tournament_orders_paid ON tournament_orders(status, paid_at);
 
   -- Append-only history: created, checkout started, paid, details received or
-  -- replaced. data carries ids only, never names, emails or phone numbers.
+  -- replaced, delivered or delivery undone. data carries ids only, never
+  -- names, emails or phone numbers.
   CREATE TABLE IF NOT EXISTS tournament_order_events (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
     order_id   INTEGER NOT NULL REFERENCES tournament_orders(id),
     event_type TEXT NOT NULL,
-    actor_kind TEXT NOT NULL,                                 -- parent | stripe
+    actor_kind TEXT NOT NULL,                                 -- parent | stripe | staff
     data       TEXT NOT NULL DEFAULT '{}',
     created_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
@@ -1290,6 +1291,12 @@ db.exec(`
     received_at TEXT NOT NULL DEFAULT (datetime('now'))
   );
 `);
+// Fulfillment (ship gate, 2026-10-06): Will marks a paid order delivered once
+// its analysis has gone to the parent, so tournament progress stays in Command
+// rather than a spreadsheet. NULL: not delivered. The history row says who.
+addColumnIfMissing('tournament_orders', 'delivered_at', 'delivered_at TEXT');
+addColumnIfMissing('tournament_orders', 'delivered_by', 'delivered_by INTEGER REFERENCES admins(id)');
+addColumnIfMissing('tournament_order_events', 'actor_id', 'actor_id INTEGER REFERENCES admins(id)'); // staff actions only
 
 // ── Seed Command reference data (idempotent; active flags follow code) ──
 {

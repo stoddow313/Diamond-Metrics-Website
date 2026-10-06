@@ -4,11 +4,12 @@
 import { DETAIL_FIELDS, newOrderId, packageLabel, tournamentLabel } from './tournamentOrderLogic.js';
 
 // Append to the order's history (tournament_order_events has no UPDATE or
-// DELETE). Callers pass ids only — never names, emails or phone numbers.
-export function addOrderEvent(db, orderPk, type, actorKind, data = {}) {
+// DELETE). Callers pass ids only — never names, emails or phone numbers;
+// actorId is the internal account behind a staff action.
+export function addOrderEvent(db, orderPk, type, actorKind, data = {}, actorId = null) {
   db.prepare(
-    'INSERT INTO tournament_order_events (order_id, event_type, actor_kind, data) VALUES (?, ?, ?, ?)'
-  ).run(orderPk, type, actorKind, JSON.stringify(data));
+    'INSERT INTO tournament_order_events (order_id, event_type, actor_kind, actor_id, data) VALUES (?, ?, ?, ?, ?)'
+  ).run(orderPk, type, actorKind, actorId, JSON.stringify(data));
 }
 
 export const getOrder = (db, orderPk) => db.prepare('SELECT * FROM tournament_orders WHERE id = ?').get(orderPk) || null;
@@ -84,16 +85,47 @@ export function saveDetails(db, orderPk, details) {
   })();
 }
 
+// Will's one action on the list: a paid order is delivered once its analysis
+// has gone to the parent, and the mark can be taken back. Only a change writes
+// history, so marking twice leaves one "delivered" row. Returns whether this
+// call changed the order.
+export function setDelivered(db, orderPk, delivered, actorId) {
+  return db.transaction(() => {
+    const changed = (delivered
+      ? db.prepare(
+        `UPDATE tournament_orders SET delivered_at = datetime('now'), delivered_by = ?, updated_at = datetime('now')
+          WHERE id = ? AND status = 'paid' AND delivered_at IS NULL`
+      ).run(actorId, orderPk)
+      : db.prepare(
+        `UPDATE tournament_orders SET delivered_at = NULL, delivered_by = NULL, updated_at = datetime('now')
+          WHERE id = ? AND status = 'paid' AND delivered_at IS NOT NULL`
+      ).run(orderPk)).changes === 1;
+    if (changed) addOrderEvent(db, orderPk, delivered ? 'delivered' : 'delivery_undone', 'staff', {}, actorId);
+    return changed;
+  })();
+}
+
+// What the Command list shows for a paid order (prd.md R4), plus the
+// delivered mark and who set it.
+const PAID_ORDER_VIEW = `
+  SELECT o.order_id, o.paid_at, o.package_key, o.amount_total, o.currency, o.tournament_id,
+         o.guardian_name, o.email, o.phone, o.player_name,
+         o.team_club, o.jersey_number, o.primary_position, o.bats_throws, o.game_context, o.notes, o.details_received_at,
+         o.stripe_session_id, o.stripe_payment_intent_id,
+         o.delivered_at, a.name AS delivered_by
+    FROM tournament_orders o
+    LEFT JOIN admins a ON a.id = o.delivered_by
+   WHERE o.status = 'paid'`;
+const labelled = o => ({ ...o, package_label: packageLabel(o.package_key), tournament_label: tournamentLabel(o.tournament_id) });
+
 // Paid orders only, newest paid first, with what staff need to fulfil each
 // one (prd.md R4). Pending and abandoned checkouts never appear.
 export function listPaidOrders(db) {
-  return db.prepare(
-    `SELECT order_id, paid_at, package_key, amount_total, currency, tournament_id,
-            guardian_name, email, phone, player_name,
-            team_club, jersey_number, primary_position, bats_throws, game_context, notes, details_received_at,
-            stripe_session_id, stripe_payment_intent_id
-       FROM tournament_orders
-      WHERE status = 'paid'
-      ORDER BY paid_at DESC, id DESC`
-  ).all().map(o => ({ ...o, package_label: packageLabel(o.package_key), tournament_label: tournamentLabel(o.tournament_id) }));
+  return db.prepare(`${PAID_ORDER_VIEW} ORDER BY o.paid_at DESC, o.id DESC`).all().map(labelled);
+}
+
+// One row of that list, or null when the order is unknown or not paid.
+export function getPaidOrderView(db, orderId) {
+  const o = db.prepare(`${PAID_ORDER_VIEW} AND o.order_id = ?`).get(String(orderId));
+  return o ? labelled(o) : null;
 }

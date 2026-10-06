@@ -1,6 +1,6 @@
 // Tournament orders — data access: pending orders, the one-time paid
-// transition, details saved and replaced, the append-only history and the
-// paid-only list staff read.
+// transition, details saved and replaced, the delivered mark, the append-only
+// history and the paid-only list staff read.
 import { test, after } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -11,8 +11,8 @@ process.env.DM_LOG_SILENT = '1';
 
 const { db } = await import('./db.js');
 const {
-  createPendingOrder, attachSession, recordStripeEvent, markPaid, saveDetails, listPaidOrders,
-  getOrder, getOrderByOrderId, getOrderBySessionId,
+  createPendingOrder, attachSession, recordStripeEvent, markPaid, saveDetails, setDelivered, listPaidOrders,
+  getOrder, getOrderByOrderId, getOrderBySessionId, getPaidOrderView,
 } = await import('./tournamentOrderStore.js');
 
 after(() => {
@@ -121,13 +121,50 @@ test('staff see paid orders only, newest paid first, with labels', () => {
   const mine = list.filter(o => [older.order_id, newer.order_id].includes(o.order_id));
   assert.deepEqual(mine.map(o => o.order_id), [newer.order_id, older.order_id]);
   assert.deepEqual(Object.keys(mine[0]).sort(), [
-    'amount_total', 'bats_throws', 'currency', 'details_received_at', 'email', 'game_context', 'guardian_name',
-    'jersey_number', 'notes', 'order_id', 'package_key', 'package_label', 'paid_at', 'phone', 'player_name',
+    'amount_total', 'bats_throws', 'currency', 'delivered_at', 'delivered_by', 'details_received_at', 'email', 'game_context',
+    'guardian_name', 'jersey_number', 'notes', 'order_id', 'package_key', 'package_label', 'paid_at', 'phone', 'player_name',
     'primary_position', 'stripe_payment_intent_id', 'stripe_session_id', 'team_club', 'tournament_id', 'tournament_label',
   ]);
+  assert.equal(mine[0].delivered_at, null, 'nothing is delivered until staff say so');
   assert.equal(mine[0].package_label, 'Single Tournament — Pro');
   assert.equal(mine[0].tournament_label, 'Better Baseball — Nephi, Utah · October 9–10, 2026');
   assert.equal(mine[0].team_club, 'Example Hawks 14U');
   assert.equal(mine[1].package_label, 'Individual Game — Basic');
   assert.equal(mine[1].details_received_at, null, 'no details yet: "Details missing"');
+});
+
+test('a paid order is marked delivered once, can be taken back, and the history names who', () => {
+  const staff = db.prepare("INSERT INTO admins (email, name, password_hash, role) VALUES ('will@dm.test', 'Will Example', 'x', 'fulfillment')").run().lastInsertRowid;
+  const o = createPendingOrder(db, ORDER);
+  attachSession(db, o.id, 'cs_test_deliver');
+  assert.equal(setDelivered(db, o.id, true, staff), false, 'a pending order cannot be delivered');
+  assert.equal(getOrder(db, o.id).delivered_at, null);
+  markPaid(db, o.id, paidWith(getOrder(db, o.id), 'evt_deliver_1'));
+  const paid = getOrder(db, o.id);
+
+  assert.equal(setDelivered(db, o.id, true, staff), true);
+  assert.equal(setDelivered(db, o.id, true, staff), false, 'marking twice changes nothing');
+  let row = getOrder(db, o.id);
+  assert.ok(row.delivered_at);
+  assert.equal(row.delivered_by, staff);
+  assert.deepEqual([row.status, row.paid_at, row.paid_event_id], [paid.status, paid.paid_at, paid.paid_event_id], 'payment is untouched');
+  const view = getPaidOrderView(db, o.order_id);
+  assert.equal(view.delivered_at, row.delivered_at);
+  assert.equal(view.delivered_by, 'Will Example');
+
+  assert.equal(setDelivered(db, o.id, false, staff), true);
+  assert.equal(setDelivered(db, o.id, false, staff), false);
+  row = getOrder(db, o.id);
+  assert.deepEqual([row.delivered_at, row.delivered_by, row.status], [null, null, 'paid']);
+  assert.equal(getPaidOrderView(db, o.order_id).delivered_by, null);
+
+  const history = db.prepare('SELECT event_type, actor_kind, actor_id FROM tournament_order_events WHERE order_id = ? ORDER BY id').all(o.id);
+  assert.deepEqual(history.slice(-2), [
+    { event_type: 'delivered', actor_kind: 'staff', actor_id: staff },
+    { event_type: 'delivery_undone', actor_kind: 'staff', actor_id: staff },
+  ]);
+  assert.equal(history.filter(e => e.event_type === 'delivered').length, 1);
+  assert.equal(getPaidOrderView(db, 'TO-NONE-NONE'), null);
+  const pending = createPendingOrder(db, ORDER);
+  assert.equal(getPaidOrderView(db, pending.order_id), null, 'an unpaid order has no row on the list');
 });
