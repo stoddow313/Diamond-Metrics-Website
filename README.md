@@ -11,6 +11,18 @@ npm run dev        # starts the API (:3001) and the web app (:5173) together
 
 - `npm run server` — API only
 - `npm run dev:web` — Vite only
+- `PORT=5901 HOST=0.0.0.0 npm run dev -- --host 0.0.0.0 --port 5901` serves the site on every interface, for a phone on `http://<this-mac>.local:5901`. The site proxies `/api` to the API, so the browser sees one origin.
+- When another process already holds :3001, `npm run dev` moves the API to a free port and points the site's proxy at it (`DM_API_PORT` / `DM_API_PROXY` still override).
+
+### Tournament checkout (Stripe test mode)
+
+The QR checkout at `/find-your-player` reads its Stripe settings from the shell that runs `npm run dev`, never from a file — this repository is public:
+
+- `STRIPE_SECRET_KEY` — a test-mode key (`sk_test_…`). Without it checkout refuses and everything else runs.
+- `STRIPE_TEST_PRICES` — the four one-time USD test prices: `{"individual_basic":"price_…","individual_pro":"price_…","tournament_basic":"price_…","tournament_pro":"price_…"}`.
+- `STRIPE_WEBHOOK_SECRET` — leave unset locally when the [Stripe CLI](https://docs.stripe.com/stripe-cli) is installed (`brew install stripe/stripe-cli/stripe`, or `STRIPE_CLI=/path/to/stripe`): `npm run dev` then runs `stripe listen` itself and hands its signing secret to the API, so test payments are marked paid. Set it only when you run `stripe listen --forward-to localhost:3001/api/stripe/webhook` yourself.
+
+Stripe returns the parent to the page they started on (`DM_PUBLIC_BASE_URL` overrides it; production sets `https://diamondmetrics.ai`). Pay with the test card `4242 4242 4242 4242`, any future expiry and any CVC.
 
 ## Admin
 
