@@ -1,0 +1,44 @@
+/* Tournament orders (Command, design S8): a table on a laptop, one card per
+   order once the content is 820 px wide or less. House look: IntakeQueuePage
+   (card, uppercase column heads, value over a muted detail, slate chips). */
+.tournament-orders-count { margin: 20px 0 10px; font-size: 14px; color: #94a3b8; }
+.tournament-orders-count b { color: #fff; font-size: 16px; }
+.tournament-orders-count .amber, .tournament-orders-count .amber b { color: #fbbf24; }
+.tournament-orders-card { border: 1px solid #1e3a5f; border-radius: 16px; background: rgba(15, 23, 42, 0.78); overflow: hidden; }
+.tournament-orders-empty { margin-top: 24px; padding: 40px; text-align: center; }
+.tournament-orders-chip { display: inline-block; padding: 2px 8px; border-radius: 999px; background: rgba(30, 41, 59, 0.9); color: #fbbf24; font-size: 11px; font-weight: 700; white-space: nowrap; }
+
+.tournament-orders-table { width: 100%; border-collapse: collapse; font-size: 14px; table-layout: fixed; }
+.tournament-orders-table th { padding: 12px 16px; text-align: left; font-size: 12px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; color: #64748b; }
+.tournament-orders-table col.w-paid { width: 15%; }
+.tournament-orders-table col.w-pkg { width: 18%; }
+.tournament-orders-table col.w-player { width: 15%; }
+.tournament-orders-table col.w-id { width: 24%; }
+.tournament-orders-table col.w-guard { width: 28%; }
+.tournament-orders-table tbody { border-top: 1px solid #1e3a5f; }
+.tournament-orders-table td { padding: 12px 16px 0; vertical-align: top; overflow-wrap: anywhere; }
+.tournament-orders-table tr.meta td { padding: 6px 16px 12px; }
+.tournament-orders-table .v { display: block; color: #cfe8ff; }
+.tournament-orders-table .strong { color: #fff; font-weight: 700; }
+.tournament-orders-table .l2 { display: block; margin-top: 2px; color: #cfe8ff; font-size: 13px; }
+.tournament-orders-table .sub { display: block; margin-top: 2px; color: #94a3b8; font-size: 12px; }
+.tournament-orders-table .mono { display: block; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; color: #64748b; }
+.tournament-orders-table .meta span { display: block; color: #64748b; font-size: 12px; }
+.tournament-orders-table .nw { white-space: nowrap; }
+
+/* 820 px of content inside Command's 16 px gutters. */
+@media (max-width: 852px) {
+  .tournament-orders-table, .tournament-orders-table tbody, .tournament-orders-table tr, .tournament-orders-table td { display: block; }
+  .tournament-orders-table colgroup, .tournament-orders-table thead { display: none; }
+  .tournament-orders-table tbody { padding: 14px 16px; }
+  .tournament-orders-table tr.main { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "player paid" "pkg pkg" "id id" "guard guard"; gap: 8px 12px; }
+  .tournament-orders-table td { padding: 0; }
+  .tournament-orders-table .c-paid { grid-area: paid; text-align: right; }
+  .tournament-orders-table .c-pkg { grid-area: pkg; }
+  .tournament-orders-table .c-player { grid-area: player; }
+  .tournament-orders-table .c-id { grid-area: id; }
+  .tournament-orders-table .c-guard { grid-area: guard; }
+  .tournament-orders-table .c-player .strong { font-size: 16px; }
+  .tournament-orders-table tr.meta td:first-child { display: none; }
+  .tournament-orders-table tr.meta td { padding: 10px 0 0; margin-top: 10px; border-top: 1px dashed #1e3a5f; }
+}

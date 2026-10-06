@@ -19,6 +19,7 @@ import OpsPage from './pages/command/OpsPage';
 import BulkJobsPage from './pages/command/BulkJobsPage';
 import ScorebookPage from './pages/command/ScorebookPage';
 import IntakeQueuePage from './pages/command/IntakeQueuePage';
+import TournamentOrdersPage from './pages/command/TournamentOrdersPage';
 import IntakeRecordPage from './pages/command/IntakeRecordPage';
 import { IntakeDeletionsPage, IntakeDeletionRequestPage } from './pages/command/IntakeDeletionsPage';
 import TeamPage from './pages/command/TeamPage';
@@ -132,6 +133,7 @@ function AppRoutes() {
         <Route path="intake/deletions" element={<IntakeDeletionsPage />} />
         <Route path="intake/deletions/:requestId" element={<IntakeDeletionRequestPage />} />
         <Route path="intake/:id" element={<IntakeRecordPage />} />
+        <Route path="tournament-orders" element={<TournamentOrdersPage />} />
         <Route path="team" element={<InternalRoute roles={['admin']}><TeamPage /></InternalRoute>} />
       </Route>
       <Route path="/admin" element={<RoleRoute role="admin"><AdminLayout /></RoleRoute>}>
