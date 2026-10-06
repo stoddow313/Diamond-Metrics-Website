@@ -18,6 +18,7 @@ const packages = [
 ];
 
 const emptyForm = { guardianName: '', playerName: '', email: '', phone: '', tournamentId: '' };
+const CHECKOUT_FAILED = 'We could not start secure checkout. Please try again.';
 
 function validateDetails(form) {
   const errors = {};
@@ -67,10 +68,12 @@ export default function FindYourPlayerPage() {
         body: JSON.stringify({ ...form, packageId: selectedPackage }),
       });
       const data = await response.json().catch(() => ({}));
-      if (!response.ok || !(data.url || data.checkoutUrl)) throw new Error(data.message || 'We could not start secure checkout. Please try again.');
-      window.location.assign(data.url || data.checkoutUrl);
-    } catch (error) {
-      setCheckoutError(error.message || 'We could not start secure checkout. Please try again.');
+      // The server's reason when it refuses (API routes answer { error }).
+      if (!response.ok || !(data.url || data.checkoutUrl)) setCheckoutError(data.error || data.message || CHECKOUT_FAILED);
+      else window.location.assign(data.url || data.checkoutUrl);
+    } catch {
+      // The request never reached the server: never show the browser's "Failed to fetch".
+      setCheckoutError(CHECKOUT_FAILED);
     } finally {
       setIsCreatingCheckout(false);
     }

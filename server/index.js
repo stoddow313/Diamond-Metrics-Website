@@ -1674,6 +1674,13 @@ try {
 // Terminal error handler — must be registered after every route.
 app.use(errorHandler);
 
-app.listen(PORT, () => {
+// Express 5 hands a bind failure to this callback. Without the check a taken
+// port still logged api_started, and a dev site kept proxying /api to
+// whatever else held the port.
+app.listen(PORT, err => {
+  if (err) {
+    log('error', 'api_listen_failed', { port: Number(PORT), code: err.code });
+    process.exit(1);
+  }
   log('info', 'api_started', { port: Number(PORT), env: ENV, storage: process.env.DM_STORAGE || 'local' });
 });

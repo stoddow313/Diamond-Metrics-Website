@@ -3,6 +3,8 @@ import { Link, useSearchParams } from 'react-router-dom';
 import MarketingLayout from '../components/MarketingLayout';
 import './FindYourPlayerPage.css';
 
+const SAVE_FAILED = 'We could not save your details. Please try again.';
+
 export default function PlayerIntakeCompletePage() {
   const [searchParams] = useSearchParams();
   const sessionId = searchParams.get('session_id');
@@ -18,9 +20,10 @@ export default function PlayerIntakeCompletePage() {
     try {
       const response = await fetch('/api/post-purchase-intake', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sessionId, ...form }) });
       const data = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(data.message || 'We could not save your details. Please try again.');
-      setStatus('Thank you—your player details have been received. Our team will begin matching the footage.');
-    } catch (requestError) { setError(requestError.message || 'We could not save your details. Please try again.'); } finally { setIsSubmitting(false); }
+      // The server's reason when it refuses (API routes answer { error }).
+      if (!response.ok) setError(data.error || data.message || SAVE_FAILED);
+      else setStatus('Thank you—your player details have been received. Our team will begin matching the footage.');
+    } catch { setError(SAVE_FAILED); } finally { setIsSubmitting(false); }
   }
 
   if (!sessionId) return <MarketingLayout contact={false}><section className="player-intake-page"><h1>We need your order link</h1><p>Please return from your Stripe confirmation page to complete your player details.</p><Link className="player-intake-link" to="/find-your-player">Return to Find Your Player</Link></section></MarketingLayout>;
