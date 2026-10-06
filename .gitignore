@@ -26,3 +26,8 @@ dist-ssr
 
 # SQLite database
 server/data/
+
+# Local environment files and sample inputs: Stripe keys and real customer
+# data never enter this public repository.
+.env*
+inputs/
