@@ -1,8 +1,9 @@
-// golden-path.md, steps 1-6, through the HTTP API: a parent's details and
+// golden-path.md, steps 1-7, through the HTTP API: a parent's details and
 // package become a pending order and a Stripe session at the server's price,
-// Stripe's signed webhook marks it paid, and the success page's details land
-// on that order. Stripe's API is stubbed (no network); the webhook carries a
-// real signature. Every value is invented, as in golden-path.md.
+// Stripe's signed webhook marks it paid, the success page's details land on
+// that order, and Will's list shows it until he ticks Delivered. Stripe's API
+// is stubbed (no network); the webhook carries a real signature. Every value
+// is invented, as in golden-path.md.
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -70,7 +71,7 @@ const post = async (path, body, headers = {}) => {
   return { status: res.status, body: await res.json() };
 };
 
-test('golden path steps 1-6: one paid order at the server’s price, with the player’s details', async () => {
+test('golden path steps 1-7: one paid order at the server’s price, with the player’s details, delivered by Will', async () => {
   // Steps 1-3: the details step and "Single Tournament — Pro"; the page sends exactly this.
   const checkout = await post('/api/create-checkout-session', {
     guardianName: 'Casey Golden', playerName: 'Riley Golden', email: 'casey.golden@example.com', phone: '801-555-0142',
@@ -122,6 +123,22 @@ test('golden path steps 1-6: one paid order at the server’s price, with the pl
   assert.equal(o.stripe_session_id, sessionId);
   assert.equal(o.stripe_payment_intent_id, 'pi_test_golden');
   assert.ok(o.paid_at);
+  assert.equal(o.delivered_at, null);
+
+  // Step 7 as Will sees it, through Command's API; then, once the analysis
+  // has gone out, he ticks Delivered (ship gate, 2026-10-06). The order stays
+  // listed, its payment untouched.
+  const will = h.internal('fulfillment', 'Will Example');
+  const listed = await h.call('GET', '/api/command/tournament-orders', { token: will.token });
+  assert.equal(listed.status, 200);
+  assert.deepEqual(listed.body.orders.map(r => r.order_id), [o.order_id]);
+  const delivered = await h.call('PUT', `/api/command/tournament-orders/${o.order_id}/delivered`, { token: will.token, body: { delivered: true } });
+  assert.equal(delivered.status, 200);
+  assert.equal(delivered.body.order.delivered_by, 'Will Example');
+  const now = listPaidOrders(db);
+  assert.equal(now.length, 1, 'still exactly one paid order');
+  assert.ok(now[0].delivered_at);
+  assert.deepEqual([now[0].paid_at, now[0].amount_total], [o.paid_at, o.amount_total]);
 
   // golden-path.md step 12: the API's log carries no parent or player data.
   assert.ok(logged.some(l => l.includes('stripe_webhook_paid')));
