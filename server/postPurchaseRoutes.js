@@ -8,6 +8,7 @@ import { validateDetails } from './tournamentOrderLogic.js';
 import { getOrderBySessionId, saveDetails } from './tournamentOrderStore.js';
 import { readStripeConfig, stripeClient } from './stripeConfig.js';
 import { captureError, log } from './observability.js';
+import { makeLimiter, rateLimit, clientIp } from './rateLimit.js';
 
 export const SAVE_FAILED = 'We could not save your details. Please try again.';
 // One refusal for an unknown link and an unpaid one, so the reply never says
@@ -15,7 +16,11 @@ export const SAVE_FAILED = 'We could not save your details. Please try again.';
 export const NOT_CONFIRMED = 'We could not confirm a payment for this order. If you were charged, email info@diamondmetrics.ai.';
 
 export function mountPostPurchaseRoutes(app, { db }) {
-  app.post('/api/post-purchase-intake', async (req, res) => {
+  // Generous, like checkout's (A26); a refused call stores nothing.
+  const byNetwork = makeLimiter({ limit: 60, windowMs: 10 * 60 * 1000 });
+  const limits = rateLimit([{ limiter: byNetwork, key: clientIp, message: 'Too many attempts from this network.' }]);
+
+  app.post('/api/post-purchase-intake', limits, async (req, res) => {
     try {
       return await savePlayerDetails(db, req, res);
     } catch (err) {

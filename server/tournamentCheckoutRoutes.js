@@ -7,6 +7,7 @@ import { validateCheckout } from './tournamentOrderLogic.js';
 import { createPendingOrder, attachSession } from './tournamentOrderStore.js';
 import { publicBaseUrl } from './notifications.js';
 import { ENV, captureError, log } from './observability.js';
+import { makeLimiter, rateLimit, clientIp } from './rateLimit.js';
 
 export const CHECKOUT_FAILED = 'We could not start secure checkout. Please try again.';
 
@@ -23,7 +24,17 @@ export function returnBase(origin, { configured = Boolean(process.env.DM_PUBLIC_
 }
 
 export function mountTournamentCheckoutRoutes(app, { db }) {
-  app.post('/api/create-checkout-session', async (req, res) => {
+  // Generous on purpose: many parents at one field can share a mobile
+  // carrier's address (A26). Checked before anything is saved or sent to
+  // Stripe; the limiter adds "Try again in …" itself.
+  const byNetwork = makeLimiter({ limit: 60, windowMs: 10 * 60 * 1000 });
+  const byEmail = makeLimiter({ limit: 10, windowMs: 60 * 60 * 1000 });
+  const limits = rateLimit([
+    { limiter: byNetwork, key: clientIp, message: 'Too many checkout attempts from this network.' },
+    { limiter: byEmail, key: req => (typeof req.body?.email === 'string' ? req.body.email.trim().toLowerCase() : '') || null, message: 'Too many checkout attempts for this email.' },
+  ]);
+
+  app.post('/api/create-checkout-session', limits, async (req, res) => {
     try {
       return await startCheckout(db, req, res);
     } catch (err) {
