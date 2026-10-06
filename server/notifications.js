@@ -18,11 +18,15 @@ const EVENT_SUBJECTS = {
   paid_metric_unavailable: 'A purchased metric could not be measured',
 };
 
-// Where links in customer email point. The site, not the API: Vercel serves
-// the SPA and proxies /api to Render.
+// The site's public address, without a trailing slash. The site, not the API:
+// Vercel serves the SPA and proxies /api to Render.
+export function publicBaseUrl() {
+  return (process.env.DM_PUBLIC_BASE_URL || (ENV === 'production' ? 'https://www.diamondmetrics.ai' : 'http://localhost:5173')).replace(/\/+$/, '');
+}
+
+// Where links in customer email point.
 export function publicUrl(path = '/') {
-  const base = (process.env.DM_PUBLIC_BASE_URL || (ENV === 'production' ? 'https://www.diamondmetrics.ai' : 'http://localhost:5173')).replace(/\/+$/, '');
-  return `${base}${path.startsWith('/') ? path : `/${path}`}`;
+  return `${publicBaseUrl()}${path.startsWith('/') ? path : `/${path}`}`;
 }
 
 export function emailConfigured() {
