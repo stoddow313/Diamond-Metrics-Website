@@ -12,6 +12,7 @@ export async function startIntakeApp() {
   const { mountAuthRoutes } = await import('./authRoutes.js');
   const { mountCommandRoutes } = await import('./commandRoutes.js');
   const { mountCommandMediaRoutes } = await import('./commandMediaRoutes.js');
+  const { mountCommandOpsRoutes } = await import('./commandOpsRoutes.js');
   const { mountCustomerAuthRoutes, makeSubmitterGuard, issueToken } = await import('./customerAuth.js');
   const { mountIntakeRoutes, mountIntakeConfigRoute } = await import('./intakeRoutes.js');
   const { mountIntakeCommandRoutes } = await import('./intakeCommandRoutes.js');
@@ -31,6 +32,7 @@ export async function startIntakeApp() {
   mountAuthRoutes(app, { db, principals });
   const { createJob } = mountCommandRoutes(app, { db, requireInternal });
   mountCommandMediaRoutes(app, { db, requireInternal });
+  mountCommandOpsRoutes(app, { db, requireInternal, createJob });
   mountIntakeCommandRoutes(app, { db, requireInternal, requireInternalRole, createJob });
   mountTeamRoutes(app, { db, requireInternalRole });
   mountIntakeConfigRoute(app);

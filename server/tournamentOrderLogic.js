@@ -5,16 +5,22 @@
 // Price is charged is decided here and nowhere else (handoff §1).
 import { randomInt } from 'node:crypto';
 
-// Will's four packages. livePriceId is handoff §1's live-mode Price — public,
-// not a secret, and charged only with a live key (choosePrice). amount is the
-// list price in cents; Stripe's Price, not this number, decides the charge.
+// Will's four packages. amount is the price on the package card, in cents.
+// Which Stripe Price charges a package comes from the environment, never from
+// code or the browser (choosePrice), and a Price that does not charge exactly
+// this amount, once, in US dollars is refused (priceProblem).
 export const PACKAGES = {
-  individual_basic: { label: 'Individual Game — Basic', amount: 5000, livePriceId: 'price_1UNGeTQkGlcnNPo07CCI0CCK' },
-  individual_pro: { label: 'Individual Game — Pro', amount: 7500, livePriceId: 'price_1UNGepQkGlcnNPo05FmG7Olz' },
-  tournament_basic: { label: 'Single Tournament — Basic', amount: 12500, livePriceId: 'price_1UNGfFQkGlcnNPo0PCeTqYNO' },
-  tournament_pro: { label: 'Single Tournament — Pro', amount: 15000, livePriceId: 'price_1UNGfZQkGlcnNPo0i8SqGcm7' },
+  individual_basic: { label: 'Individual Game — Basic', amount: 5000 },
+  individual_pro: { label: 'Individual Game — Pro', amount: 7500 },
+  tournament_basic: { label: 'Single Tournament — Basic', amount: 12500 },
+  tournament_pro: { label: 'Single Tournament — Pro', amount: 15000 },
 };
 export const PACKAGE_KEYS = Object.keys(PACKAGES);
+
+// The variable that holds each kind of key's Price map. Production's live
+// Prices are set in Render beside the live key, so changing them is a setting,
+// not a code change (ship gate, round 2, 2026-10-06).
+export const PRICE_VARIABLES = { live: 'STRIPE_LIVE_PRICES', test: 'STRIPE_TEST_PRICES' };
 
 // The events a parent can buy for. Adding the next tournament is a code change
 // and a deploy (A21); the id is stored as text, not a tournaments row.
@@ -99,14 +105,15 @@ export function keyMode(secretKey) {
 
 const isPriceId = value => typeof value === 'string' && /^price_[A-Za-z0-9]+$/.test(value);
 
-// STRIPE_TEST_PRICES: {"individual_basic":"price_…", …}. Problems are named,
-// never echoed, so a log line cannot carry the configured values.
-export function parseTestPrices(raw) {
-  if (!raw) return { prices: {}, missing: [...PACKAGE_KEYS], problem: 'STRIPE_TEST_PRICES is not set' };
+// A Price map, STRIPE_LIVE_PRICES or STRIPE_TEST_PRICES (named by variable):
+// {"individual_basic":"price_…", …}. Problems are named, never echoed, so a
+// log line cannot carry the configured values.
+export function parsePrices(raw, variable) {
+  if (!raw) return { prices: {}, missing: [...PACKAGE_KEYS], problem: `${variable} is not set` };
   let parsed;
   try { parsed = JSON.parse(raw); } catch { parsed = null; }
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
-    return { prices: {}, missing: [...PACKAGE_KEYS], problem: 'STRIPE_TEST_PRICES is not a JSON object' };
+    return { prices: {}, missing: [...PACKAGE_KEYS], problem: `${variable} is not a JSON object` };
   }
   const prices = {};
   const missing = [];
@@ -114,17 +121,35 @@ export function parseTestPrices(raw) {
     if (isPriceId(parsed[key])) prices[key] = parsed[key];
     else missing.push(key);
   }
-  return { prices, missing, problem: missing.length ? `STRIPE_TEST_PRICES has no price_ id for ${missing.join(', ')}` : '' };
+  return { prices, missing, problem: missing.length ? `${variable} has no price_ id for ${missing.join(', ')}` : '' };
 }
 
-// Which Stripe Price a package is charged at (handoff §1). A live key charges
-// only the handoff's live prices and ignores the test map; a test key only the
-// test map. Anything else refuses rather than charging a guess.
-export function choosePrice(packageKey, { mode, testPrices = {} } = {}) {
+// Which Stripe Price a package is charged at (handoff §1). prices is the map
+// for the key's mode: a live key charges only STRIPE_LIVE_PRICES and a test
+// key only STRIPE_TEST_PRICES, so neither can charge the other's Prices.
+// Anything else refuses rather than charging a guess.
+export function choosePrice(packageKey, { mode, prices = {} } = {}) {
   if (!Object.hasOwn(PACKAGES, packageKey)) return { error: 'unknown_package' };
-  if (mode === 'live') return { priceId: PACKAGES[packageKey].livePriceId };
-  if (mode === 'test') return isPriceId(testPrices[packageKey]) ? { priceId: testPrices[packageKey] } : { error: 'test_price_missing' };
-  return { error: 'not_configured' };
+  if (!Object.hasOwn(PRICE_VARIABLES, String(mode))) return { error: 'not_configured' };
+  return isPriceId(prices[packageKey]) ? { priceId: prices[packageKey] } : { error: 'price_missing' };
+}
+
+const dollars = cents => `$${(cents / 100).toFixed(2)}`;
+
+// What is wrong with the Stripe Price configured for a package, in words an
+// operator can act on, or '' when it charges exactly the card's price: active,
+// one-time, in US dollars. Never names the Price ID.
+export function priceProblem(packageKey, price) {
+  const card = PACKAGES[packageKey].amount;
+  if (!price) return 'was not found in Stripe';
+  if (price.active !== true) return 'is archived in Stripe';
+  if (price.type !== 'one_time') return 'is a recurring Price, not a one-time one';
+  if (price.currency !== 'usd') return `is in ${String(price.currency || 'no currency').toUpperCase()}, not USD`;
+  if (price.unit_amount !== card) {
+    const charged = Number.isInteger(price.unit_amount) ? dollars(price.unit_amount) : 'no fixed amount';
+    return `charges ${charged}, not the card’s ${dollars(card)}`;
+  }
+  return '';
 }
 
 // TO-XXXX-XXXX: random, never the row number (A17), from the intake id

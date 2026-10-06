@@ -20,10 +20,14 @@ const { startIntakeApp } = await import('./intakeTestHarness.js');
 const { setStripeClientForTests } = await import('./stripeConfig.js');
 
 let made = 0;
-const stripe = { checkout: { sessions: {
-  async create() { const id = `cs_test_lim${++made}`; return { id, url: `https://checkout.stripe.com/c/pay/${id}` }; },
-  async retrieve(id) { return { id, payment_status: 'unpaid', client_reference_id: null }; },
-} } };
+const CHARGES = { price_LimA: 5000, price_LimB: 7500, price_LimC: 12500, price_LimD: 15000 };
+const stripe = {
+  checkout: { sessions: {
+    async create() { const id = `cs_test_lim${++made}`; return { id, url: `https://checkout.stripe.com/c/pay/${id}` }; },
+    async retrieve(id) { return { id, payment_status: 'unpaid', client_reference_id: null }; },
+  } },
+  prices: { async retrieve(id) { return { id, active: true, type: 'one_time', currency: 'usd', unit_amount: CHARGES[id] }; } },
+};
 
 let h, db;
 before(async () => {

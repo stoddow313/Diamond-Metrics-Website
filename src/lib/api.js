@@ -189,6 +189,7 @@ export const api = {
   commandOps: () => request('/api/command/ops'),
   commandRunBackup: () => request('/api/command/backups/run', { method: 'POST' }),
   commandStorageCheck: () => request('/api/command/storage/check', { method: 'POST' }),
+  commandStripePriceCheck: () => request('/api/command/stripe/prices/check', { method: 'POST' }),
   commandBulkJobs: (body) => request('/api/command/jobs/bulk', { method: 'POST', body }),
 
   // Customer footage intake (docs/COMMAND_TDR.md §8). One config call says

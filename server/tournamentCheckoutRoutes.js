@@ -2,7 +2,7 @@
 // button on Will's Find Your Player page (handoff §3-§4). The browser sends a
 // package key; the server alone decides the Stripe Price, saves the pending
 // order first, and hands Stripe nothing but ids and the email for the receipt.
-import { readStripeConfig, priceForPackage, stripeClient } from './stripeConfig.js';
+import { readStripeConfig, priceForPackage, priceMismatch, stripeClient } from './stripeConfig.js';
 import { validateCheckout } from './tournamentOrderLogic.js';
 import { createPendingOrder, attachSession } from './tournamentOrderStore.js';
 import { publicBaseUrl } from './notifications.js';
@@ -57,6 +57,18 @@ async function startCheckout(db, req, res) {
   const priceId = priceForPackage(config, input.packageKey);
   const stripe = priceId ? stripeClient(config) : null;
   if (!stripe) return res.status(503).json({ error: CHECKOUT_FAILED });
+
+  // A configured Price that would charge anything but the card's amount, once,
+  // in dollars is a setting to fix, never a different charge (ship gate,
+  // round 2): refused before anything is saved, logged in priceMismatch.
+  let mismatch;
+  try {
+    mismatch = await priceMismatch(stripe, config, input.packageKey, priceId);
+  } catch (err) {
+    log('warn', 'tournament_checkout_failed', { package_key: input.packageKey, step: 'price', type: err?.type, code: err?.code });
+    return res.status(502).json({ error: CHECKOUT_FAILED });
+  }
+  if (mismatch) return res.status(503).json({ error: CHECKOUT_FAILED });
 
   const order = createPendingOrder(db, { ...input, priceId });
   const base = returnBase(req.get('origin'));

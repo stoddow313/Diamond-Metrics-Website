@@ -29,11 +29,17 @@ const { startIntakeApp } = await import('./intakeTestHarness.js');
 const { setStripeClientForTests, stripeWebhooks } = await import('./stripeConfig.js');
 const { listPaidOrders } = await import('./tournamentOrderStore.js');
 
-// Stripe, as far as this run needs it: sessions priced from the Price the
-// server chose, and a session that turns paid when the parent pays.
+// Stripe, as far as this run needs it: each Price as Will set it up (one-time,
+// dollars), sessions priced from the Price the server chose, and a session
+// that turns paid when the parent pays.
 const PRICE_AMOUNTS = { price_GpBasic: 5000, price_GpPro: 7500, price_GpTBasic: 12500, price_GpTPro: 15000 };
 const stripeSessions = new Map();
 const stripe = {
+  prices: {
+    async retrieve(id) {
+      return { id, object: 'price', active: true, type: 'one_time', currency: 'usd', unit_amount: PRICE_AMOUNTS[id] ?? null };
+    },
+  },
   checkout: {
     sessions: {
       async create(params) {

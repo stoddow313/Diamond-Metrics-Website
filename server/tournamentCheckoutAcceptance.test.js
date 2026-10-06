@@ -28,10 +28,7 @@ const { setStripeClientForTests, stripeWebhooks } = await import('./stripeConfig
 
 const SECRET = 'whsec_acceptance_secret';
 const TEST_PRICES = { individual_basic: 'price_AccBasic', individual_pro: 'price_AccPro', tournament_basic: 'price_AccTBasic', tournament_pro: 'price_AccTPro' };
-const LIVE_PRICES = {
-  individual_basic: 'price_1UNGeTQkGlcnNPo07CCI0CCK', individual_pro: 'price_1UNGepQkGlcnNPo05FmG7Olz',
-  tournament_basic: 'price_1UNGfFQkGlcnNPo0PCeTqYNO', tournament_pro: 'price_1UNGfZQkGlcnNPo0i8SqGcm7',
-};
+const LIVE_PRICES = { individual_basic: 'price_LiveAccBasic', individual_pro: 'price_LiveAccPro', tournament_basic: 'price_LiveAccTBasic', tournament_pro: 'price_LiveAccTPro' };
 // What each Price charges, as the team set them up in Stripe.
 const CHARGES = {
   price_AccBasic: 5000, price_AccPro: 7500, price_AccTBasic: 12500, price_AccTPro: 15000,
@@ -39,11 +36,18 @@ const CHARGES = {
 };
 const LABELS = { individual_basic: 'Individual Game — Basic', individual_pro: 'Individual Game — Pro', tournament_basic: 'Single Tournament — Basic', tournament_pro: 'Single Tournament — Pro' };
 
-// Stripe, as far as the checkout needs it: a session priced from the Price
-// the server chose; a payment turns it paid; a retrieve reports it.
+// Stripe, as far as the checkout needs it: each Price as the team set it up
+// (one-time, dollars); a session priced from the Price the server chose; a
+// payment turns it paid; a retrieve reports it.
 const sessions = new Map();
 let seq = 0;
 const stripe = {
+  prices: {
+    async retrieve(id) {
+      if (!(id in CHARGES)) throw Object.assign(new Error('No such price'), { type: 'StripeInvalidRequestError', code: 'resource_missing' });
+      return { id, object: 'price', active: true, type: 'one_time', currency: 'usd', unit_amount: CHARGES[id] };
+    },
+  },
   checkout: {
     sessions: {
       async create(params) {
@@ -234,10 +238,29 @@ test('prices follow the key: test prices with a test key, a missing one refused,
   assert.deepEqual(missing.body, { error: 'We could not start secure checkout. Please try again.' });
   assert.equal(seq, before, 'no session');
   process.env.STRIPE_SECRET_KEY = 'sk_live_acceptance';
-  for (const [packageId, priceId] of Object.entries(LIVE_PRICES)) {
-    const r = await startCheckout(details({ packageId }));
-    assert.deepEqual(sessions.get(r.sessionId).line_items, [{ price: priceId, quantity: 1 }]);
+  const noLiveMap = await post('/api/create-checkout-session', details({ packageId: 'tournament_pro' }));
+  assert.ok(noLiveMap.status >= 500, 'a live key without STRIPE_LIVE_PRICES refuses');
+  assert.equal(seq, before, 'no session');
+  process.env.STRIPE_LIVE_PRICES = JSON.stringify(LIVE_PRICES);
+  try {
+    for (const [packageId, priceId] of Object.entries(LIVE_PRICES)) {
+      const r = await startCheckout(details({ packageId }));
+      assert.deepEqual(sessions.get(r.sessionId).line_items, [{ price: priceId, quantity: 1 }]);
+    }
+  } finally {
+    delete process.env.STRIPE_LIVE_PRICES;
   }
+});
+
+test('a Price that would charge another amount than the card is refused, and nothing is saved', async () => {
+  process.env.STRIPE_TEST_PRICES = JSON.stringify({ ...TEST_PRICES, individual_basic: TEST_PRICES.tournament_pro });
+  const orders = db.prepare('SELECT COUNT(*) n FROM tournament_orders').get().n;
+  const before = seq;
+  const r = await post('/api/create-checkout-session', details({ packageId: 'individual_basic' }));
+  assert.ok(r.status >= 500);
+  assert.deepEqual(r.body, { error: 'We could not start secure checkout. Please try again.' });
+  assert.equal(seq, before, 'never a $150 session for a $50 card');
+  assert.equal(db.prepare('SELECT COUNT(*) n FROM tournament_orders').get().n, orders);
 });
 
 test('an unconfigured server refuses checkout, stores nothing, and the webhook changes nothing', async () => {

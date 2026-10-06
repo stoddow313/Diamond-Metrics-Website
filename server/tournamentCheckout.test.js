@@ -1,7 +1,8 @@
 // POST /api/create-checkout-session through the HTTP API, with a stubbed
 // Stripe client: the server's price for each package whatever the browser
-// sends, the session's shape (ids only), return addresses, refusals that save
-// nothing, and logs that never carry a name, email or phone (prd.md R1, R7).
+// sends, a configured Price that would charge another amount refused, the
+// session's shape (ids only), return addresses, refusals that save nothing,
+// and logs that never carry a name, email or phone (prd.md R1, R7).
 import { test, before, after, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -26,10 +27,11 @@ const { setStripeClientForTests } = await import('./stripeConfig.js');
 const { returnBase } = await import('./tournamentCheckoutRoutes.js');
 
 const TEST_PRICES = { individual_basic: 'price_TestBasic1', individual_pro: 'price_TestPro2', tournament_basic: 'price_TestTBasic3', tournament_pro: 'price_TestTPro4' };
-const LIVE_PRICES = {
-  individual_basic: 'price_1UNGeTQkGlcnNPo07CCI0CCK', individual_pro: 'price_1UNGepQkGlcnNPo05FmG7Olz',
-  tournament_basic: 'price_1UNGfFQkGlcnNPo0PCeTqYNO', tournament_pro: 'price_1UNGfZQkGlcnNPo0i8SqGcm7',
-};
+const LIVE_PRICES = { individual_basic: 'price_LiveBasic1', individual_pro: 'price_LivePro2', tournament_basic: 'price_LiveTBasic3', tournament_pro: 'price_LiveTPro4' };
+// What each Price charges at Stripe: one-time, in dollars, the card's amount.
+const CARD = { individual_basic: 5000, individual_pro: 7500, tournament_basic: 12500, tournament_pro: 15000 };
+const atStripe = new Map(Object.entries(CARD).flatMap(([key, amount]) => [TEST_PRICES[key], LIVE_PRICES[key]]
+  .map(id => [id, { id, object: 'price', active: true, type: 'one_time', currency: 'usd', unit_amount: amount }])));
 const BODY = {
   guardianName: 'Jordan Example', playerName: 'Sky Example', email: 'jordan.example@example.com',
   phone: '555-0100', tournamentId: 'better-baseball-nephi-2026', packageId: 'tournament_pro',
@@ -37,8 +39,10 @@ const BODY = {
 
 let h, db;
 const sessions = [];
+const looked = [];
 let made = 0;
 let failNext = null;
+let pricesDown = null;
 const stripeStub = {
   checkout: {
     sessions: {
@@ -50,19 +54,30 @@ const stripeStub = {
       },
     },
   },
+  prices: {
+    async retrieve(id) {
+      looked.push(id);
+      if (pricesDown) throw pricesDown;
+      if (!atStripe.has(id)) throw Object.assign(new Error(`No such price: '${id}'`), { type: 'StripeInvalidRequestError', code: 'resource_missing' });
+      return atStripe.get(id);
+    },
+  },
 };
 
 before(async () => {
   h = await startIntakeApp();
   ({ db } = h);
-  setStripeClientForTests(stripeStub);
 });
 
 beforeEach(() => {
   process.env.STRIPE_SECRET_KEY = 'sk_test_stubbed';
   process.env.STRIPE_TEST_PRICES = JSON.stringify(TEST_PRICES);
+  delete process.env.STRIPE_LIVE_PRICES;
+  setStripeClientForTests(stripeStub);   // each test checks Prices afresh
   sessions.length = 0;
+  looked.length = 0;
   failNext = null;
+  pricesDown = null;
 });
 
 after(async () => {
@@ -182,13 +197,75 @@ test('a test key without a price for the package refuses before anything is save
   assert.equal((await checkout({ ...BODY, packageId: 'individual_pro' })).status, 200, 'the other packages still work');
 });
 
-test('a live key charges only the handoff’s live prices', async () => {
+test('a live key charges only STRIPE_LIVE_PRICES', async () => {
   process.env.STRIPE_SECRET_KEY = 'sk_live_stubbed';
+  process.env.STRIPE_LIVE_PRICES = JSON.stringify(LIVE_PRICES);
   for (const packageId of Object.keys(LIVE_PRICES)) {
     const r = await checkout({ ...BODY, packageId });
     assert.equal(r.status, 200);
     assert.deepEqual(sessions.at(-1).line_items, [{ price: LIVE_PRICES[packageId], quantity: 1 }], 'the test map is ignored');
+    assert.equal(order(r.body.orderId).price_id, LIVE_PRICES[packageId]);
   }
+});
+
+test('a live key without STRIPE_LIVE_PRICES refuses before anything is saved', async () => {
+  process.env.STRIPE_SECRET_KEY = 'sk_live_stubbed';
+  const before = orderCount();
+  const r = await checkout(BODY);
+  assert.equal(r.status, 503);
+  assert.deepEqual(r.body, { error: 'We could not start secure checkout. Please try again.' });
+  assert.equal(orderCount(), before, 'no order');
+  assert.equal(sessions.length, 0, 'no session, and no Price kept in code to fall back on');
+  assert.ok(logged.some(l => l.includes('stripe_live_price_missing') && l.includes('STRIPE_LIVE_PRICES is not set')));
+});
+
+test('a configured Price that would charge another amount is refused before anything is saved', async () => {
+  assert.equal((await checkout({ ...BODY, packageId: 'tournament_basic' })).status, 200, 'Basic’s $125 Price sells Basic');
+  // Pro's slot now holds Basic's $125 Price: a swap made while pasting the IDs.
+  // Right for Basic is not right for Pro, however recently it was checked.
+  process.env.STRIPE_TEST_PRICES = JSON.stringify({ ...TEST_PRICES, tournament_pro: TEST_PRICES.tournament_basic });
+  const before = orderCount();
+  const r = await checkout(BODY);
+  assert.equal(r.status, 503);
+  assert.deepEqual(r.body, { error: 'We could not start secure checkout. Please try again.' });
+  assert.equal(orderCount(), before, 'no order');
+  assert.equal(sessions.length, 1, 'never a $125 session for a $150 card');
+  const line = logged.findLast(l => l.includes('stripe_price_mismatch'));
+  assert.ok(line.includes('tournament_pro') && line.includes('STRIPE_TEST_PRICES') && line.includes('charges $125.00, not the card’s $150.00'), line);
+  assert.ok(!line.includes(TEST_PRICES.tournament_basic), 'the log never names the Price');
+  assert.equal((await checkout({ ...BODY, packageId: 'tournament_basic' })).status, 200, 'the same Price still sells its own package');
+});
+
+test('a Price Stripe does not know, or one that is not one-time USD, is refused the same way', async () => {
+  const cases = [
+    ['price_TestMissing', null, 'was not found in Stripe'],
+    ['price_TestMonthly', { type: 'recurring' }, 'is a recurring Price, not a one-time one'],
+    ['price_TestCad', { currency: 'cad' }, 'is in CAD, not USD'],
+    ['price_TestArchived', { active: false }, 'is archived in Stripe'],
+  ];
+  for (const [id, patch, problem] of cases) {
+    if (patch) atStripe.set(id, { ...atStripe.get(TEST_PRICES.individual_pro), id, ...patch });
+    process.env.STRIPE_TEST_PRICES = JSON.stringify({ ...TEST_PRICES, individual_pro: id });
+    const r = await checkout({ ...BODY, packageId: 'individual_pro' });
+    assert.equal(r.status, 503, id);
+    assert.equal(sessions.length, 0, id);
+    assert.ok(logged.findLast(l => l.includes('stripe_price_mismatch')).includes(problem), problem);
+  }
+});
+
+test('Stripe asked once per Price; out of reach, the checkout is refused and nothing saved', async () => {
+  await checkout(BODY);
+  await checkout(BODY);
+  assert.deepEqual(looked, [TEST_PRICES.tournament_pro], 'a Price that charges the card’s amount is looked at once');
+  setStripeClientForTests(stripeStub);
+  pricesDown = Object.assign(new Error('connect ECONNREFUSED'), { type: 'StripeConnectionError' });
+  const before = orderCount();
+  const r = await checkout(BODY);
+  assert.equal(r.status, 502);
+  assert.deepEqual(r.body, { error: 'We could not start secure checkout. Please try again.' });
+  assert.equal(orderCount(), before);
+  assert.equal(sessions.length, 2);
+  assert.ok(logged.some(l => l.includes('tournament_checkout_failed') && l.includes('StripeConnectionError')));
 });
 
 test('when Stripe fails, the order stays pending and a retry starts a fresh checkout', async () => {

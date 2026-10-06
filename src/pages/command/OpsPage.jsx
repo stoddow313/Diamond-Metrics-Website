@@ -11,6 +11,26 @@ import { cardStyle } from '../../components/admin/theme';
 
 const pct = v => (v == null ? '—' : `${(v * 100).toFixed(0)}%`);
 const hrs = v => (v == null ? '—' : v >= 24 ? `${(v / 24).toFixed(1)}d` : `${v.toFixed(1)}h`);
+const usd = cents => (cents == null ? '—' : `$${(cents / 100).toFixed(2)}`);
+
+// A Stripe product name and a package card's label can differ only by dash,
+// spacing or case and still read the same on Stripe's page.
+const sameName = (a, b) => {
+  const norm = v => String(v || '').replace(/[\u2010-\u2015\u2212-]/g, '-').replace(/\s+/g, ' ').trim().toLowerCase();
+  return norm(a) === norm(b);
+};
+
+// Tournament checkout at a glance (COMMAND_OPS §3.18): which key and Price
+// map it runs on, and what the server says is still to set. Production needs
+// the live key.
+function checkoutHealth(c, environment) {
+  const gaps = c.problems.join(' · ');
+  if (!c.mode) return { value: `not configured — ${gaps}`, ok: false };
+  return {
+    value: `${c.mode} key · prices from ${c.prices_variable}${gaps ? ` — ${gaps}` : ''}`,
+    ok: !gaps && (c.mode === 'live' || environment !== 'production'),
+  };
+}
 
 function Stat({ label, value, hint, tone = '#f8fafc' }) {
   return (
@@ -45,6 +65,8 @@ export default function OpsPage() {
   const [testTo, setTestTo] = useState('');
   const [emailTest, setEmailTest] = useState(null);
   const [sendingTest, setSendingTest] = useState(false);
+  const [priceCheck, setPriceCheck] = useState(null);
+  const [checkingPrices, setCheckingPrices] = useState(false);
 
   async function verifyBackup() {
     setError('');
@@ -108,11 +130,27 @@ export default function OpsPage() {
     }
   }
 
+  // The four tournament Prices as Stripe has them, after production's Price
+  // IDs are set or changed and before a parent pays.
+  async function checkPrices() {
+    setError('');
+    setCheckingPrices(true);
+    try {
+      const { check } = await api.commandStripePriceCheck();
+      setPriceCheck(check);
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setCheckingPrices(false);
+    }
+  }
+
   if (!telemetry || !ops) return <p style={{ color: '#94a3b8' }}>{error || 'Loading operations…'}</p>;
 
   const { jobs, stages, radar, results, review, media } = telemetry;
   const backup = ops.backups.last;
   const backupAge = backup ? (Date.now() - Date.parse(`${backup.created_at.replace(' ', 'T')}Z`)) / 3_600_000 : null;
+  const checkout = ops.tournament_checkout ? checkoutHealth(ops.tournament_checkout, ops.environment) : null;
 
   return (
     <div>
@@ -260,6 +298,46 @@ export default function OpsPage() {
                 ? `✓ accepted by provider (HTTP ${emailTest.status}) — check ${emailTest.to}`
                 : `✗ ${emailTest.error || `provider HTTP ${emailTest.status}: ${emailTest.provider_response || 'no detail'}`}`}
             </p>
+          )}
+          {checkout && <HealthRow label="Tournament checkout" value={checkout.value} ok={checkout.ok} />}
+          {checkout && user?.role === 'admin' && (
+            <div className="flex items-center justify-between gap-2 py-2 border-t" style={{ borderColor: '#1e3a5f' }}>
+              <span className="text-sm" style={{ color: '#94a3b8' }}>Stripe prices</span>
+              {priceCheck ? (
+                <span className="text-sm font-bold text-right" style={{ color: priceCheck.ok ? '#4ade80' : '#f87171' }} data-testid="price-check-result">
+                  {priceCheck.error
+                    ? `✗ ${priceCheck.error}`
+                    : priceCheck.ok
+                      ? `✓ all four match their cards (${priceCheck.mode} mode)`
+                      : `✗ ${priceCheck.packages.filter(p => p.problem).length} of four need attention`}
+                </span>
+              ) : (
+                <button onClick={checkPrices} disabled={checkingPrices}
+                  className="text-xs font-bold px-3 py-1 rounded-lg border cursor-pointer hover:bg-slate-800"
+                  style={{ borderColor: '#334155', color: '#cfe8ff' }}>
+                  {checkingPrices ? 'Checking…' : 'Check now'}
+                </button>
+              )}
+            </div>
+          )}
+          {priceCheck?.packages && (
+            <ul className="text-xs pb-2 space-y-1" data-testid="price-check-packages">
+              {priceCheck.packages.map(p => (
+                <li key={p.package_key} className="flex flex-wrap justify-between gap-x-3">
+                  <span style={{ color: '#cfe8ff' }}>{p.label} · {usd(p.card_amount)}</span>
+                  {p.problem ? (
+                    <span className="min-w-0 text-right" style={{ color: '#f87171' }}>✗ {p.problem}</span>
+                  ) : (
+                    <span className="min-w-0 text-right" style={{ color: '#4ade80' }}>
+                      ✓ {usd(p.amount)} one-time
+                      {p.product_name && (sameName(p.product_name, p.label)
+                        ? <span style={{ color: '#94a3b8' }}> · “{p.product_name}”</span>
+                        : <span style={{ color: '#fbbf24' }}> · Checkout shows “{p.product_name}”</span>)}
+                    </span>
+                  )}
+                </li>
+              ))}
+            </ul>
           )}
           <HealthRow label="Media queue" value={`${ops.media_queue.queued || 0} queued · ${ops.media_queue.running || 0} running · ${ops.media_queue.failed || 0} failed`} ok={!ops.media_queue.failed} />
           <HealthRow

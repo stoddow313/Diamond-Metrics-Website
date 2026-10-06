@@ -4,7 +4,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   PACKAGES, PACKAGE_KEYS, TOURNAMENTS, validateCheckout, validateDetails, keyMode, choosePrice,
-  parseTestPrices, newOrderId, packageLabel, tournamentLabel,
+  parsePrices, priceProblem, PRICE_VARIABLES, newOrderId, packageLabel, tournamentLabel,
 } from './tournamentOrderLogic.js';
 
 const VALID = {
@@ -81,36 +81,55 @@ test('the key mode comes from the key prefix only', () => {
   for (const k of ['', undefined, null, 'pk_test_abc', 'sk_test', 'whsec_abc', 'live_sk_abc']) assert.equal(keyMode(k), null, String(k));
 });
 
-test('a live key charges only the handoff’s live prices; a test key only the test map', () => {
-  const testPrices = { individual_basic: 'price_TestA', individual_pro: 'price_TestB', tournament_basic: 'price_TestC', tournament_pro: 'price_TestD' };
-  const live = {
-    individual_basic: 'price_1UNGeTQkGlcnNPo07CCI0CCK', individual_pro: 'price_1UNGepQkGlcnNPo05FmG7Olz',
-    tournament_basic: 'price_1UNGfFQkGlcnNPo0PCeTqYNO', tournament_pro: 'price_1UNGfZQkGlcnNPo0i8SqGcm7',
-  };
+test('a live key charges only STRIPE_LIVE_PRICES; a test key only STRIPE_TEST_PRICES', () => {
+  assert.deepEqual(PRICE_VARIABLES, { live: 'STRIPE_LIVE_PRICES', test: 'STRIPE_TEST_PRICES' });
+  const live = { individual_basic: 'price_LiveA', individual_pro: 'price_LiveB', tournament_basic: 'price_LiveC', tournament_pro: 'price_LiveD' };
   for (const key of PACKAGE_KEYS) {
-    assert.deepEqual(choosePrice(key, { mode: 'live', testPrices }), { priceId: live[key] }, `${key}: the test map is ignored with a live key`);
-    assert.deepEqual(choosePrice(key, { mode: 'test', testPrices }), { priceId: testPrices[key] }, `${key}: never a live price with a test key`);
+    assert.deepEqual(choosePrice(key, { mode: 'live', prices: live }), { priceId: live[key] }, `${key}: the map the caller read for the key`);
   }
-  assert.deepEqual(choosePrice('tournament_pro', { mode: 'test', testPrices: { individual_basic: 'price_TestA' } }), { error: 'test_price_missing' });
-  assert.deepEqual(choosePrice('tournament_pro', { mode: 'test', testPrices: { tournament_pro: 'prod_NotAPrice' } }), { error: 'test_price_missing' });
-  assert.deepEqual(choosePrice('tournament_pro', { mode: null, testPrices }), { error: 'not_configured' });
+  assert.deepEqual(choosePrice('tournament_pro', { mode: 'live', prices: {} }), { error: 'price_missing' }, 'no map: no live price, and no fallback in code');
+  assert.deepEqual(choosePrice('tournament_pro', { mode: 'test', prices: { individual_basic: 'price_TestA' } }), { error: 'price_missing' });
+  assert.deepEqual(choosePrice('tournament_pro', { mode: 'test', prices: { tournament_pro: 'prod_NotAPrice' } }), { error: 'price_missing' });
+  assert.deepEqual(choosePrice('tournament_pro', { mode: null, prices: live }), { error: 'not_configured' });
+  assert.deepEqual(choosePrice('tournament_pro', { mode: 'constructor', prices: live }), { error: 'not_configured' });
   assert.deepEqual(choosePrice('tournament_pro', {}), { error: 'not_configured' });
-  assert.deepEqual(choosePrice('gold', { mode: 'live' }), { error: 'unknown_package' });
+  assert.deepEqual(choosePrice('gold', { mode: 'live', prices: live }), { error: 'unknown_package' });
 });
 
-test('the test price map is parsed without ever echoing a value', () => {
+test('no Stripe Price is written into the package rules', () => {
+  for (const [key, pkg] of Object.entries(PACKAGES)) assert.deepEqual(Object.keys(pkg).sort(), ['amount', 'label'], key);
+});
+
+test('a Price map is parsed without ever echoing a value, and names its variable', () => {
   const full = JSON.stringify({ individual_basic: 'price_A1', individual_pro: 'price_B2', tournament_basic: 'price_C3', tournament_pro: 'price_D4' });
-  assert.deepEqual(parseTestPrices(full), {
-    prices: { individual_basic: 'price_A1', individual_pro: 'price_B2', tournament_basic: 'price_C3', tournament_pro: 'price_D4' },
-    missing: [], problem: '',
-  });
-  assert.equal(parseTestPrices('').problem, 'STRIPE_TEST_PRICES is not set');
-  assert.equal(parseTestPrices('{not json').problem, 'STRIPE_TEST_PRICES is not a JSON object');
-  assert.equal(parseTestPrices('["price_A1"]').problem, 'STRIPE_TEST_PRICES is not a JSON object');
-  const partial = parseTestPrices(JSON.stringify({ individual_basic: 'price_A1', tournament_pro: 'prod_SECRETISH' }));
+  for (const variable of ['STRIPE_LIVE_PRICES', 'STRIPE_TEST_PRICES']) {
+    assert.deepEqual(parsePrices(full, variable), {
+      prices: { individual_basic: 'price_A1', individual_pro: 'price_B2', tournament_basic: 'price_C3', tournament_pro: 'price_D4' },
+      missing: [], problem: '',
+    });
+    assert.equal(parsePrices('', variable).problem, `${variable} is not set`);
+    assert.equal(parsePrices('{not json', variable).problem, `${variable} is not a JSON object`);
+    assert.equal(parsePrices('["price_A1"]', variable).problem, `${variable} is not a JSON object`);
+  }
+  const partial = parsePrices(JSON.stringify({ individual_basic: 'price_A1', tournament_pro: 'prod_SECRETISH' }), 'STRIPE_LIVE_PRICES');
   assert.deepEqual(partial.missing, ['individual_pro', 'tournament_basic', 'tournament_pro']);
-  assert.equal(partial.problem, 'STRIPE_TEST_PRICES has no price_ id for individual_pro, tournament_basic, tournament_pro');
+  assert.equal(partial.problem, 'STRIPE_LIVE_PRICES has no price_ id for individual_pro, tournament_basic, tournament_pro');
   assert.ok(!partial.problem.includes('prod_SECRETISH') && !partial.problem.includes('price_A1'));
+});
+
+test('a Price is fit to charge only when it is the card’s amount, once, in US dollars', () => {
+  const price = { id: 'price_LiveD', object: 'price', active: true, type: 'one_time', currency: 'usd', unit_amount: 15000 };
+  assert.equal(priceProblem('tournament_pro', price), '');
+  assert.equal(priceProblem('tournament_basic', price), 'charges $150.00, not the card’s $125.00', 'a swapped Price');
+  assert.equal(priceProblem('tournament_pro', { ...price, unit_amount: 14999 }), 'charges $149.99, not the card’s $150.00');
+  assert.equal(priceProblem('tournament_pro', { ...price, unit_amount: null }), 'charges no fixed amount, not the card’s $150.00');
+  assert.equal(priceProblem('tournament_pro', { ...price, currency: 'cad' }), 'is in CAD, not USD');
+  assert.equal(priceProblem('tournament_pro', { ...price, type: 'recurring' }), 'is a recurring Price, not a one-time one');
+  assert.equal(priceProblem('tournament_pro', { ...price, active: false }), 'is archived in Stripe');
+  assert.equal(priceProblem('tournament_pro', null), 'was not found in Stripe');
+  for (const key of PACKAGE_KEYS) {
+    assert.ok(!priceProblem(key, { ...price, unit_amount: 1 }).includes('price_LiveD'), 'the problem never names the Price');
+  }
 });
 
 test('order ids are random, readable aloud and never a row number', () => {

@@ -69,9 +69,15 @@ services:
       # Unset, checkout refuses and the webhook changes nothing. Values live
       # only in the dashboard: the repository is public.
       - key: STRIPE_SECRET_KEY
-        sync: false # the live secret key (sk_live_…); a live key charges only the handoff's live prices
+        sync: false # the live secret key (sk_live_…); a live key charges only STRIPE_LIVE_PRICES
       - key: STRIPE_WEBHOOK_SECRET
         sync: false # signing secret of the live endpoint at https://diamond-metrics-api.onrender.com/api/stripe/webhook
+      # The four live Price IDs, one line of JSON:
+      # {"individual_basic":"price_…","individual_pro":"price_…","tournament_basic":"price_…","tournament_pro":"price_…"}
+      # Changing a Price is this setting, not a code change; then check them at
+      # /command/ops → Stripe prices. Unset, a live key refuses checkout.
+      - key: STRIPE_LIVE_PRICES
+        sync: false
 
       - key: DM_ENV
         value: production
