@@ -15,6 +15,8 @@
 .pricing-button { display: inline-flex; align-items: center; justify-content: center; gap: 9px; padding: 15px 20px; border-radius: 11px; background: #38bdf8; color: #06122b; font-weight: 850; text-decoration: none; transition: transform .2s ease, background .2s ease; }
 .pricing-button:hover { transform: translateY(-2px); background: #7dd3fc; }
 .pricing-button:focus-visible { outline: 3px solid #fff; outline-offset: 4px; }
+.pricing-pro-rata-note { margin: 18px 0 0; color: #bfdbfe; font-size: 14px; line-height: 1.55; text-align: center; }
+.pricing-pro-rata-note strong { color: #e0f2fe; }
 .pricing-tournament-callout { display: flex; align-items: center; justify-content: space-between; gap: 28px; margin: 34px 0 0; padding: 30px 34px; border: 1px solid rgba(56, 189, 248, .35); border-radius: 20px; background: radial-gradient(circle at 88% 8%, rgba(37, 99, 235, .22), transparent 35%), rgba(8, 26, 61, .72); }
 .pricing-tournament-callout h2 { margin: 0 0 9px; font-size: clamp(26px, 3vw, 36px); line-height: 1.05; }
 .pricing-tournament-callout p:last-child { max-width: 690px; margin: 0; color: #bfdbfe; line-height: 1.55; }
