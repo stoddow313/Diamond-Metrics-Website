@@ -74,7 +74,7 @@ export default function PricingPage() {
       </section>
 
       <p className="pricing-pro-rata-note">
-        <strong>Additional games pro rata.</strong> Contact our sales team to calculate coverage beyond 25 games.
+        <strong>Need more than 25 games?</strong> Additional games are available at a prorated rate. Contact our sales team to build your package.
       </p>
 
       <section className="pricing-tournament-callout" aria-labelledby="tournament-analysis-heading">
