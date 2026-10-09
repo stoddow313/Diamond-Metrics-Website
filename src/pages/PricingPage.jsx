@@ -1,6 +1,7 @@
-import { ArrowRight, Check, ShieldCheck } from 'lucide-react';
+import { ArrowRight, Check, ShieldCheck, Upload } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import MarketingLayout from '../components/MarketingLayout';
+import { useIntakeConfig } from '../lib/intake';
 import './PricingPage.css';
 
 const packages = [
@@ -39,126 +40,18 @@ const packages = [
   },
 ];
 
-const tournamentPackages = [
-  {
-    id: 'tournament_basic',
-    label: 'Tournament Analysis · 3–5 games included',
-    title: 'Basic',
-    price: '$125',
-    description: 'A more complete view of a player’s overall performance across the tournament.',
-    features: ['Box score', 'Pitch velocity', 'Home-to-first time', 'Steal time'],
-  },
-  {
-    id: 'tournament_pro',
-    label: 'Tournament Analysis · 3–5 games included',
-    title: 'Pro',
-    price: '$150',
-    description: 'Everything in Basic, plus deeper performance metrics from tournament footage.',
-    features: [
-      'Everything in Basic',
-      'Strike percentage and whiff rate',
-      'Command and accuracy',
-      'Exit velocity and hard-hit rate',
-      'Launch angle and spray tendency',
-      'Throw accuracy and release-to-catch',
-    ],
-    featured: true,
-  },
-];
-
-const singleGamePackages = [
-  {
-    id: 'individual_basic',
-    label: 'Single-Game Analysis',
-    title: 'Basic',
-    price: '$50',
-    description: 'A quick performance snapshot from one filmed game.',
-    features: ['Box score', 'Pitch velocity', 'Home-to-first time', 'Steal time'],
-  },
-  {
-    id: 'individual_pro',
-    label: 'Single-Game Analysis',
-    title: 'Pro',
-    price: '$75',
-    description: 'Everything in Basic, plus deeper performance metrics from one filmed game.',
-    features: [
-      'Everything in Basic',
-      'Strike percentage and whiff rate',
-      'Command and accuracy',
-      'Exit velocity and hard-hit rate',
-      'Launch angle and spray tendency',
-      'Throw accuracy and release-to-catch',
-    ],
-  },
-];
-
-function TournamentCard({ pkg }) {
-  return (
-    <article className={`pricing-card${pkg.featured ? ' pricing-card--featured' : ''}`}>
-      {pkg.featured && <span className="pricing-badge">Best value</span>}
-      <p className="pricing-label">{pkg.label}</p>
-      <h3>{pkg.title}</h3>
-      <p className="pricing-price">{pkg.price}</p>
-      <p className="pricing-description">{pkg.description}</p>
-      <ul className="pricing-features">
-        {pkg.features.map((feature) => (
-          <li key={feature}><Check size={18} aria-hidden="true" />{feature}</li>
-        ))}
-      </ul>
-      <Link className="pricing-button" to={`/find-your-player?package=${pkg.id}`}>
-        Choose {pkg.label} <ArrowRight size={18} aria-hidden="true" />
-      </Link>
-    </article>
-  );
-}
-
 export default function PricingPage() {
+  const intake = useIntakeConfig();
   return (
     <MarketingLayout>
       <section className="pricing-hero">
-        <p className="eyebrow">For Parents & Guardians</p>
-        <h1>Choose the analysis that fits your player.</h1>
+        <p className="eyebrow">Season Analytics · Best Value</p>
+        <h1>Season-long analytics for the player behind the stats.</h1>
         <p>
-          Purchase individual player analysis for your athlete: a quick snapshot
-          from one filmed game, a more complete tournament view, or season-long analytics.
+          Choose the season package that fits your athlete. Each package covers
+          up to 25 compatible games for one player.
         </p>
       </section>
-
-      <section className="pricing-package-section" aria-labelledby="tournament-analysis">
-        <div className="pricing-section-heading">
-          <div>
-            <p className="eyebrow">Recommended</p>
-            <h2 id="tournament-analysis">Tournament Analysis</h2>
-            <p>For individual parents and guardians. 3–5 games included, designed to give a more complete view of a player’s overall performance.</p>
-          </div>
-          <span className="pricing-value-callout">Best value</span>
-        </div>
-        <div className="pricing-grid" aria-label="Tournament analysis packages">
-          {tournamentPackages.map((pkg) => <TournamentCard key={pkg.title} pkg={pkg} />)}
-        </div>
-      </section>
-
-      <section className="pricing-package-section pricing-package-section--single" aria-labelledby="single-game-analysis">
-        <div className="pricing-section-heading">
-          <div>
-            <p className="eyebrow">One filmed game</p>
-            <h2 id="single-game-analysis">Single-Game Analysis</h2>
-            <p>A quick performance snapshot from one filmed game.</p>
-          </div>
-        </div>
-        <div className="pricing-grid" aria-label="Single-game analysis packages">
-          {singleGamePackages.map((pkg) => <TournamentCard key={pkg.title} pkg={pkg} />)}
-        </div>
-      </section>
-
-      <section className="pricing-package-section pricing-package-section--season" aria-labelledby="season-analysis">
-        <div className="pricing-section-heading">
-          <div>
-            <p className="eyebrow">Season Analytics</p>
-            <h2 id="season-analysis">Season-long analysis</h2>
-            <p>Up to 25 compatible games for one player.</p>
-          </div>
-        </div>
 
       <section className="pricing-grid" aria-label="Season analytics packages">
         {packages.map((pkg) => (
@@ -179,7 +72,34 @@ export default function PricingPage() {
           </article>
         ))}
       </section>
+
+      <p className="pricing-pro-rata-note">
+        <strong>Need more than 25 games?</strong> Additional games are available at a prorated rate. Contact our sales team to build your package.
+      </p>
+
+      <section className="pricing-tournament-callout" aria-labelledby="tournament-analysis-heading">
+        <div>
+          <p className="eyebrow">Tournament Analysis</p>
+          <h2 id="tournament-analysis-heading">Attending a tournament we filmed?</h2>
+          <p>Find your player to see the analysis options available for the footage captured at your tournament.</p>
+        </div>
+        <Link className="pricing-button" to="/find-your-player">
+          Find Your Player <ArrowRight size={18} aria-hidden="true" />
+        </Link>
       </section>
+
+      {intake?.enabled && (
+        <section className="pricing-eligibility" aria-label="Upload a game">
+          <Upload size={25} aria-hidden="true" />
+          <div>
+            <h2>Already have a package? Upload a game.</h2>
+            <p>
+              Send us the footage and tell us who played — add your order number so we can match it to your purchase.{' '}
+              <Link className="pricing-partner-link" to="/submit?source=pricing">Upload a game <ArrowRight size={17} aria-hidden="true" /></Link>
+            </p>
+          </div>
+        </section>
+      )}
 
       <section className="pricing-partner-section">
         <div className="pricing-partner-heading">
@@ -209,7 +129,7 @@ export default function PricingPage() {
         <ShieldCheck size={25} aria-hidden="true" />
         <div>
           <h2>Footage eligibility</h2>
-          <p>Compatible game footage is required. After purchase, Diamond Metrics will confirm the player, tournament or season, and footage availability before analysis begins.</p>
+          <p>Compatible game footage is required. After purchase, Diamond Metrics will confirm the player’s team, season, and footage availability before analysis begins.</p>
         </div>
       </section>
 
@@ -217,9 +137,9 @@ export default function PricingPage() {
         <p className="eyebrow">What Happens Next</p>
         <h2>Simple enrollment. Meaningful progress.</h2>
         <div>
-          <article><span>01</span><h3>Choose your package</h3><p>Select the tournament, single-game, or season package that fits your athlete.</p></article>
-          <article><span>02</span><h3>Share player details</h3><p>We confirm the player, event or season, and available footage.</p></article>
-          <article><span>03</span><h3>Get your analysis</h3><p>Receive a clearer picture of your player’s performance.</p></article>
+          <article><span>01</span><h3>Choose your package</h3><p>Purchase the season package that fits your athlete.</p></article>
+          <article><span>02</span><h3>Share season details</h3><p>We confirm the player, team, season, and available footage.</p></article>
+          <article><span>03</span><h3>Follow the progress</h3><p>Receive an evolving player profile as games are analyzed.</p></article>
         </div>
       </section>
     </MarketingLayout>
