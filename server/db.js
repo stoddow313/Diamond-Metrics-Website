@@ -1298,6 +1298,34 @@ addColumnIfMissing('tournament_orders', 'delivered_at', 'delivered_at TEXT');
 addColumnIfMissing('tournament_orders', 'delivered_by', 'delivered_by INTEGER REFERENCES admins(id)');
 addColumnIfMissing('tournament_order_events', 'actor_id', 'actor_id INTEGER REFERENCES admins(id)'); // staff actions only
 
+// Tournament admin corrections (server/tournamentAdminRoutes.js). A game's
+// bracket stage (pool | gold | silver | single; NULL = not set) is separate
+// from its age division, so 14U Gold and 14U Silver are one 14U division.
+// Archived games leave the schedule and standings until restored. A changed
+// public URL keeps answering at the old slug. Deleted event records leave a
+// restorable snapshot; shared teams and players are never part of one.
+addColumnIfMissing('tournament_games', 'stage', 'stage TEXT');
+addColumnIfMissing('tournament_games', 'archived_at', 'archived_at TEXT');
+db.exec(`
+  CREATE TABLE IF NOT EXISTS tournament_slug_aliases (
+    slug          TEXT PRIMARY KEY,
+    tournament_id INTEGER NOT NULL REFERENCES tournaments(id) ON DELETE CASCADE,
+    created_at    TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+  CREATE TABLE IF NOT EXISTS event_trash (
+    id            INTEGER PRIMARY KEY AUTOINCREMENT,
+    kind          TEXT NOT NULL,                -- tournament | division | entry | game
+    record_id     INTEGER NOT NULL,
+    tournament_id INTEGER,                      -- not a foreign key: the tournament may be the deleted record
+    label         TEXT NOT NULL DEFAULT '',
+    snapshot      TEXT NOT NULL,                -- JSON [[table, rows], …] in insert order
+    deleted_by    INTEGER REFERENCES admins(id),
+    deleted_at    TEXT NOT NULL DEFAULT (datetime('now')),
+    restored_at   TEXT
+  );
+  CREATE INDEX IF NOT EXISTS idx_event_trash_tournament ON event_trash(tournament_id, deleted_at);
+`);
+
 // ── Seed Command reference data (idempotent; active flags follow code) ──
 {
   const insSport = db.prepare('INSERT OR IGNORE INTO sports (key, name) VALUES (?, ?)');

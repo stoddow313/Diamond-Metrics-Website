@@ -112,6 +112,16 @@ export const api = {
   removeEventRosterRow: (id) => request(`/api/event-roster/${id}`, { method: 'DELETE' }),
   createTournamentGame: (tournamentId, g) => request(`/api/tournaments/${tournamentId}/games`, { method: 'POST', body: g }),
   updateTournamentGame: (id, g) => request(`/api/tournament-games/${id}`, { method: 'PUT', body: g }),
+  // Tournament corrections: divisions, moving entries, archive/delete/restore
+  updateDivision: (id, d) => request(`/api/divisions/${id}`, { method: 'PUT', body: d }),
+  mergeDivision: (id, body) => request(`/api/divisions/${id}/merge`, { method: 'POST', body }),
+  moveEntry: (id, divisionId) => request(`/api/entries/${id}/move`, { method: 'POST', body: { division_id: divisionId } }),
+  recordDependencies: (kind, id) => request(`/api/event-records/${kind}/${id}/dependencies`),   // kind: tournament | division | entry | game
+  archiveRecord: (kind, id) => request(`/api/event-records/${kind}/${id}/archive`, { method: 'POST' }),
+  restoreRecord: (kind, id) => request(`/api/event-records/${kind}/${id}/restore`, { method: 'POST' }),
+  deleteRecord: (kind, id) => request(`/api/event-records/${kind}/${id}`, { method: 'DELETE' }),
+  eventTrash: (tournamentId) => request(`/api/event-trash${tournamentId ? `?tournament_id=${tournamentId}` : ''}`),
+  restoreEventTrash: (id) => request(`/api/event-trash/${id}/restore`, { method: 'POST' }),
 
   // server-side imports
   importKinds: () => request('/api/imports/kinds'),

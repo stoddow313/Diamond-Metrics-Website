@@ -32,7 +32,7 @@ export default function AccessPanel({ kind, id, title, subtitle, onError }) {
 
   return (
     <section className="rounded-2xl border p-6 mb-6" style={cardStyle}>
-      <h2 className="text-lg font-bold text-white mb-1">{title}</h2>
+      <h2 className="text-lg font-bold text-white mb-1" style={{ fontSize: '1.125rem', marginBottom: '0.25rem' }}>{title}</h2>
       <p className="text-xs mb-4" style={{ color: '#94a3b8' }}>{subtitle}</p>
 
       <form onSubmit={add} className="flex flex-wrap gap-3 items-end mb-4">
