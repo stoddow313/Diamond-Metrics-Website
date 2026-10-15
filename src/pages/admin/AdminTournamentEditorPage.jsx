@@ -1,67 +1,123 @@
-import { useEffect, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { useCallback, useEffect, useState } from 'react';
+import { Link, useNavigate, useParams } from 'react-router-dom';
+import { ExternalLink, Pencil } from 'lucide-react';
 import { api } from '../../lib/api';
-import { Field, TextInput, Select, PrimaryButton, GhostButton, ErrorNote } from '../../components/admin/ui';
-import { cardStyle } from '../../components/admin/theme';
+import { fmtDateTime } from '../../lib/intake';
+import { Field, TextInput, PrimaryButton, GhostButton, ErrorNote } from '../../components/admin/ui';
+import { InfoTip } from '../../components/Tooltip';
 import AccessPanel from '../../components/admin/AccessPanel';
+import RecordActionDialog from '../../components/admin/RecordActionDialog';
+import DivisionsSection from './tournament/DivisionsSection';
+import EntriesSection from './tournament/EntriesSection';
+import GamesSection from './tournament/GamesSection';
+import { Chip, Section } from './tournament/shared';
 
-// Tournament editor: divisions → entries → event rosters (with guests) →
-// games with scores. Event rosters override season rosters and never touch
-// the permanent team roster.
+// Tournament editor: details → divisions → team entries (event rosters,
+// guests) → games. Everything can be corrected in place: entries move
+// between divisions keeping their id and roster, games carry a bracket
+// stage apart from their age division, and withdraw / archive / delete show
+// what depends on a record first. Shared teams and players are never deleted.
 export default function AdminTournamentEditorPage() {
   const { tournamentId } = useParams();
-  const [tournament, setTournament] = useState(null);
-  const [divisions, setDivisions] = useState([]);
-  const [entries, setEntries] = useState([]);
-  const [games, setGames] = useState([]);
+  const navigate = useNavigate();
+  const [detail, setDetail] = useState(null);
   const [teams, setTeams] = useState([]);
+  const [trash, setTrash] = useState([]);
   const [error, setError] = useState('');
-
+  const [notice, setNotice] = useState('');
+  const [editing, setEditing] = useState(false);
+  const [ask, setAsk] = useState(null);   // { kind, id, action }
   const [tick, setTick] = useState(0);
-  const load = () => setTick(t => t + 1);
+  const reload = useCallback(() => setTick(t => t + 1), []);
 
   useEffect(() => {
-    Promise.all([api.getTournament(tournamentId), api.listTeams()])
-      .then(([detail, teamList]) => {
-        setTournament(detail.tournament);
-        setDivisions(detail.divisions);
-        setEntries(detail.entries);
-        setGames(detail.games);
-        setTeams(teamList.teams);
-      })
+    Promise.all([api.getTournament(tournamentId), api.listTeams(), api.eventTrash(tournamentId)])
+      .then(([d, teamList, deleted]) => { setDetail(d); setTeams(teamList.teams); setTrash(deleted.items); })
       .catch(err => setError(err.message));
   }, [tournamentId, tick]);
 
-  if (error && !tournament) return <ErrorNote>{error}</ErrorNote>;
-  if (!tournament) return <p style={{ color: '#94a3b8' }}>Loading…</p>;
+  useEffect(() => {
+    if (!notice) return undefined;
+    const t = setTimeout(() => setNotice(''), 4000);
+    return () => clearTimeout(t);
+  }, [notice]);
+
+  // Runs a change, reports it, reloads. Returns the result, or null after showing the error.
+  const act = useCallback(async (fn, message) => {
+    setError('');
+    try {
+      const r = await fn();
+      setNotice(typeof message === 'function' ? message(r) : message);
+      reload();
+      return r ?? true;
+    } catch (err) {
+      setError(err.message);
+      return null;
+    }
+  }, [reload]);
+
+  const onAsk = useCallback((kind, id, action) => setAsk({ kind, id, action }), []);
+
+  async function confirmAsk() {
+    const { kind, id, action } = ask;
+    if (action === 'withdraw') await api.updateEntry(id, { status: 'withdrawn' });
+    else if (action === 'archive') await api.archiveRecord(kind, id);
+    else await api.deleteRecord(kind, id);
+    if (kind === 'tournament' && action === 'delete') {
+      navigate('/admin/tournaments');
+      return;
+    }
+    setNotice(action === 'delete' ? 'Deleted — restore it from Recently deleted below.' : action === 'archive' ? 'Archived' : 'Withdrawn');
+    reload();
+  }
+
+  if (error && !detail) return <ErrorNote>{error}</ErrorNote>;
+  if (!detail) return <p style={{ color: '#94a3b8' }}>Loading…</p>;
+  const { tournament, divisions, entries, games, aliases } = detail;
 
   return (
     <div>
-      <div className="flex items-start justify-between mb-6">
-        <div>
+      <div className="flex flex-wrap items-start justify-between gap-4 mb-6">
+        <div className="min-w-0">
           <Link to="/admin/tournaments" className="text-xs hover:underline" style={{ color: '#64748b' }}>← All tournaments</Link>
-          <h1 className="text-2xl font-bold text-white mt-1">{tournament.name}</h1>
-          <p className="text-sm" style={{ color: '#94a3b8' }}>
-            {tournament.start_date} → {tournament.end_date}{tournament.location ? ` · ${tournament.location}` : ''}
-            {' · '}
-            <a href={`/tournaments/${tournament.slug}`} target="_blank" rel="noreferrer" className="hover:underline" style={{ color: '#38bdf8' }}>
-              View dashboard ↗
+          <div className="flex items-center gap-2 mt-1">
+            <h1 className="text-2xl font-bold text-white">{tournament.name}</h1>
+            {tournament.archived ? <Chip tone="muted">Archived</Chip> : null}
+          </div>
+          <p className="text-sm flex flex-wrap items-center gap-x-2" style={{ color: '#94a3b8' }}>
+            <span>{tournament.start_date} → {tournament.end_date}</span>
+            {tournament.location && <span>· {tournament.location}</span>}
+            <span>·</span>
+            <a href={`/tournaments/${tournament.slug}`} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 hover:underline" style={{ color: '#38bdf8' }}>
+              /tournaments/{tournament.slug} <ExternalLink size={12} aria-hidden="true" />
             </a>
           </p>
         </div>
-        <GhostButton
-          type="button"
-          onClick={async () => {
-            const { tournament: t } = await api.updateTournament(tournament.id, { published: tournament.published ? 0 : 1 });
-            setTournament(t);
-          }}
-          style={tournament.published ? { borderColor: '#166534', color: '#4ade80' } : {}}
-        >
-          {tournament.published ? 'Published ✓ (click to unpublish)' : 'Private — publish'}
-        </GhostButton>
+        <div className="flex gap-2">
+          <GhostButton type="button" onClick={() => setEditing(v => !v)} aria-expanded={editing} data-testid="edit-details">
+            <span className="inline-flex items-center gap-1.5"><Pencil size={14} aria-hidden="true" />Edit details</span>
+          </GhostButton>
+          <GhostButton
+            type="button"
+            onClick={() => act(() => api.updateTournament(tournament.id, { published: tournament.published ? 0 : 1 }), tournament.published ? 'Unpublished' : 'Published')}
+            style={tournament.published ? { borderColor: '#166534', color: '#4ade80' } : {}}
+          >
+            {tournament.published ? 'Published ✓' : 'Publish'}
+          </GhostButton>
+        </div>
       </div>
 
-      <ErrorNote>{error}</ErrorNote>
+      {tournament.archived ? (
+        <div className="flex flex-wrap items-center gap-3 mb-4 px-4 py-3 rounded-xl text-sm" style={{ backgroundColor: 'rgba(71, 85, 105, 0.25)', color: '#cbd5e1' }}>
+          Archived — hidden from the public dashboard and team pages.
+          <GhostButton type="button" onClick={() => act(() => api.restoreRecord('tournament', tournament.id), 'Tournament restored')} style={{ padding: '3px 12px' }}>Restore</GhostButton>
+        </div>
+      ) : null}
+
+      {notice && <p role="status" className="text-sm py-2 px-3 rounded-lg mb-4" style={{ backgroundColor: 'rgba(74, 222, 128, 0.12)', color: '#4ade80' }} data-testid="notice">{notice}</p>}
+      <div className="mb-4"><ErrorNote>{error}</ErrorNote></div>
+
+      {editing && <DetailsForm tournament={tournament} aliases={aliases} act={act} onDone={() => setEditing(false)} />}
 
       <AccessPanel
         kind="tournaments"
@@ -71,288 +127,76 @@ export default function AdminTournamentEditorPage() {
         onError={setError}
       />
 
-      <DivisionsSection tournament={tournament} divisions={divisions} onChange={load} onError={setError} />
-      <EntriesSection tournament={tournament} divisions={divisions} entries={entries} teams={teams} onChange={load} onError={setError} />
-      <GamesSection tournament={tournament} divisions={divisions} entries={entries} games={games} onChange={load} onError={setError} />
-    </div>
-  );
-}
+      <DivisionsSection tournament={tournament} divisions={divisions} act={act} onAskDelete={(kind, id) => onAsk(kind, id, 'delete')} />
+      <EntriesSection tournament={tournament} divisions={divisions} entries={entries} teams={teams} act={act} onAsk={onAsk} onError={setError} />
+      <GamesSection tournament={tournament} divisions={divisions} entries={entries} games={games} act={act} onAsk={onAsk} />
 
-function DivisionsSection({ tournament, divisions, onChange, onError }) {
-  const [form, setForm] = useState({ name: '', age_group: '' });
+      {trash.length > 0 && (
+        <Section title="Recently deleted" testId="trash">
+          <div className="flex flex-col">
+            {trash.map(item => (
+              <div key={item.id} className="flex flex-wrap items-center gap-3 border-t py-2 text-sm" style={{ borderColor: '#1e3a5f' }}>
+                <Chip tone="muted">{item.kind}</Chip>
+                <span className="font-bold text-white flex-1 min-w-[200px]">{item.label}</span>
+                <span className="text-xs" style={{ color: '#64748b' }}>{fmtDateTime(item.deleted_at)}{item.deleted_by_name ? ` · ${item.deleted_by_name}` : ''}</span>
+                <GhostButton type="button" style={{ padding: '3px 12px' }} onClick={() => act(() => api.restoreEventTrash(item.id), `Restored ${item.label}`)}>Restore</GhostButton>
+              </div>
+            ))}
+          </div>
+        </Section>
+      )}
 
-  async function add(e) {
-    e.preventDefault();
-    try {
-      await api.createDivision(tournament.id, form);
-      setForm({ name: '', age_group: '' });
-      await onChange();
-    } catch (err) { onError(err.message); }
-  }
-
-  return (
-    <section className="rounded-2xl border p-6 mb-6" style={cardStyle}>
-      <h2 className="text-lg font-bold text-white mb-4">Divisions</h2>
-      <form onSubmit={add} className="flex flex-wrap gap-3 items-end mb-4">
-        <Field label="Name"><TextInput value={form.name} onChange={e => setForm({ ...form, name: e.target.value })} required placeholder="16U Gold" /></Field>
-        <Field label="Age group"><TextInput value={form.age_group} onChange={e => setForm({ ...form, age_group: e.target.value })} placeholder="16U" /></Field>
-        <PrimaryButton type="submit">+ Add division</PrimaryButton>
-      </form>
-      {divisions.length === 0 ? (
-        <p className="text-sm" style={{ color: '#94a3b8' }}>No divisions yet — entries and games need one.</p>
-      ) : (
+      <Section title="Archive or delete" testId="danger"
+        aside={<InfoTip label="About archive and delete">Archiving hides the event and keeps everything. Deleting removes its divisions, entries and games (restorable from the tournament list); shared teams and player profiles are never deleted.</InfoTip>}>
         <div className="flex flex-wrap gap-2">
-          {divisions.map(d => (
-            <span key={d.id} className="px-3 py-1.5 rounded-lg border text-sm font-bold" style={{ borderColor: '#1e3a5f', color: '#cfe8ff' }}>
-              {d.name}
-              <button
-                className="ml-2 cursor-pointer"
-                style={{ color: '#64748b' }}
-                title="Delete (only when empty)"
-                onClick={async () => {
-                  try { await api.deleteDivision(d.id); await onChange(); }
-                  catch (err) { onError(err.message); }
-                }}
-              >×</button>
-            </span>
-          ))}
+          {tournament.archived
+            ? <GhostButton type="button" onClick={() => act(() => api.restoreRecord('tournament', tournament.id), 'Tournament restored')}>Restore tournament</GhostButton>
+            : <GhostButton type="button" onClick={() => onAsk('tournament', tournament.id, 'archive')}>Archive tournament</GhostButton>}
+          <GhostButton type="button" onClick={() => onAsk('tournament', tournament.id, 'delete')} style={{ borderColor: '#7f1d1d', color: '#f87171' }}>Delete tournament</GhostButton>
         </div>
-      )}
-    </section>
-  );
-}
+      </Section>
 
-function EntriesSection({ tournament, divisions, entries, teams, onChange, onError }) {
-  const [form, setForm] = useState({ division_id: '', team_id: '', seed: '' });
-  const [openEntryId, setOpenEntryId] = useState(null);
-
-  async function add(e) {
-    e.preventDefault();
-    try {
-      await api.createEntry(tournament.id, {
-        division_id: Number(form.division_id), team_id: Number(form.team_id),
-        seed: form.seed ? Number(form.seed) : null,
-      });
-      setForm({ division_id: '', team_id: '', seed: '' });
-      await onChange();
-    } catch (err) { onError(err.message); }
-  }
-
-  return (
-    <section className="rounded-2xl border p-6 mb-6" style={cardStyle}>
-      <h2 className="text-lg font-bold text-white mb-1">Participating teams</h2>
-      <p className="text-xs mb-4" style={{ color: '#94a3b8' }}>
-        Each entry has its own event roster — season players plus guests, without changing the permanent roster.
-      </p>
-
-      <form onSubmit={add} className="flex flex-wrap gap-3 items-end mb-4">
-        <Field label="Division">
-          <Select value={form.division_id} onChange={e => setForm({ ...form, division_id: e.target.value })} required>
-            <option value="">—</option>
-            {divisions.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
-          </Select>
-        </Field>
-        <Field label="Team">
-          <Select value={form.team_id} onChange={e => setForm({ ...form, team_id: e.target.value })} required>
-            <option value="">—</option>
-            {teams.map(t => <option key={t.id} value={t.id}>{t.name}{t.age_group ? ` (${t.age_group})` : ''}</option>)}
-          </Select>
-        </Field>
-        <Field label="Seed"><TextInput type="number" value={form.seed} onChange={e => setForm({ ...form, seed: e.target.value })} style={{ width: 80 }} /></Field>
-        <PrimaryButton type="submit">+ Enter team</PrimaryButton>
-      </form>
-
-      {entries.length === 0 ? (
-        <p className="text-sm" style={{ color: '#94a3b8' }}>No teams entered yet.</p>
-      ) : (
-        <div className="flex flex-col gap-2">
-          {entries.map(e => (
-            <div key={e.id} className="rounded-xl border" style={{ borderColor: '#1e3a5f' }}>
-              <button type="button" onClick={() => setOpenEntryId(openEntryId === e.id ? null : e.id)}
-                className="w-full flex items-center justify-between px-4 py-3 cursor-pointer text-left">
-                <span className="font-bold text-white text-sm">
-                  {e.team_name} <span className="font-normal" style={{ color: '#94a3b8' }}>· {e.division_name}{e.seed ? ` · seed ${e.seed}` : ''}</span>
-                </span>
-                <span className="text-xs" style={{ color: '#64748b' }}>
-                  {e.event_roster_count > 0 ? `${e.event_roster_count} on event roster` : 'season roster'} {openEntryId === e.id ? '▾' : '▸'}
-                </span>
-              </button>
-              {openEntryId === e.id && <EventRosterEditor entryId={e.id} onError={onError} onChanged={onChange} />}
-            </div>
-          ))}
-        </div>
-      )}
-    </section>
-  );
-}
-
-function EventRosterEditor({ entryId, onError, onChanged }) {
-  const [data, setData] = useState(null);
-  const [players, setPlayers] = useState([]);
-  const [form, setForm] = useState({ player_id: '', is_guest: false, jersey: '' });
-
-  const [tick, setTick] = useState(0);
-  const load = () => setTick(t => t + 1);
-
-  useEffect(() => {
-    Promise.all([api.getEntryRoster(entryId), api.listPlayers()])
-      .then(([rosterData, playerList]) => {
-        setData(rosterData);
-        setPlayers(playerList.players);
-      })
-      .catch(err => onError(err.message));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [entryId, tick]);
-
-  async function add(e) {
-    e.preventDefault();
-    try {
-      await api.addEventRosterRow(entryId, { player_id: Number(form.player_id), is_guest: form.is_guest ? 1 : 0, jersey: form.jersey });
-      setForm({ player_id: '', is_guest: false, jersey: '' });
-      await load();
-      await onChanged();
-    } catch (err) { onError(err.message); }
-  }
-
-  if (!data) return <p className="px-4 pb-4 text-sm" style={{ color: '#94a3b8' }}>Loading roster…</p>;
-
-  return (
-    <div className="px-4 pb-4 border-t pt-3" style={{ borderColor: '#1e3a5f' }}>
-      <p className="text-xs mb-3" style={{ color: '#64748b' }}>
-        {data.source === 'season'
-          ? 'Showing the season roster as of the event date — add players to lock an explicit event roster.'
-          : 'Explicit event roster (overrides the season roster for this event).'}
-      </p>
-
-      <form onSubmit={add} className="flex flex-wrap gap-3 items-end mb-3">
-        <Field label="Player">
-          <Select value={form.player_id} onChange={e => setForm({ ...form, player_id: e.target.value })} required>
-            <option value="">—</option>
-            {players.map(p => <option key={p.id} value={p.id}>{p.first_name} {p.last_name}</option>)}
-          </Select>
-        </Field>
-        <Field label="Jersey"><TextInput value={form.jersey} onChange={e => setForm({ ...form, jersey: e.target.value })} style={{ width: 80 }} /></Field>
-        <label className="flex items-center gap-2 text-sm pb-2" style={{ color: '#cfe8ff' }}>
-          <input type="checkbox" checked={form.is_guest} onChange={e => setForm({ ...form, is_guest: e.target.checked })} />
-          Guest player
-        </label>
-        <PrimaryButton type="submit">+ Add</PrimaryButton>
-      </form>
-
-      {data.roster.length === 0 ? (
-        <p className="text-sm" style={{ color: '#94a3b8' }}>Nobody on this roster yet.</p>
-      ) : (
-        <div className="flex flex-col gap-1 text-sm">
-          {data.roster.map(r => (
-            <div key={r.player_id} className="flex items-center gap-3">
-              <span className="font-bold text-white">{r.player ? `${r.player.first_name} ${r.player.last_name}` : `#${r.player_id}`}</span>
-              {r.jersey && <span style={{ color: '#94a3b8' }}>#{r.jersey}</span>}
-              {r.isGuest && (
-                <span className="text-[10px] font-bold uppercase px-1.5 py-0.5 rounded" style={{ backgroundColor: 'rgba(251,191,36,0.15)', color: '#fbbf24' }}>Guest</span>
-              )}
-              <span className="text-xs" style={{ color: '#475569' }}>{r.source === 'season' ? 'season roster' : ''}</span>
-              {r.event_roster_id && (
-                <button className="text-xs cursor-pointer hover:underline" style={{ color: '#64748b' }}
-                  onClick={async () => { await api.removeEventRosterRow(r.event_roster_id); await load(); await onChanged(); }}>
-                  remove
-                </button>
-              )}
-            </div>
-          ))}
-        </div>
-      )}
+      {ask && <RecordActionDialog {...ask} onConfirm={confirmAsk} onClose={() => setAsk(null)} />}
     </div>
   );
 }
 
-function GamesSection({ tournament, divisions, entries, games, onChange, onError }) {
-  const [form, setForm] = useState({ division_id: '', home_entry_id: '', away_entry_id: '', game_date: '', game_time: '', field: '' });
+function DetailsForm({ tournament, aliases, act, onDone }) {
+  const [form, setForm] = useState({
+    name: tournament.name, start_date: tournament.start_date, end_date: tournament.end_date,
+    location: tournament.location || '', organizer: tournament.organizer || '', slug: tournament.slug,
+  });
+  const set = k => e => setForm({ ...form, [k]: e.target.value });
 
-  const entriesForDivision = form.division_id
-    ? entries.filter(e => e.division_id === Number(form.division_id))
-    : entries;
-
-  async function add(e) {
+  async function save(e) {
     e.preventDefault();
-    try {
-      await api.createTournamentGame(tournament.id, {
-        division_id: Number(form.division_id),
-        home_entry_id: Number(form.home_entry_id),
-        away_entry_id: Number(form.away_entry_id),
-        game_date: form.game_date, game_time: form.game_time, field: form.field,
-      });
-      setForm({ division_id: '', home_entry_id: '', away_entry_id: '', game_date: '', game_time: '', field: '' });
-      await onChange();
-    } catch (err) { onError(err.message); }
+    // Only what changed, so an untouched URL is never rewritten.
+    const changed = Object.fromEntries(Object.entries(form).filter(([k, v]) => v !== (tournament[k] ?? '')));
+    if (!Object.keys(changed).length) { onDone(); return; }
+    if (await act(() => api.updateTournament(tournament.id, changed), 'Details saved')) onDone();
   }
 
-  async function saveScore(game, home, away) {
-    try {
-      await api.updateTournamentGame(game.id, {
-        home_score: home === '' ? null : Number(home),
-        away_score: away === '' ? null : Number(away),
-        status: home !== '' && away !== '' ? 'final' : game.status,
-      });
-      await onChange();
-    } catch (err) { onError(err.message); }
-  }
+  const urlHint = `Renaming never changes the URL. If you change it, ${aliases.length ? 'the old links ' : 'the old link '}keep working and open the new one.`
+    + (aliases.length ? ` Old links: ${aliases.map(a => `/tournaments/${a.slug}`).join(', ')}.` : '');
 
   return (
-    <section className="rounded-2xl border p-6" style={cardStyle}>
-      <h2 className="text-lg font-bold text-white mb-4">Games</h2>
-
-      <form onSubmit={add} className="grid grid-cols-2 md:grid-cols-7 gap-3 items-end mb-4 p-4 rounded-xl" style={{ backgroundColor: 'rgba(30, 41, 59, 0.5)' }}>
-        <Field label="Division">
-          <Select value={form.division_id} onChange={e => setForm({ ...form, division_id: e.target.value, home_entry_id: '', away_entry_id: '' })} required>
-            <option value="">—</option>
-            {divisions.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
-          </Select>
-        </Field>
-        <Field label="Home">
-          <Select value={form.home_entry_id} onChange={e => setForm({ ...form, home_entry_id: e.target.value })} required>
-            <option value="">—</option>
-            {entriesForDivision.map(en => <option key={en.id} value={en.id}>{en.team_name}</option>)}
-          </Select>
-        </Field>
-        <Field label="Away">
-          <Select value={form.away_entry_id} onChange={e => setForm({ ...form, away_entry_id: e.target.value })} required>
-            <option value="">—</option>
-            {entriesForDivision.filter(en => en.id !== Number(form.home_entry_id)).map(en => <option key={en.id} value={en.id}>{en.team_name}</option>)}
-          </Select>
-        </Field>
-        <Field label="Date"><TextInput type="date" value={form.game_date} onChange={e => setForm({ ...form, game_date: e.target.value })} required /></Field>
-        <Field label="Time"><TextInput type="time" value={form.game_time} onChange={e => setForm({ ...form, game_time: e.target.value })} /></Field>
-        <Field label="Field"><TextInput value={form.field} onChange={e => setForm({ ...form, field: e.target.value })} /></Field>
-        <PrimaryButton type="submit">+ Add game</PrimaryButton>
-      </form>
-
-      {games.length === 0 ? (
-        <p className="text-sm" style={{ color: '#94a3b8' }}>No games scheduled.</p>
-      ) : (
-        <div className="flex flex-col gap-2">
-          {games.map(g => <GameRow key={g.id} game={g} onSave={saveScore} />)}
+    <form onSubmit={save} className="rounded-2xl border p-5 mb-6 grid grid-cols-1 md:grid-cols-3 gap-4 items-end" style={{ backgroundColor: 'rgba(15, 23, 42, 0.78)', borderColor: '#1e3a5f' }} data-testid="details-form">
+      <Field label="Name"><TextInput value={form.name} onChange={set('name')} required /></Field>
+      <Field label="Start date"><TextInput type="date" value={form.start_date} onChange={set('start_date')} required /></Field>
+      <Field label="End date"><TextInput type="date" value={form.end_date} onChange={set('end_date')} min={form.start_date} required /></Field>
+      <Field label="Location"><TextInput value={form.location} onChange={set('location')} /></Field>
+      <Field label="Organizer"><TextInput value={form.organizer} onChange={set('organizer')} /></Field>
+      <Field label="Public URL" hint={urlHint}>
+        <div className="flex items-center rounded-lg border overflow-hidden" style={{ borderColor: '#334155' }}>
+          <span className="pl-3 text-sm whitespace-nowrap" style={{ color: '#64748b' }}>/tournaments/</span>
+          <TextInput value={form.slug} onChange={e => setForm({ ...form, slug: e.target.value.toLowerCase() })} required aria-label="Public URL"
+            style={{ border: 0, paddingLeft: 2 }} pattern="[a-z0-9]+(-[a-z0-9]+)*" title="Lowercase letters, numbers and single hyphens" />
         </div>
-      )}
-    </section>
-  );
-}
-
-function GameRow({ game, onSave }) {
-  const [home, setHome] = useState(game.home_score ?? '');
-  const [away, setAway] = useState(game.away_score ?? '');
-
-  return (
-    <div className="flex flex-wrap items-center gap-3 rounded-xl border px-4 py-2.5 text-sm" style={{ borderColor: '#1e3a5f' }}>
-      <span style={{ color: '#94a3b8' }}>{game.game_date}{game.game_time ? ` ${game.game_time}` : ''}</span>
-      <span className="text-xs px-2 py-0.5 rounded uppercase" style={{ backgroundColor: 'rgba(56,189,248,0.12)', color: '#38bdf8' }}>{game.division_name}</span>
-      <span className="font-bold text-white flex-1 min-w-[200px]">{game.home_team_name} vs {game.away_team_name}</span>
-      <span className="flex items-center gap-1.5">
-        <TextInput type="number" value={home} onChange={e => setHome(e.target.value)} style={{ width: 56, padding: '4px 8px' }} aria-label="Home score" />
-        <span style={{ color: '#64748b' }}>–</span>
-        <TextInput type="number" value={away} onChange={e => setAway(e.target.value)} style={{ width: 56, padding: '4px 8px' }} aria-label="Away score" />
-      </span>
-      <GhostButton type="button" onClick={() => onSave(game, home, away)} style={{ padding: '4px 12px', fontSize: 12 }}>Save</GhostButton>
-      <span className="text-xs font-bold uppercase" style={{ color: game.status === 'final' ? '#4ade80' : '#64748b' }}>{game.status}</span>
-    </div>
+      </Field>
+      <div className="md:col-span-3 flex gap-2">
+        <PrimaryButton type="submit">Save details</PrimaryButton>
+        <GhostButton type="button" onClick={onDone}>Cancel</GhostButton>
+      </div>
+    </form>
   );
 }

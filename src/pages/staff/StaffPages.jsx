@@ -210,7 +210,7 @@ export function StaffTournamentPage() {
           <p className="text-sm" style={{ color: '#94a3b8' }}>No games scheduled.</p>
         ) : games.map(g => (
           <p key={g.id} className="text-sm py-1 border-t" style={{ color: '#cfe8ff', borderColor: '#1e3a5f' }}>
-            <span style={{ color: '#94a3b8' }}>{g.game_date}{g.game_time ? ` ${g.game_time}` : ''} · {g.division_name} · </span>
+            <span style={{ color: '#94a3b8' }}>{g.game_date}{g.game_time ? ` ${g.game_time}` : ''} · {g.division_name}{g.stage_label ? ` · ${g.stage_label}` : ''} · </span>
             <b>{g.home_team_name}</b>
             {g.home_score != null && g.away_score != null ? ` ${g.home_score} – ${g.away_score} ` : ' vs '}
             <b>{g.away_team_name}</b>

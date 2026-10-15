@@ -172,6 +172,7 @@ export function tournamentGameCandidates(db, { teamIds = [], gameDate = null, li
        JOIN tournament_entries he ON he.id = tg.home_entry_id JOIN teams ht ON ht.id = he.team_id
        JOIN tournament_entries ae ON ae.id = tg.away_entry_id JOIN teams at ON at.id = ae.team_id
       WHERE tg.game_date = ? AND (he.team_id IN (${marks}) OR ae.team_id IN (${marks}))
+        AND tg.archived_at IS NULL AND tr.archived = 0
       ORDER BY tg.game_time LIMIT ?`
   ).all(gameDate, ...teamIds, ...teamIds, limit);
 }

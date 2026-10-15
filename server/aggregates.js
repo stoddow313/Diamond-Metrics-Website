@@ -205,7 +205,7 @@ export function standings(db, tournamentId) {
      FROM tournament_entries te JOIN teams t ON t.id = te.team_id JOIN divisions d ON d.id = te.division_id
      WHERE te.tournament_id = ? AND te.status != 'archived'`
   ).all(tournamentId);
-  const games = db.prepare('SELECT * FROM tournament_games WHERE tournament_id = ?').all(tournamentId);
+  const games = db.prepare('SELECT * FROM tournament_games WHERE tournament_id = ? AND archived_at IS NULL').all(tournamentId);
 
   const rows = entries.map(e => {
     const mine = games.filter(g => g.home_entry_id === e.id || g.away_entry_id === e.id);
@@ -218,12 +218,17 @@ export function standings(db, tournamentId) {
       if (f > a) w++; else if (f < a) l++; else t++;
     }
     const played = finals.length;
+    // A record the admin entered on the entry wins over the one counted from
+    // final scores (events whose scores are not all entered).
+    const manual = e.wins != null || e.losses != null;
+    if (manual) { w = e.wins ?? 0; l = e.losses ?? 0; t = 0; }
+    const decided = w + l + t;
     return {
       entry_id: e.id, division_id: e.division_id, division_name: e.division_name,
       team_name: e.team_name, team_slug: e.team_slug,
-      seed: e.seed, pool: e.pool, placement: e.placement,
-      wins: w, losses: l, ties: t,
-      win_pct: played ? (w + 0.5 * t) / played : null,      // null until a final exists
+      seed: e.seed, pool: e.pool, placement: e.placement, status: e.status,
+      wins: w, losses: l, ties: t, record_source: manual ? 'manual' : 'games',
+      win_pct: decided ? (w + 0.5 * t) / decided : null,    // null until a result exists
       runs_scored: played ? rs : null,
       runs_allowed: played ? ra : null,
       run_diff: played ? rs - ra : null,

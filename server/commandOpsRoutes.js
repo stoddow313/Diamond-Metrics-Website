@@ -118,7 +118,7 @@ export function mountCommandOpsRoutes(app, { db, requireInternal, createJob }) {
          JOIN tournament_entries ae ON ae.id = tg.away_entry_id
          JOIN teams ht ON ht.id = he.team_id
          JOIN teams at ON at.id = ae.team_id
-        WHERE tg.tournament_id = ? AND tg.status != 'canceled'
+        WHERE tg.tournament_id = ? AND tg.status != 'canceled' AND tg.archived_at IS NULL
         ORDER BY tg.game_date, tg.game_time, tg.id`
     ).all(tournament.id);
 

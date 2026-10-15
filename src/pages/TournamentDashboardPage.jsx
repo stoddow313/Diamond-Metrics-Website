@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Link, useParams } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { Lock, Users, MapPin } from 'lucide-react';
 import { api } from '../lib/api';
 import BrandMark from '../components/BrandMark';
@@ -55,6 +55,14 @@ export default function TournamentDashboardPage() {
 
   const data = result.key === slug ? result.data : null;
   const error = result.key === slug ? result.error : null;
+
+  // An old URL of a renamed event answers with the current one: move there.
+  const navigate = useNavigate();
+  const location = useLocation();
+  const current = data?.tournament?.slug;
+  useEffect(() => {
+    if (current && current !== slug) navigate(`/tournaments/${current}${location.search}`, { replace: true });
+  }, [current, slug, navigate, location.search]);
 
   const shell = children => (
     <div className="min-h-screen pb-8" style={pageBg}>
@@ -194,6 +202,7 @@ export default function TournamentDashboardPage() {
                             {s.team_name}
                           </Link>
                           {s.pool && <span className="ml-2 text-xs" style={{ color: text.faint }}>Pool {s.pool}</span>}
+                          {s.status === 'withdrawn' && <span className="ml-2 text-xs" style={{ color: text.faint }}>Withdrawn</span>}
                         </td>
                         <td className="py-1.5 pr-3 text-right font-bold text-white">{s.wins}-{s.losses}-{s.ties}</td>
                         <td className="py-1.5 pr-3 text-right" style={{ color: text.body }}>{s.win_pct == null ? '—' : fmt(s.win_pct, { decimals: 3 })}</td>
@@ -258,7 +267,7 @@ export default function TournamentDashboardPage() {
                 <div className="min-w-0">
                   <p className="text-sm font-bold text-white truncate">{e.team_name}</p>
                   <p className="text-xs truncate" style={{ color: text.secondary }}>
-                    {e.organization_name} · {e.division_name}
+                    {e.organization_name} · {e.division_name}{e.status === 'withdrawn' ? ' · Withdrawn' : ''}
                     {e.event_roster_count ? ` · ${e.event_roster_count} on event roster` : ''}
                   </p>
                 </div>
@@ -289,7 +298,10 @@ export default function TournamentDashboardPage() {
                 {games.map(g => (
                   <tr key={g.id} className="border-b" style={rowBorder}>
                     <td className="py-1.5 pr-3 whitespace-nowrap" style={{ color: text.secondary }}>{g.date}{g.time ? ` ${g.time}` : ''}</td>
-                    <td className="py-1.5 pr-3" style={{ color: text.secondary }}>{g.division_name}</td>
+                    <td className="py-1.5 pr-3 whitespace-nowrap" style={{ color: text.secondary }}>
+                      {g.division_name}
+                      {g.stage_label && <span className="ml-1.5 text-[10px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded" style={{ backgroundColor: g.stage === 'gold' ? 'rgba(251,191,36,0.14)' : 'rgba(148,163,184,0.14)', color: g.stage === 'gold' ? '#fbbf24' : '#cbd5e1' }}>{g.stage_label}</span>}
+                    </td>
                     <td className="py-1.5 pr-3 font-bold text-white">
                       <Link to={`/teams/${g.home_team_slug}?tournament=${slug}`} className="hover:text-[#38bdf8]">{g.home_team_name}</Link>
                       {' vs '}

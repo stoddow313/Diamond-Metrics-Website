@@ -938,6 +938,35 @@ Stripe and do not change a row.
 | `stripe_webhook_not_paid` | A payment method that settles later | The order stays pending until delayed methods are supported (TDR §9.2); check the payment in Stripe |
 | "Too many checkout attempts…" at the field | 60 checkouts per network address per 10 minutes, 10 per email per hour | Limits reset with the window (and on restart); the parent can retry |
 
+### 3.19 Correcting tournament data (Admin → Tournaments)
+
+Event records (the tournament, its divisions, team entries with event
+rosters, games with lineups) are corrected in place on the tournament page;
+shared teams and player profiles are never deleted from there. Code:
+`server/tournamentAdminRoutes.js` (rules in `tournamentAdminLogic.js`).
+
+- **Divisions are age groups; brackets are a stage on each game** (Pool Play,
+  Gold, Silver, Single Bracket). An event set up with "14U Gold" and "14U
+  Silver" as divisions: add **14U**, then on each of the others choose
+  *Merge* → into 14U, *Mark its games* Gold or Silver. Entries keep their IDs
+  and event rosters; fix any pool-play game's stage with the game's pencil.
+- **Move** (⇄ on an entry) puts the same entry, roster and results in another
+  division. A game follows once both its teams are there; until then it shows
+  an orange warning. A team already entered in the target division is refused
+  — remove one of the two entries first.
+- **Details** (Edit details): name, dates, location, organizer and the public
+  URL. Renaming never changes the URL; a changed URL keeps the old one working
+  (it opens the new one).
+- **Withdraw** keeps the entry, roster and results, marked withdrawn on the
+  dashboard. **Archive** hides an entry, game or the whole event (the public
+  page answers "not found") until **Restore**. **Delete** shows what it
+  touches first and is refused while something depends on the record: games
+  for an entry, Command jobs, player stat lines or footage submissions for a
+  game or event (archive instead). A delete is undone from *Recently deleted*
+  (on the tournament page; deleted tournaments on the tournament list).
+- **Wins/losses typed on an entry** replace the record counted from final
+  scores in the public standings; clear both to count from scores again.
+
 ---
 
 ## 4. Backups and restore

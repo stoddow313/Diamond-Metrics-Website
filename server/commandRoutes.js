@@ -40,6 +40,7 @@ export function mountCommandRoutes(app, { db, requireInternal }) {
          FROM tournament_games tg
          JOIN tournament_entries he ON he.id = tg.home_entry_id JOIN teams ht ON ht.id = he.team_id
          JOIN tournament_entries ae ON ae.id = tg.away_entry_id JOIN teams at ON at.id = ae.team_id
+         WHERE tg.archived_at IS NULL
          ORDER BY tg.game_date DESC`
       ).all(),
       rulesets: db.prepare('SELECT r.*, s.key AS sport_key FROM rulesets r JOIN sports s ON s.id = r.sport_id').all(),

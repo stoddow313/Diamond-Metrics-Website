@@ -1,8 +1,10 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { api } from '../../lib/api';
-import { Field, TextInput, PrimaryButton, ErrorNote } from '../../components/admin/ui';
+import { fmtDateTime } from '../../lib/intake';
+import { Field, TextInput, PrimaryButton, GhostButton, ErrorNote } from '../../components/admin/ui';
 import { cardStyle } from '../../components/admin/theme';
+import { Chip, Toggle } from './tournament/shared';
 
 export default function AdminTournamentsPage() {
   const [tournaments, setTournaments] = useState(null);
@@ -10,11 +12,29 @@ export default function AdminTournamentsPage() {
   const [showCreate, setShowCreate] = useState(false);
   const [form, setForm] = useState({ name: '', start_date: '', end_date: '', location: '', organizer: '' });
   const [busy, setBusy] = useState(false);
+  const [showArchived, setShowArchived] = useState(false);
+  const [trash, setTrash] = useState([]);
+  const [tick, setTick] = useState(0);
   const navigate = useNavigate();
 
   useEffect(() => {
-    api.listTournaments().then(t => setTournaments(t.tournaments)).catch(err => setError(err.message));
-  }, []);
+    Promise.all([api.listTournaments(), api.eventTrash()])
+      .then(([t, deleted]) => { setTournaments(t.tournaments); setTrash(deleted.items); })
+      .catch(err => setError(err.message));
+  }, [tick]);
+
+  async function restore(item) {
+    setError('');
+    try {
+      await api.restoreEventTrash(item.id);
+      setTick(t => t + 1);
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
+  const archivedCount = (tournaments || []).filter(t => t.archived).length;
+  const shown = (tournaments || []).filter(t => showArchived || !t.archived);
 
   async function handleCreate(e) {
     e.preventDefault();
@@ -36,7 +56,10 @@ export default function AdminTournamentsPage() {
           <h1 className="text-2xl font-bold text-white">Tournaments</h1>
           <p className="text-sm mt-1" style={{ color: '#94a3b8' }}>Events, divisions, entries, and games.</p>
         </div>
-        <PrimaryButton onClick={() => setShowCreate(v => !v)}>{showCreate ? 'Cancel' : '+ New Tournament'}</PrimaryButton>
+        <div className="flex items-center gap-4">
+          {archivedCount > 0 && <Toggle checked={showArchived} onChange={setShowArchived} testId="show-archived-tournaments">Show archived ({archivedCount})</Toggle>}
+          <PrimaryButton onClick={() => setShowCreate(v => !v)}>{showCreate ? 'Cancel' : '+ New Tournament'}</PrimaryButton>
+        </div>
       </div>
 
       <ErrorNote>{error}</ErrorNote>
@@ -53,12 +76,12 @@ export default function AdminTournamentsPage() {
 
       {tournaments === null ? (
         <p style={{ color: '#94a3b8' }}>Loading…</p>
-      ) : tournaments.length === 0 ? (
+      ) : shown.length === 0 ? (trash.length ? null : (
         <div className="rounded-2xl border p-10 text-center" style={cardStyle}>
           <p className="text-white font-bold mb-1">No tournaments yet</p>
           <p className="text-sm" style={{ color: '#94a3b8' }}>Create an event to start adding divisions, teams, and games.</p>
         </div>
-      ) : (
+      )) : (
         <div className="rounded-2xl border overflow-hidden" style={cardStyle}>
           <table className="w-full text-sm">
             <thead>
@@ -72,10 +95,10 @@ export default function AdminTournamentsPage() {
               </tr>
             </thead>
             <tbody>
-              {tournaments.map(t => (
-                <tr key={t.id} className="border-t cursor-pointer hover:bg-slate-800/40" style={{ borderColor: '#1e3a5f' }}
+              {shown.map(t => (
+                <tr key={t.id} className="border-t cursor-pointer hover:bg-slate-800/40" style={{ borderColor: '#1e3a5f', opacity: t.archived ? 0.6 : 1 }}
                   onClick={() => navigate(`/admin/tournaments/${t.id}`)}>
-                  <td className="px-5 py-3 font-bold text-white">{t.name}</td>
+                  <td className="px-5 py-3 font-bold text-white">{t.name}{t.archived ? <span className="ml-2"><Chip tone="muted">Archived</Chip></span> : null}</td>
                   <td className="px-5 py-3" style={{ color: '#94a3b8' }}>{t.start_date} → {t.end_date}</td>
                   <td className="px-5 py-3" style={{ color: '#cfe8ff' }}>{t.division_count}</td>
                   <td className="px-5 py-3" style={{ color: '#cfe8ff' }}>{t.entry_count}</td>
@@ -89,6 +112,19 @@ export default function AdminTournamentsPage() {
               ))}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {trash.length > 0 && (
+        <div className="rounded-2xl border p-5 mt-6" style={cardStyle} data-testid="deleted-tournaments">
+          <h2 className="text-lg font-bold text-white mb-3">Recently deleted</h2>
+          {trash.map(item => (
+            <div key={item.id} className="flex flex-wrap items-center gap-3 border-t py-2 text-sm" style={{ borderColor: '#1e3a5f' }}>
+              <span className="font-bold text-white flex-1 min-w-[200px]">{item.label}</span>
+              <span className="text-xs" style={{ color: '#64748b' }}>{fmtDateTime(item.deleted_at)}{item.deleted_by_name ? ` · ${item.deleted_by_name}` : ''}</span>
+              <GhostButton type="button" style={{ padding: '3px 12px' }} onClick={() => restore(item)}>Restore</GhostButton>
+            </div>
+          ))}
         </div>
       )}
     </div>
