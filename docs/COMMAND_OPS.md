@@ -60,6 +60,9 @@ experience, so a bare checkout runs with no configuration at all.
 | `DM_INLINE_WORKER` | on | `0` disables the inline worker (only with a real dedicated worker) |
 | `DM_PROXY_MAX_HEIGHT` | `1080` | Review-proxy height ceiling. Sources below it are never upscaled. |
 | `DM_PROXY_MAX_FPS` | none (native) | Optional proxy frame-rate ceiling, applied by exact halving so frame mapping stays integral. Set it (e.g. `60`) if full-game encodes at native high frame rates cost more wall-clock than the precision is worth. |
+| `DM_MEDIA_SCRATCH_DIR` | OS temp dir | Where a review proxy is encoded before upload. **Render caps `/tmp` at 2 GB and evicts the instance past it** (taking the API down mid-encode); a 1080p60 proxy passes 2 GB at about 55 minutes of game. Point it at a disk with room, e.g. `/var/data/scratch` on a persistent disk sized for the database plus the longest game (~4 GB for 103 minutes). Partial proxies are cleared at start. A proxy that will not fit is refused up front with the reason. |
+| `DM_MEDIA_SCRATCH_LIMIT_MB` | 2048 on Render with no scratch dir set | Cap on scratch space the size check assumes (statfs cannot see Render's `/tmp` cap). |
+| `DM_R2_PUT_PART_MB` | 32 | Part size for server-side uploads to R2 (proxies, backups). Files above one part go up as a multipart upload: each part is a short request inside the R2 client's `requestTimeout`, which is wall-clock per request, not idle time. |
 | `DM_TRANSCODE_MEMORY_MB` | auto-detected | Transcode memory ceiling. Detected from the container limit, so upgrading the instance lifts it automatically; set only to pin or deliberately lower it. Below 2048, sources above 1080p are refused with an actionable error rather than OOM-killing the service. |
 
 ### Backups

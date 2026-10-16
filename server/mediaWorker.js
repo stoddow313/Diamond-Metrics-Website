@@ -68,6 +68,54 @@ export const STALL_MS = Number(process.env.DM_MEDIA_STALL_MS || 5 * 60 * 1000);
 export const IO_TIMEOUT_S = Number(process.env.DM_MEDIA_IO_TIMEOUT_S || 30);
 export const MAX_ATTEMPTS = 3;
 
+// Where a review proxy is encoded before it is uploaded. Render evicts an
+// instance whose /tmp passes 2 GB — taking the API down with it, mid-encode,
+// every ~2 h in October 2026 — and a 1080p60 proxy passes 2 GB at about 55
+// minutes of game. Production points this at a disk with room.
+export const SCRATCH_DIR = process.env.DM_MEDIA_SCRATCH_DIR || os.tmpdir();
+const SCRATCH_RESERVE_BYTES = 512 * 1024 * 1024;   // left free: on a shared disk the database lives there too
+
+// The most the scratch directory may hold. statfs cannot see Render's 2 GB
+// /tmp cap, so it is assumed there when no other directory is configured.
+export function scratchLimitBytes(env = process.env) {
+  const mb = Number(env.DM_MEDIA_SCRATCH_LIMIT_MB);
+  if (Number.isFinite(mb) && mb > 0) return mb * 1024 * 1024;
+  return env.RENDER && !env.DM_MEDIA_SCRATCH_DIR ? 2048 * 1024 * 1024 : Infinity;
+}
+
+// Proxy size estimate. libx264 veryfast CRF 23 measured ~4.75 Mbps on
+// 1080p60 game footage in production (three full games, October 2026);
+// 5.5 Mbps scaled by pixels and frame rate leaves a margin.
+export function estimateProxyBytes({ durationS, height, fps }) {
+  const h = Math.min(PROXY_MAX_HEIGHT, height || PROXY_MAX_HEIGHT);
+  const bitsPerSecond = 5_500_000 * (h / 1080) ** 2 * ((fps || 30) / 60);
+  return Math.ceil((Number(durationS) || 0) * bitsPerSecond / 8);
+}
+
+// Refuse up front — a clear, permanent reason — instead of encoding for
+// hours and being evicted at the end.
+export function scratchProblem({ needBytes, freeBytes, limitBytes, dir }) {
+  const room = Math.min(freeBytes - SCRATCH_RESERVE_BYTES, limitBytes);
+  if (needBytes <= room) return null;
+  const gb = b => (Math.max(0, b) / 1024 ** 3).toFixed(1);
+  return `this video's review proxy needs about ${gb(needBytes)} GB of scratch space, and ${dir} has room for ${gb(room)} GB`
+    + `${limitBytes < freeBytes ? ' (Render caps /tmp at 2 GB)' : ''}. Point DM_MEDIA_SCRATCH_DIR at a disk with room, then Retry processing.`;
+}
+
+// Partial proxies a killed run left behind. /tmp empties on restart; a
+// persistent scratch directory does not.
+export function clearScratch(dir = SCRATCH_DIR) {
+  let removed = 0;
+  try {
+    for (const name of fs.readdirSync(dir)) {
+      if (!/^dm-(proxy|thumb)-\d+\.(mp4|jpg)$/.test(name)) continue;
+      fs.rmSync(path.join(dir, name), { force: true });
+      removed += 1;
+    }
+  } catch { /* no scratch directory yet */ }
+  return removed;
+}
+
 // Memory available to this process, in MB. Inside a container Node reports
 // the cgroup limit (0 when unconstrained), so upgrading the Render instance
 // lifts the transcode ceiling automatically — no env var to remember and no
@@ -308,8 +356,15 @@ async function handleProxy(db, job, feed, { stallMs }) {
     target_fps: targetFps, target_height: Math.min(PROXY_MAX_HEIGHT, feed.height || PROXY_MAX_HEIGHT),
     duration_s: feed.duration_s, stall_ms: stallMs,
   });
-  const outPath = path.join(os.tmpdir(), `dm-proxy-${feed.id}.mp4`);
-  const thumbPath = path.join(os.tmpdir(), `dm-thumb-${feed.id}.jpg`);
+  fs.mkdirSync(SCRATCH_DIR, { recursive: true });
+  const { bavail, bsize } = fs.statfsSync(SCRATCH_DIR);
+  const problem = scratchProblem({
+    needBytes: estimateProxyBytes({ durationS: duration, height: feed.height, fps: targetFps }),
+    freeBytes: bavail * bsize, limitBytes: scratchLimitBytes(), dir: SCRATCH_DIR,
+  });
+  if (problem) throw Object.assign(new Error(problem), { permanent: true });
+  const outPath = path.join(SCRATCH_DIR, `dm-proxy-${feed.id}.mp4`);
+  const thumbPath = path.join(SCRATCH_DIR, `dm-thumb-${feed.id}.jpg`);
 
   // Heartbeat: progress lands on the job row (throttled) so the UI can show
   // "42% · 7.4 s of 17.7 s" and the sweep can tell alive from wedged.
@@ -488,6 +543,7 @@ function failOrRequeue(db, j, why) {
 }
 
 export function startInlineWorker(db, { intervalMs = 3000, stallMs = STALL_MS } = {}) {
+  clearScratch();
   recoverOrphanedJobs(db);
   let draining = false;
   const tick = async () => {
@@ -501,6 +557,6 @@ export function startInlineWorker(db, { intervalMs = 3000, stallMs = STALL_MS } 
   };
   const timer = setInterval(tick, intervalMs);
   timer.unref?.();
-  log('info', 'media_worker_started', { interval_ms: intervalMs, stall_ms: stallMs, io_timeout_s: IO_TIMEOUT_S, storage: storageMode });
+  log('info', 'media_worker_started', { interval_ms: intervalMs, stall_ms: stallMs, io_timeout_s: IO_TIMEOUT_S, storage: storageMode, scratch_dir: SCRATCH_DIR });
   return timer;
 }
