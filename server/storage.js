@@ -15,15 +15,19 @@ const MODE = process.env.DM_STORAGE === 'r2' ? 'r2' : 'local';
 const LOCAL_DIR = process.env.DM_MEDIA_DIR || path.join(process.env.DM_DB_PATH ? path.dirname(process.env.DM_DB_PATH) : path.join(process.cwd(), 'server', 'data'), 'media');
 if (MODE === 'local') fs.mkdirSync(LOCAL_DIR, { recursive: true });
 
-function makeClient(accessKeyId, secretAccessKey) {
+function makeClient(accessKeyId, secretAccessKey, extra = {}) {
   return new S3Client({
+    ...extra,
     region: 'auto',
     endpoint: `https://${process.env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com`,
     credentials: { accessKeyId, secretAccessKey },
-    // The SDK ships with no timeouts at all: a connection R2 never answers,
-    // or a socket that goes silent mid-stream, blocks its caller forever.
-    // requestTimeout is socket inactivity, so a slow multi-GB stream that
-    // is still moving bytes never trips it — only a dead one does.
+    // The SDK ships with no timeouts at all: a connection R2 never answers
+    // blocks its caller forever. requestTimeout is wall-clock from request
+    // start until the response headers arrive — NOT socket inactivity. A
+    // download is safe (headers come back at once; the body then streams
+    // untimed), but an upload's response waits for its whole body, so a PUT
+    // that takes longer to send than this fails however steadily it moves:
+    // big files go up in parts (putObject).
     requestHandler: new NodeHttpHandler({
       connectionTimeout: Number(process.env.DM_R2_CONNECT_TIMEOUT_MS || 10_000),
       requestTimeout: Number(process.env.DM_R2_SOCKET_TIMEOUT_MS || 120_000),
@@ -36,6 +40,15 @@ let r2 = null;
 function client() {
   if (!r2) r2 = makeClient(process.env.R2_ACCESS_KEY_ID, process.env.R2_SECRET_ACCESS_KEY);
   return r2;
+}
+
+// Parts the server uploads (putObject) carry no optional SDK checksums —
+// the same as the presigned parts browsers upload, the multipart path R2
+// has always accepted; the upload is started and completed on client().
+let r2Parts = null;
+function partClient() {
+  if (!r2Parts) r2Parts = makeClient(process.env.R2_ACCESS_KEY_ID, process.env.R2_SECRET_ACCESS_KEY, { requestChecksumCalculation: 'WHEN_REQUIRED' });
+  return r2Parts;
 }
 
 // The live bucket may carry its own key. The media key is often scoped to the
@@ -202,13 +215,74 @@ export async function selfTest() {
   }
 }
 
+// Server-side uploads (review proxies, thumbnails, backups). requestTimeout
+// is a wall-clock limit on one request (start → response), not socket
+// inactivity: a single PUT of a full-game proxy that takes longer than it
+// to send failed every time, after the whole encode, on every attempt. A
+// file above one part therefore goes up as a multipart upload of fixed-size
+// parts — each its own short request, retried on its own — which also lifts
+// R2's 5 GB cap on a single PUT.
+export const PUT_PART_BYTES = Math.max(5, Number(process.env.DM_R2_PUT_PART_MB || 32)) * 1024 * 1024;   // R2 minimum part: 5 MiB
+const PUT_CONCURRENCY = 3;
+const PART_TRIES = 3;
+
 export async function putObject(key, filePath) {
   if (MODE === 'r2') {
-    await client().send(new PutObjectCommand({ Bucket: BUCKET(), Key: key, Body: fs.createReadStream(filePath) }));
+    await uploadFile(cmd => client().send(cmd), { bucket: BUCKET(), key, filePath, sendPart: cmd => partClient().send(cmd) });
     return;
   }
   fs.mkdirSync(path.dirname(localPathFor(key)), { recursive: true });
   fs.copyFileSync(filePath, localPathFor(key));
+}
+
+// One file to one object through `send` (an S3 client's send; tests pass a
+// fake; `sendPart` sends the part uploads). Small files: one PUT. Larger:
+// equal parts (R2 requires every part but the last to be the same size), a
+// few in flight, each read fresh from disk on every try; any failure aborts
+// the upload so no orphaned parts stay billed in the bucket.
+export async function uploadFile(send, { bucket, key, filePath, sendPart = send, partBytes = PUT_PART_BYTES, concurrency = PUT_CONCURRENCY, tries = PART_TRIES, backoffMs = 1000 }) {
+  const size = (await fs.promises.stat(filePath)).size;
+  if (size <= partBytes) {
+    await withTries(() => send(new PutObjectCommand({ Bucket: bucket, Key: key, Body: fs.createReadStream(filePath), ContentLength: size })), tries, backoffMs);
+    return { parts: 1, size };
+  }
+  const { UploadId } = await send(new CreateMultipartUploadCommand({ Bucket: bucket, Key: key }));
+  const count = Math.ceil(size / partBytes);
+  const etags = new Array(count);
+  let next = 0;
+  const uploadOne = async n => {
+    const start = (n - 1) * partBytes;
+    const end = Math.min(size, n * partBytes) - 1;
+    const res = await withTries(() => sendPart(new UploadPartCommand({
+      Bucket: bucket, Key: key, UploadId, PartNumber: n,
+      Body: fs.createReadStream(filePath, { start, end }), ContentLength: end - start + 1,
+    })), tries, backoffMs);
+    etags[n - 1] = res.ETag;
+  };
+  try {
+    await Promise.all(Array.from({ length: Math.min(concurrency, count) }, async () => {
+      while (next < count) await uploadOne(++next);
+    }));
+    await send(new CompleteMultipartUploadCommand({
+      Bucket: bucket, Key: key, UploadId,
+      MultipartUpload: { Parts: etags.map((ETag, i) => ({ ETag, PartNumber: i + 1 })) },
+    }));
+  } catch (err) {
+    await Promise.resolve(send(new AbortMultipartUploadCommand({ Bucket: bucket, Key: key, UploadId }))).catch(() => {});
+    throw err;
+  }
+  return { parts: count, size };
+}
+
+async function withTries(fn, tries, backoffMs) {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      if (attempt >= tries) throw err;
+      await new Promise(r => setTimeout(r, backoffMs * attempt));
+    }
+  }
 }
 
 // Worker-side: materialize an object to a local scratch path for ffmpeg.
