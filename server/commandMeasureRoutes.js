@@ -1,5 +1,6 @@
 // Command M4 routes: running-attempt queues + the measurement drawer.
 import { createAttempt, saveMeasurement, markUnavailable, reassignAttempt, UNAVAILABLE_REASONS, ATTEMPT_TYPES } from './measurementLogic.js';
+import { footageJobIds } from './gamePairing.js';
 import { timingRollup } from './metricRelease.js';
 import { commandRoster } from './commandRoster.js';
 
@@ -56,13 +57,13 @@ export function mountCommandMeasureRoutes(app, { db, requireInternal }) {
     const roster = commandRoster(db, job);
 
     const feeds = db.prepare(
-      `SELECT f.id, f.label, f.original_name, f.width, f.height, f.status, f.effective_fps, f.vfr, r.id AS proxy_rendition_id, r.fps AS proxy_fps
+      `SELECT f.id, f.job_id, f.label, f.original_name, f.width, f.height, f.status, f.effective_fps, f.vfr, r.id AS proxy_rendition_id, r.fps AS proxy_fps
        FROM cmd_video_feeds f
        LEFT JOIN cmd_media_renditions r ON r.id = (
          SELECT id FROM cmd_media_renditions WHERE feed_id = f.id AND kind = 'proxy' ORDER BY id DESC LIMIT 1
        )
-       WHERE f.job_id = ? ORDER BY f.id`
-    ).all(job.id);
+       WHERE f.job_id IN (${footageJobIds(db, job.id).map(() => '?').join(',')}) ORDER BY f.job_id = ? DESC, f.id`
+    ).all(...footageJobIds(db, job.id), job.id).map(f => ({ ...f, shared_from_job_id: f.job_id === job.id ? null : f.job_id }));
 
     // Live per-player timing rollups from current draft/unavailable results.
     const summaries = [];

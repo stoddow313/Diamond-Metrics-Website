@@ -9,6 +9,7 @@ export const UNAVAILABLE_REASONS = [
 ];
 
 import { resultForEvidence, applyResultState, withdrawResult, markResultUnavailable, resyncPublishedRollups } from './releaseLogic.js';
+import { footageJobIds } from './gamePairing.js';
 
 const err = (message, status = 400) => Object.assign(new Error(message), { status });
 
@@ -39,7 +40,8 @@ export function requirementEnabled(db, jobId, metricCode) {
 export function createAttempt(db, jobId, { attempt_type, player_id, feed_id, base_path = '', outcome = '', timecode_s = null }, actorId) {
   if (!ATTEMPT_TYPES.includes(attempt_type)) throw err(`attempt_type must be ${ATTEMPT_TYPES.join(' or ')}`);
   if (!db.prepare('SELECT 1 FROM players WHERE id = ?').get(player_id)) throw err('Unknown player');
-  const feed = feed_id ? db.prepare('SELECT * FROM cmd_video_feeds WHERE id = ? AND job_id = ?').get(feed_id, jobId) : null;
+  const ids = footageJobIds(db, jobId);
+  const feed = feed_id ? db.prepare(`SELECT * FROM cmd_video_feeds WHERE id = ? AND job_id IN (${ids.map(() => '?').join(',')})`).get(feed_id, ...ids) : null;
   if (feed_id && !feed) throw err('feed_id must reference a feed on this job');
   if (!requirementEnabled(db, jobId, METRIC_BY_ATTEMPT[attempt_type])) {
     throw err(`The ${attempt_type.replace(/_/g, ' ')} module is not activated on this order`);

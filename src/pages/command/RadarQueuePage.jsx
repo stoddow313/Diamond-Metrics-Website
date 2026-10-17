@@ -16,6 +16,17 @@ const STATUS_COLORS = { unmatched: '#fbbf24', matched: '#4ade80', invalid: '#647
 // extend them; whichever is chosen is what the audit trail records.
 const INVALID_REASONS = ['Radar noise', 'Wrong pitcher / player', 'Duplicate reading', 'Warm-up, not game', 'Unreadable', 'Test reading'];
 
+// Our roster, then the paired job's (the other team's pitchers in the same CSV).
+function RosterOptions({ data, label }) {
+  if (!data.partner_roster?.length) return data.roster.map(p => <option key={p.id} value={p.id}>{label(p)}</option>);
+  return (
+    <>
+      <optgroup label="This team">{data.roster.map(p => <option key={p.id} value={p.id}>{label(p)}</option>)}</optgroup>
+      <optgroup label={`${data.partner.team_name} (job #${data.partner.job_id})`}>{data.partner_roster.map(p => <option key={p.id} value={p.id}>{label(p)}</option>)}</optgroup>
+    </>
+  );
+}
+
 function ReadingStatus({ value }) {
   return (
     <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded whitespace-nowrap"
@@ -39,6 +50,11 @@ export default function RadarQueuePage() {
   const [invalidating, setInvalidating] = useState(null);  // { id, reason, detail } — reason panel under the row
   const [notice, setNotice] = useState('');
   const [guest, setGuest] = useState(null);   // { first_name, last_name, jersey } — inline guest placeholder form
+  const [selected, setSelected] = useState(() => new Set());   // reading ids for a bulk assignment
+  const [anchor, setAnchor] = useState(null);                  // last clicked row, for shift-click ranges
+  const [pauseS, setPauseS] = useState(90);                     // a gap this long starts a new group (half inning, pitching change)
+  const [bulk, setBulk] = useState({ player_id: '', pitch_or_exit: 'pitch', pitch_type: '' });
+  const [bulkBusy, setBulkBusy] = useState(false);
   const fileRef = useRef(null);
 
   const rosterLabel = p => `${p.jersey ? `#${p.jersey} ` : ''}${p.first_name} ${p.last_name}${p.is_guest ? ' · guest' : p.primary_position ? ` (${p.primary_position})` : ''}`;
@@ -72,6 +88,59 @@ export default function RadarQueuePage() {
     return data.readings.filter(r => r.status === filter);
   }, [data, filter]);
 
+  // Readings in a row, split where the gun went quiet: a half inning or a
+  // pitching change usually shows as a pause, so a group is one pitcher's run.
+  const groups = useMemo(() => {
+    const at = r => { const t = Date.parse(r.source_timestamp || ''); return Number.isFinite(t) ? t : null; };
+    const out = [];
+    let prev = null;
+    for (const r of visible) {
+      const t = at(r);
+      if (!out.length || (t != null && prev != null && (t - prev) / 1000 > pauseS)) out.push({ start: r.id, ids: [], first: r.source_timestamp, last: r.source_timestamp });
+      const g = out[out.length - 1];
+      g.ids.push(r.id);
+      if (r.source_timestamp) g.last = r.source_timestamp;
+      if (t != null) prev = t;
+    }
+    return out.length > 1 ? out : [];
+  }, [visible, pauseS]);
+  const groupAt = useMemo(() => new Map(groups.map((g, i) => [g.start, { ...g, n: i + 1 }])), [groups]);
+
+  const partnerIds = useMemo(() => new Set((data?.partner_roster || []).map(p => p.id)), [data]);
+  const toggle = (id, shift) => {
+    setSelected(prev => {
+      const next = new Set(prev);
+      if (shift && anchor != null) {
+        const ids = visible.map(r => r.id);
+        const [a, b] = [ids.indexOf(anchor), ids.indexOf(id)].sort((x, y) => x - y);
+        if (a >= 0) for (const x of ids.slice(a, b + 1)) next.add(x);
+      } else if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+    setAnchor(id);
+  };
+  const selectIds = ids => setSelected(prev => new Set([...prev, ...ids]));
+
+  async function assignSelected(status) {
+    setError(''); setNotice(''); setBulkBusy(true);
+    try {
+      const body = { reading_ids: [...selected], status };
+      if (status === 'matched') Object.assign(body, { player_id: Number(bulk.player_id), pitch_or_exit: bulk.pitch_or_exit, ...(bulk.pitch_type ? { pitch_type: bulk.pitch_type } : {}) });
+      const r = await api.commandAssignReadings(jobId, body);
+      const who = status === 'matched' ? [...data.roster, ...(data.partner_roster || [])].find(p => p.id === Number(bulk.player_id)) : null;
+      setSelected(new Set());
+      await load();
+      setNotice(status === 'matched'
+        ? `${r.assigned} reading${r.assigned === 1 ? '' : 's'} confirmed to ${who ? `${who.first_name} ${who.last_name}` : 'the player'}${r.moved ? ` — moved to the ${data.partner?.team_name || 'other team'} job (#${r.job_id}) for review there` : ''}.`
+        : `${r.assigned} reading${r.assigned === 1 ? '' : 's'} marked ${status}.`);
+    } catch (err) {
+      setError(`Could not update those readings: ${err.message}`);
+    } finally {
+      setBulkBusy(false);
+    }
+  }
+
   async function importCsv(file) {
     if (!file) return;
     setError('');
@@ -91,12 +160,12 @@ export default function RadarQueuePage() {
     setError(''); setNotice(''); setBusyId(reading.id);
     try {
       const next = { status: 'matched', ...overrides };
-      await api.commandClassifyReading(reading.id, {
-        player_id: sticky.player_id ? Number(sticky.player_id) : null,
-        pitch_or_exit: sticky.pitch_or_exit,
-        pitch_type: sticky.pitch_type,
-        ...next,
-      });
+      const fields = { player_id: sticky.player_id ? Number(sticky.player_id) : null, pitch_or_exit: sticky.pitch_or_exit, pitch_type: sticky.pitch_type, ...next };
+      if (fields.status === 'matched' && partnerIds.has(Number(fields.player_id))) {
+        await api.commandAssignReadings(jobId, { reading_ids: [reading.id], ...fields });
+      } else {
+        await api.commandClassifyReading(reading.id, fields);
+      }
       await load();
       revealBucket(next.status);
       setNotice(next.status === 'matched'
@@ -200,7 +269,7 @@ export default function RadarQueuePage() {
           <Field label="Active player (carries forward)">
             <Select value={sticky.player_id} onChange={e => setSticky(s => ({ ...s, player_id: e.target.value }))}>
               <option value="">— none —</option>
-              {data.roster.map(p => <option key={p.id} value={p.id}>{rosterLabel(p)}</option>)}
+              <RosterOptions data={data} label={rosterLabel} />
             </Select>
             <button type="button" onClick={() => setGuest(g => (g ? null : { first_name: '', last_name: '', jersey: '' }))}
               className="text-[11px] font-bold mt-1 cursor-pointer hover:underline" style={{ color: '#fbbf24' }} data-testid="add-guest-toggle">
@@ -249,12 +318,50 @@ export default function RadarQueuePage() {
               </button>
             ))}
           </div>
+          {selected.size > 0 && (
+            <div className="flex flex-wrap items-end gap-2 p-3 border-b" style={{ borderColor: '#1e3a5f', backgroundColor: 'rgba(56, 189, 248, 0.06)' }} data-testid="bulk-bar">
+              <span className="text-sm font-bold text-white pb-2">{selected.size} selected</span>
+              <Field label="Assign to">
+                <Select value={bulk.player_id} onChange={e => setBulk(b => ({ ...b, player_id: e.target.value }))} data-testid="bulk-player">
+                  <option value="">— pick —</option>
+                  <RosterOptions data={data} label={rosterLabel} />
+                </Select>
+              </Field>
+              <Field label="Type">
+                <Select value={bulk.pitch_or_exit} onChange={e => setBulk(b => ({ ...b, pitch_or_exit: e.target.value }))}>
+                  <option value="pitch">Pitch</option><option value="exit">Exit</option>
+                </Select>
+              </Field>
+              <Field label="Pitch type">
+                <Select value={bulk.pitch_type} onChange={e => setBulk(b => ({ ...b, pitch_type: e.target.value }))}>
+                  <option value="">keep</option>{data.pitch_types.map(t => <option key={t} value={t}>{t}</option>)}
+                </Select>
+              </Field>
+              <PrimaryButton disabled={bulkBusy || !bulk.player_id} onClick={() => assignSelected('matched')} data-testid="bulk-assign">Assign {selected.size}</PrimaryButton>
+              <GhostButton disabled={bulkBusy} onClick={() => assignSelected('unmatched')}>Unmatch</GhostButton>
+              <GhostButton disabled={bulkBusy} onClick={() => assignSelected('invalid')}>Invalid</GhostButton>
+              <GhostButton onClick={() => setSelected(new Set())}>Clear</GhostButton>
+            </div>
+          )}
+          {groups.length > 0 && (
+            <p className="px-4 pt-3 text-xs flex items-center gap-2 flex-wrap" style={{ color: '#64748b' }}>
+              {groups.length} groups, split where the gun paused for more than
+              <select value={pauseS} onChange={e => setPauseS(Number(e.target.value))} aria-label="Pause that starts a new group" className="rounded px-1 py-0.5" style={{ backgroundColor: 'rgba(30, 41, 59, 0.95)', color: '#cfe8ff' }}>
+                {[45, 60, 90, 120, 180, 300].map(n => <option key={n} value={n}>{n < 60 ? `${n} s` : `${n / 60} min`}</option>)}
+              </select>
+              — usually a half inning or a pitching change. Select a group, then assign it to its pitcher.
+            </p>
+          )}
           {visible.length === 0 ? (
             <p className="p-6 text-sm" style={{ color: '#94a3b8' }}>Nothing in this bucket.</p>
           ) : (
             <table className="w-full text-sm">
               <thead>
                 <tr className="text-left text-xs uppercase tracking-wider" style={{ color: '#64748b' }}>
+                  <th className="pl-4 py-2.5 w-8">
+                    <input type="checkbox" aria-label="Select all shown" checked={visible.length > 0 && visible.every(r => selected.has(r.id))}
+                      onChange={e => setSelected(e.target.checked ? new Set(visible.map(r => r.id)) : new Set())} />
+                  </th>
                   <th className="px-4 py-2.5">Velocity</th>
                   <th className="px-4 py-2.5">Source</th>
                   <th className="px-4 py-2.5">Player</th>
@@ -266,7 +373,20 @@ export default function RadarQueuePage() {
               <tbody>
                 {visible.map(r => (
                 <Fragment key={r.id}>
-                  <tr className="border-t" style={{ borderColor: '#1e3a5f' }}>
+                  {groupAt.has(r.id) && (
+                    <tr className="border-t" style={{ borderColor: '#1e3a5f', backgroundColor: 'rgba(30, 41, 59, 0.45)' }} data-testid="reading-group">
+                      <td colSpan={7} className="px-4 py-1.5 text-xs" style={{ color: '#94a3b8' }}>
+                        <b style={{ color: '#cfe8ff' }}>Group {groupAt.get(r.id).n}</b> · {groupAt.get(r.id).ids.length} reading{groupAt.get(r.id).ids.length === 1 ? '' : 's'}
+                        {groupAt.get(r.id).first ? ` · ${String(groupAt.get(r.id).first).slice(11, 16)}–${String(groupAt.get(r.id).last).slice(11, 16)}` : ''}
+                        <button type="button" onClick={() => selectIds(groupAt.get(r.id).ids)} className="ml-2 font-bold cursor-pointer hover:underline" style={{ color: '#38bdf8' }}>Select</button>
+                      </td>
+                    </tr>
+                  )}
+                  <tr className="border-t" style={{ borderColor: '#1e3a5f', backgroundColor: selected.has(r.id) ? 'rgba(56, 189, 248, 0.07)' : undefined }}>
+                    <td className="pl-4 py-2.5">
+                      <input type="checkbox" checked={selected.has(r.id)} aria-label={`Select reading ${r.row_index ?? r.id}`}
+                        onClick={e => { e.preventDefault(); toggle(r.id, e.shiftKey); }} onChange={() => {}} />
+                    </td>
                     <td className="px-4 py-2.5 font-bold text-white whitespace-nowrap">
                       {r.velocity != null ? `${r.velocity.toFixed(1)} mph` : <span style={{ color: '#64748b' }}>unreadable</span>}
                     </td>
@@ -349,7 +469,7 @@ export default function RadarQueuePage() {
                   </tr>
                   {invalidating?.id === r.id && busyId !== r.id && (
                     <tr key={`${r.id}-reason`} data-testid="invalid-reason-panel">
-                      <td colSpan={6} className="px-4 pb-4 pt-1">
+                      <td colSpan={7} className="px-4 pb-4 pt-1">
                         <div className="rounded-xl border p-4" style={{ borderColor: 'rgba(251, 191, 36, 0.35)', backgroundColor: 'rgba(251, 191, 36, 0.06)' }}>
                           <p className="text-sm font-bold text-white">
                             Mark this {r.velocity != null ? `${r.velocity.toFixed(1)} mph` : ''} reading invalid

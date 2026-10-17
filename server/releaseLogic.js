@@ -3,6 +3,7 @@
 // display rollups (DM_RELEASE_V1) publish into the existing games/
 // stat_entries path. Unavailable never becomes zero and never enters an
 // average; a paid metric with nothing releasable notifies the customer.
+import { footageJobIds } from './gamePairing.js';
 import { rollupForMetricCode, RELEASE_VERSION } from './metricRelease.js';
 import { emitJobEvent } from './notifications.js';
 import { assessCapture } from './captureSpec.js';
@@ -35,7 +36,7 @@ export function computeQaFlags(db, jobId) {
   const flags = [];
   const metrics = orderedMetrics(db, jobId);
   const results = db.prepare(ACTIVE_RESULTS).all(jobId);
-  const feeds = db.prepare('SELECT * FROM cmd_video_feeds WHERE job_id = ?').all(jobId);
+  const feeds = db.prepare(`SELECT * FROM cmd_video_feeds WHERE job_id IN (${footageJobIds(db, jobId).map(() => '?').join(',')})`).all(...footageJobIds(db, jobId));
   const ready = feeds.filter(f => f.status === 'ready');
 
   const consent = db.prepare('SELECT * FROM cmd_consent WHERE job_id = ? AND media_consent = 1').get(jobId);

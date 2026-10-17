@@ -1298,6 +1298,13 @@ addColumnIfMissing('tournament_orders', 'delivered_at', 'delivered_at TEXT');
 addColumnIfMissing('tournament_orders', 'delivered_by', 'delivered_by INTEGER REFERENCES admins(id)');
 addColumnIfMissing('tournament_order_events', 'actor_id', 'actor_id INTEGER REFERENCES admins(id)'); // staff actions only
 
+// Paired game jobs (server/gamePairing.js): the two teams of one game get a
+// job each — own order, customer and release — but one set of footage and one
+// scorebook. The second team's job (the guest) points at the first (the host):
+// it uses the host's feeds and finished proxies as they are, and reads and
+// writes the host's scorebook with the sides swapped.
+addColumnIfMissing('cmd_jobs', 'game_host_job_id', 'game_host_job_id INTEGER REFERENCES cmd_jobs(id)');
+
 // Tournament admin corrections (server/tournamentAdminRoutes.js). A game's
 // bracket stage (pool | gold | silver | single; NULL = not set) is separate
 // from its age division, so 14U Gold and 14U Silver are one 14U division.

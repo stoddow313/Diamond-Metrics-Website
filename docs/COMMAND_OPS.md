@@ -970,6 +970,41 @@ shared teams and player profiles are never deleted from there. Code:
 - **Wins/losses typed on an entry** replace the record counted from final
   scores in the public standings; clear both to count from scores again.
 
+### 3.20 Both teams of one game: paired jobs (Command → job → Other team's job)
+
+A job's team decides whose players can be credited (its roster, event roster,
+submission players and job guests), and each job keeps its own order, customer,
+review and release. To analyze both teams of one game without setting it up
+twice, give each team a job for the same date and pair them on either job page.
+Code: `server/gamePairing.js`.
+
+- **Footage:** both jobs see both jobs' feeds and finished proxies — upload and
+  process the video once. The Running queue labels the other job's feeds
+  "shared from job #N".
+- **Scorebook:** one log, stored on the host (the job that was scored first).
+  Each job sees its own team as "us"; score from either page. Each job's game
+  record releases only its own players.
+- **The opponent's players:** paired, their lineup and substitutions pick from
+  the other job's roster (with jersey numbers). A game scored earlier with
+  typed labels ("#12") shows *Link players* at the top of the scorebook: match
+  each label to a player once and every play already scored is credited.
+- **Timing and radar follow the player:** a timing attempt queued for the
+  other team's runner lands on their job; a radar reading confirmed to their
+  pitcher moves to their job (with its draft result) for review there.
+- **Unpair** only before the guest releases its game record and before it
+  times anything on the shared footage.
+
+**Radar in bulk** (Radar queue): tick readings — shift-click selects a range —
+or *Select* a group (readings are split where the gun paused; 1.5 min by
+default, about a half inning or a pitching change), then *Assign* them to a
+pitcher, *Unmatch* or mark *Invalid*. The pitcher list includes the paired
+team's pitchers.
+
+**Positions by inning** (Scorebook → Box score → positions): each player's
+positions with the innings he was there for at least one plate appearance,
+e.g. "SS 1–4 · 2B 5–7". Record a move without a substitute as a
+*position change* substitution (slot + new position); a swap is one per player.
+
 ---
 
 ## 4. Backups and restore

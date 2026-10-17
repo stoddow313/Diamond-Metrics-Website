@@ -7,6 +7,7 @@ import { roleLabel } from '../../lib/intake';
 import BrandMark from '../../components/BrandMark';
 import { Field, TextInput, Select, PrimaryButton, GhostButton, ErrorNote } from '../../components/admin/ui';
 import { cardStyle } from '../../components/admin/theme';
+import PairingPanel from './PairingPanel';
 
 // Diamond Metrics Command — internal analyst platform (M1: production queue,
 // job setup, job detail). Access: admin | analyst | reviewer | fulfillment. Customer
@@ -851,6 +852,8 @@ export function JobDetailPage() {
               )}
             </div>
           </section>
+
+          <PairingPanel job={job} />
 
           <section className="rounded-2xl border p-6" style={cardStyle}>
             <h2 className="text-lg font-bold text-white mb-3" style={{ fontSize: '1.125rem' }}>Assignment</h2>
