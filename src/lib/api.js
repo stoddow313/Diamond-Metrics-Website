@@ -180,6 +180,8 @@ export const api = {
   commandScorebookDispute: (eventId, note, jobId) => request(`/api/command/scorebook/events/${eventId}/dispute${jobId ? `?job=${jobId}` : ''}`, { method: 'POST', body: { note } }),
   commandScorebookResolve: (eventId, note, jobId) => request(`/api/command/scorebook/events/${eventId}/resolve${jobId ? `?job=${jobId}` : ''}`, { method: 'POST', body: { note } }),
   commandScorebookClip: (eventId, body, jobId) => request(`/api/command/scorebook/events/${eventId}/clip${jobId ? `?job=${jobId}` : ''}`, { method: 'PUT', body }),
+  commandScorebookRestore: (eventId, note, jobId) => request(`/api/command/scorebook/events/${eventId}/restore${jobId ? `?job=${jobId}` : ''}`, { method: 'POST', body: { note } }),
+  commandScorebookInsert: (jobId, body) => request(`/api/command/jobs/${jobId}/scorebook/insert-plate-appearance`, { method: 'POST', body }),
   commandScorebookLinkOpponents: (jobId, mapping) => request(`/api/command/jobs/${jobId}/scorebook/link-opponents`, { method: 'POST', body: { mapping } }),
   // Paired game jobs: the other team's job shares footage and the scorebook
   commandPairing: (jobId) => request(`/api/command/jobs/${jobId}/pairing`),

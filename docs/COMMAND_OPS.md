@@ -1001,9 +1001,37 @@ pitcher, *Unmatch* or mark *Invalid*. The pitcher list includes the paired
 team's pitchers.
 
 **Positions by inning** (Scorebook → Box score → positions): each player's
-positions with the innings he was there for at least one plate appearance,
+positions with the innings they were there for at least one plate appearance,
 e.g. "SS 1–4 · 2B 5–7". Record a move without a substitute as a
 *position change* substitution (slot + new position); a swap is one per player.
+
+### 3.21 Repairing a scored game against the film (Scorebook → Score)
+
+Every repair is audited with a reason, and the game replays from the log. At-bats
+scored by the batting order (no batter named) follow the corrected order.
+Code: `voidedPlays`, `restoreEvent` and `insertPlateAppearance` in
+`server/scorebook.js`; the UI is in `src/pages/command/ScorebookReview.jsx`.
+
+- **Lineups have no size limit.** Setup starts with the whole roster (and the
+  other team's roster when the jobs are paired), where it used to stop at nine. × removes a
+  slot and *+ slot* adds one, for both teams. *Lineups & substitutions → Edit
+  lineup* fixes a lineup after play: add a missing player, reorder (↑ ↓), change
+  a player or a position. A warning appears when a substitution points at a
+  slot that moved.
+- **Earlier innings:** the *Innings* chips (T1 B1 … "now") open a half's
+  at-bats, each showing the outs and bases before it and the batter's slot.
+  *Back to the current inning* returns to live scoring.
+- **Wrong batter:** *Correct* → *Batter*. Pick the player who actually batted
+  (this marks the at-bat as deliberately out of order), or leave *Batting order*.
+  The play is kept, and the at-bats after it continue from the corrected batter.
+- **Missed at-bat:** *Insert before* a play, or *+ Missed at-bat at the end of this
+  half* for a past half. The batting order behind it shifts. The current half is
+  scored as usual.
+- **Deleted (voided) plays:** *Removed from this half* (on the inning view) and
+  *Removed plays* (Play by play) list them with their pitch count and the
+  at-bat they followed. *Restore* brings a play back with its pitches and runner
+  plays, including plays voided before this release. A corrected play is
+  replaced rather than voided, so it can't be restored. Correct it again instead.
 
 ---
 

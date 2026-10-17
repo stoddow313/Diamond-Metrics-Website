@@ -2,7 +2,7 @@
 // client never keeps its own copy of the truth.
 import { replayJob, appendEvent, appendPlateAppearance, correctEvent, voidEvent, disputeEvent, resolveEvent, rulesetFor, refreshLiveSource,
          EVENT_TYPES, PA_RESULTS, PITCH_RESULTS, RUNNER_HOWS, SUB_KINDS, FINAL_REASONS, BATTED_BALLS, DIRECTIONS, POSITION_NUMBERS, setEventClip, setStartingPitcher,
-         linkOpponentPlayers, opponentLabels } from './scorebook.js';
+         linkOpponentPlayers, opponentLabels, voidedPlays, restoreEvent, insertPlateAppearance } from './scorebook.js';
 import { pairingOf, pairJobIds, partnerRoster } from './gamePairing.js';
 import { PITCH_TYPES } from './radarImport.js';
 import { requirementEnabled, METRIC_BY_ATTEMPT } from './measurementLogic.js';
@@ -32,6 +32,7 @@ export function mountScorebookRoutes(app, { db, requireInternal }) {
       modules: { radar: requirementEnabled(db, jobId, 'pitch_velocity_radar'), home_to_first: requirementEnabled(db, jobId, METRIC_BY_ATTEMPT.home_to_first), steal: requirementEnabled(db, jobId, METRIC_BY_ATTEMPT.steal) },
       vocab: { event_types: EVENT_TYPES, pa_results: PA_RESULTS, pitch_results: PITCH_RESULTS, runner_hows: RUNNER_HOWS, sub_kinds: SUB_KINDS, final_reasons: FINAL_REASONS, batted_balls: BATTED_BALLS, directions: DIRECTIONS, position_numbers: POSITION_NUMBERS },
       version: rp.version, state: rp.state, tallies: rp.tallies, issues: rp.issues, log: rp.log,
+      voided: voidedPlays(db, jobId, { log: rp.log }),
       events: rp.events.map(e => ({ id: e.id, sequence: e.sequence, event_type: e.event_type, parent_event_id: e.parent_event_id, status: e.status, payload: e.payload })),
     };
   };
@@ -61,6 +62,18 @@ export function mountScorebookRoutes(app, { db, requireInternal }) {
   app.post('/api/command/scorebook/events/:id/void', requireInternal, (req, res) => handle(res, () => {
     const rp = voidEvent(db, Number(req.params.id), req.internal.id, req.body?.note || '', viewOf(req));
     res.json(payloadFor(rp.job.id, rp));
+  }));
+
+  // A voided play comes back, with the pitches and runner plays voided with it.
+  app.post('/api/command/scorebook/events/:id/restore', requireInternal, (req, res) => handle(res, () => {
+    const rp = restoreEvent(db, Number(req.params.id), req.internal.id, req.body?.note || '', viewOf(req));
+    res.json(payloadFor(rp.job.id, rp));
+  }));
+
+  // A missed at-bat put back where it happened: { before_event_id | half_event_id, pa, runners }.
+  app.post('/api/command/jobs/:id/scorebook/insert-plate-appearance', requireInternal, (req, res) => handle(res, () => {
+    const rp = insertPlateAppearance(db, Number(req.params.id), req.body || {}, req.internal.id);
+    res.status(201).json(payloadFor(Number(req.params.id), rp));
   }));
 
   app.post('/api/command/scorebook/events/:id/dispute', requireInternal, (req, res) => handle(res, () => {
