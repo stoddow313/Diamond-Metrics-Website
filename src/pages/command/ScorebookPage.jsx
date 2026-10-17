@@ -226,7 +226,12 @@ export default function ScorebookPage() {
   function startSetup() {
     const ours = (data.roster || []).slice(0, 9).map((p, i) => ({ slot: i + 1, player_id: p.id, label: `${p.first_name} ${p.last_name}`, position: p.primary_position || '' }));
     const pitcherSlot = ours.find(s => (s.position || '').toUpperCase() === 'P');
-    setSetup({ us_is_home: false, dh: false, ours, theirs: [1, 2, 3, 4, 5, 6, 7, 8, 9].map(n => ({ slot: n, label: `#${n}`, position: n === 1 ? 'P' : '' })), theirPitcher: '#1',
+    const partner = data.partner_roster || [];
+    const theirs = partner.length
+      ? partner.slice(0, 9).map((p, i) => ({ slot: i + 1, player_id: p.id, label: `${p.first_name} ${p.last_name}`, position: p.primary_position || '' }))
+      : [1, 2, 3, 4, 5, 6, 7, 8, 9].map(n => ({ slot: n, player_id: null, label: `#${n}`, position: n === 1 ? 'P' : '' }));
+    const theirPitcherSlot = theirs.find(s => (s.position || '').toUpperCase() === 'P');
+    setSetup({ us_is_home: false, dh: false, ours, theirs, theirPitcher: partner.length ? (theirPitcherSlot ? String(theirPitcherSlot.player_id) : '') : '#1',
       regulation: data.job.regulation_innings || 7, pitcher: pitcherSlot ? String(pitcherSlot.player_id) : '', pitcherReason: '' });
   }
   // The roster is dated: only memberships covering the game date appear. A
@@ -260,8 +265,10 @@ export default function ScorebookPage() {
       pitcher_unknown_reason: setup.pitcher === 'unknown' ? setup.pitcherReason.trim() : undefined,
     } }));
     if (!d1) return;
-    const theirs = setup.theirs.filter(s => s.label.trim());
-    await run(() => api.commandScorebookEvent(jobId, { event_type: 'lineup', payload: { side: 'them', slots: theirs.map((s, i) => ({ slot: i + 1, label: s.label.trim(), position: s.position })), pitcher_label: setup.theirPitcher || undefined } }), 'Lineups saved — score the first pitch');
+    const paired = (data.partner_roster || []).length > 0;
+    const theirs = setup.theirs.filter(s => s.player_id || s.label.trim());
+    const theirPitcher = paired ? { pitcher_player_id: setup.theirPitcher ? Number(setup.theirPitcher) : undefined } : { pitcher_label: setup.theirPitcher || undefined };
+    await run(() => api.commandScorebookEvent(jobId, { event_type: 'lineup', payload: { side: 'them', slots: theirs.map((s, i) => ({ slot: i + 1, player_id: s.player_id || undefined, label: s.label.trim(), position: s.position })), ...theirPitcher } }), 'Lineups saved — score the first pitch');
     setSetup(null);
   }
 
@@ -269,9 +276,11 @@ export default function ScorebookPage() {
   async function saveSub() {
     const s = sub;
     const payload = { kind: s.kind, side: s.side };
-    if (['pinch_hitter', 'defensive', 're_entry'].includes(s.kind)) payload.slot = Number(s.slot);
+    if (['pinch_hitter', 'defensive', 're_entry', 'position_change'].includes(s.kind)) payload.slot = Number(s.slot);
     if (['pinch_runner', 'courtesy_runner'].includes(s.kind)) payload.base = Number(s.base);
-    if (s.side === 'us') { const p = data.roster.find(x => String(x.id) === String(s.player_in)); if (!p) return setError('Pick the incoming player'); payload.player_in_id = p.id; payload.player_in_label = `${p.first_name} ${p.last_name}`; }
+    const pool = s.side === 'us' ? data.roster : (data.partner_roster || []);
+    if (s.kind === 'position_change') { if (!s.position) return setError('Pick the new position'); }
+    else if (pool.length) { const p = pool.find(x => String(x.id) === String(s.player_in)); if (!p) return setError('Pick the incoming player'); payload.player_in_id = p.id; payload.player_in_label = `${p.first_name} ${p.last_name}`; }
     else { if (!s.player_in_label?.trim()) return setError('Give the incoming player a label'); payload.player_in_label = s.player_in_label.trim(); }
     if (s.position) payload.position = s.position;
     if (s.player_out_label) payload.player_out_label = s.player_out_label;
@@ -338,6 +347,12 @@ export default function ScorebookPage() {
   return (
     <div>
       <Link to={`/command/jobs/${jobId}`} className="text-xs hover:underline" style={{ color: '#64748b' }}>← Job</Link>
+      {data.partner && (
+        <p className="text-xs mt-2 px-3 py-2 rounded-lg" style={{ backgroundColor: 'rgba(167, 139, 250, 0.12)', color: '#c4b5fd' }} data-testid="shared-scorebook">
+          Shared with <Link to={`/command/jobs/${data.partner.job_id}/scorebook`} className="font-bold hover:underline">job #{data.partner.job_id} · {data.partner.team_name}</Link> — one scorebook for both teams; each job releases its own players.
+        </p>
+      )}
+      {data.partner && data.opponent_labels?.length > 0 && <LinkOpponents data={data} jobId={jobId} run={run} />}
       <div className="flex items-center justify-between gap-3 mt-1 mb-3 flex-wrap">
         <div className="flex items-center gap-3 flex-wrap">
           <h1 className="text-xl font-bold text-white">Scorebook</h1>
@@ -410,7 +425,7 @@ export default function ScorebookPage() {
               <GhostButton onClick={() => setFinalForm({ reason: state.regulation?.reached ? 'regulation' : (state.game_over_suggested?.reason || ''), note: '' })}>Mark final</GhostButton>
             )}
             {state.final && (
-              <GhostButton onClick={() => run(() => api.commandScorebookVoid(state.final.event_id, 'reopened for corrections'), 'Game reopened')}>Reopen</GhostButton>
+              <GhostButton onClick={() => run(() => api.commandScorebookVoid(state.final.event_id, 'reopened for corrections', jobId), 'Game reopened')}>Reopen</GhostButton>
             )}
           </div>
         </div>
@@ -571,17 +586,33 @@ export default function ScorebookPage() {
                 </div>
               </div>
               <div>
-                <p className="text-[11px] font-bold uppercase tracking-widest mb-2" style={{ color: '#94a3b8' }}>Their lineup (labels)</p>
+                <p className="text-[11px] font-bold uppercase tracking-widest mb-2" style={{ color: '#94a3b8' }}>Their lineup{data.partner ? ` · ${data.partner.team_name}` : ' (labels)'}</p>
                 {setup.theirs.map((s, i) => (
                   <div key={i} className="flex items-center gap-2 mb-1.5">
                     <span className="w-5 text-xs tabular-nums" style={{ color: '#64748b' }}>{i + 1}</span>
-                    <TextInput value={s.label} onChange={e => setSetup(st => { const theirs = [...st.theirs]; theirs[i] = { ...theirs[i], label: e.target.value }; return { ...st, theirs }; })} placeholder={`#${i + 1}`} />
+                    {data.partner_roster?.length ? (
+                      <Select value={s.player_id || ''} aria-label={`Their batter ${i + 1}`} onChange={e => { const p = data.partner_roster.find(x => String(x.id) === e.target.value); setSetup(st => { const theirs = [...st.theirs]; theirs[i] = { ...theirs[i], player_id: p?.id || null, label: p ? `${p.first_name} ${p.last_name}` : '' }; return { ...st, theirs }; }); }}>
+                        <option value="">—</option>
+                        {data.partner_roster.map(p => <option key={p.id} value={p.id}>{p.jersey ? `#${p.jersey} ` : ''}{p.first_name} {p.last_name}{p.is_guest ? ' · guest' : ''}</option>)}
+                      </Select>
+                    ) : (
+                      <TextInput value={s.label} onChange={e => setSetup(st => { const theirs = [...st.theirs]; theirs[i] = { ...theirs[i], label: e.target.value }; return { ...st, theirs }; })} placeholder={`#${i + 1}`} />
+                    )}
                     <Select value={s.position} onChange={e => setSetup(st => { const theirs = [...st.theirs]; theirs[i] = { ...theirs[i], position: e.target.value }; return { ...st, theirs }; })}>
                       <option value="">pos</option>{POSITIONS.map(p => <option key={p} value={p}>{p}</option>)}
                     </Select>
                   </div>
                 ))}
-                <Field label="Their starting pitcher (label)"><TextInput value={setup.theirPitcher} onChange={e => setSetup(st => ({ ...st, theirPitcher: e.target.value }))} /></Field>
+                {data.partner_roster?.length ? (
+                  <Field label="Their starting pitcher">
+                    <Select value={setup.theirPitcher} onChange={e => setSetup(st => ({ ...st, theirPitcher: e.target.value }))}>
+                      <option value="">— pick —</option>
+                      {data.partner_roster.map(p => <option key={p.id} value={p.id}>{p.jersey ? `#${p.jersey} ` : ''}{p.first_name} {p.last_name}</option>)}
+                    </Select>
+                  </Field>
+                ) : (
+                  <Field label="Their starting pitcher (label)" hint="Pair the other team's job on the job page to pick their players from its roster instead of typing labels."><TextInput value={setup.theirPitcher} onChange={e => setSetup(st => ({ ...st, theirPitcher: e.target.value }))} /></Field>
+                )}
                 <div className="mt-4">
                   <Field label="Regulation length for this game">
                     <Select value={setup.regulation} onChange={e => setSetup(st => ({ ...st, regulation: Number(e.target.value) }))} data-testid="setup-regulation">
@@ -842,8 +873,8 @@ export default function ScorebookPage() {
                   <Field label="Side">
                     <Select value={sub.side} onChange={e => setSub(s => ({ ...s, side: e.target.value }))}><option value="us">us</option><option value="them">them</option></Select>
                   </Field>
-                  {['pinch_hitter', 'defensive', 're_entry', 'pitching_change'].includes(sub.kind) && (
-                    <Field label={sub.kind === 'pitching_change' ? 'Slot of the pitcher leaving (bench arm only)' : 'Lineup slot'}>
+                  {['pinch_hitter', 'defensive', 're_entry', 'pitching_change', 'position_change'].includes(sub.kind) && (
+                    <Field label={sub.kind === 'pitching_change' ? 'Slot of the pitcher leaving (bench arm only)' : sub.kind === 'position_change' ? 'Player (lineup slot)' : 'Lineup slot'}>
                       <Select value={sub.slot} onChange={e => setSub(s => ({ ...s, slot: e.target.value }))}>
                         <option value="">—</option>{state.lineups[sub.side]?.slots.map(s => <option key={s.slot} value={s.slot}>{s.slot}. {refName(s.current)}</option>)}
                       </Select>
@@ -856,16 +887,16 @@ export default function ScorebookPage() {
                       </Select>
                     </Field>
                   )}
-                  {sub.side === 'us' ? (
+                  {sub.kind === 'position_change' ? null : (sub.side === 'us' || data.partner_roster?.length) ? (
                     <Field label="Player in">
                       <Select value={sub.player_in} onChange={e => setSub(s => ({ ...s, player_in: e.target.value }))}>
-                        <option value="">—</option>{data.roster.map(p => <option key={p.id} value={p.id}>{p.jersey ? `#${p.jersey} ` : ''}{p.first_name} {p.last_name}{p.is_guest ? ' · guest' : ''}</option>)}
+                        <option value="">—</option>{(sub.side === 'us' ? data.roster : data.partner_roster).map(p => <option key={p.id} value={p.id}>{p.jersey ? `#${p.jersey} ` : ''}{p.first_name} {p.last_name}{p.is_guest ? ' · guest' : ''}</option>)}
                       </Select>
                     </Field>
                   ) : (
                     <Field label="Player in (label)"><TextInput value={sub.player_in_label} onChange={e => setSub(s => ({ ...s, player_in_label: e.target.value }))} placeholder="#14" /></Field>
                   )}
-                  {['defensive', 'pinch_hitter', 're_entry'].includes(sub.kind) && (
+                  {['defensive', 'pinch_hitter', 're_entry', 'position_change'].includes(sub.kind) && (
                     <Field label="Position"><Select value={sub.position} onChange={e => setSub(s => ({ ...s, position: e.target.value }))}><option value="">—</option>{POSITIONS.map(p => <option key={p} value={p}>{p}</option>)}</Select></Field>
                   )}
                 </div>
@@ -912,13 +943,13 @@ export default function ScorebookPage() {
                           <GhostButton onClick={() => setClipEdit(c => ({ ...c, t: tc() }))}>moment = here</GhostButton>
                           <GhostButton onClick={() => setClipEdit(c => ({ ...c, start: tc() }))}>start = here</GhostButton>
                           <GhostButton onClick={() => setClipEdit(c => ({ ...c, end: tc() }))}>end = here</GhostButton>
-                          <PrimaryButton disabled={busy || !(clipEdit.end > clipEdit.start)} onClick={async () => { const d = await run(() => api.commandScorebookClip(clipEdit.id, { timecode_s: clipEdit.t, clip_start_s: clipEdit.start, clip_end_s: clipEdit.end }), 'Clip saved'); if (d) setClipEdit(null); }}>Save clip</PrimaryButton>
+                          <PrimaryButton disabled={busy || !(clipEdit.end > clipEdit.start)} onClick={async () => { const d = await run(() => api.commandScorebookClip(clipEdit.id, { timecode_s: clipEdit.t, clip_start_s: clipEdit.start, clip_end_s: clipEdit.end }, jobId), 'Clip saved'); if (d) setClipEdit(null); }}>Save clip</PrimaryButton>
                           <GhostButton onClick={() => setClipEdit(null)}>Cancel</GhostButton>
                         </div>
                       )}
                       {editing?.event?.id === l.id && (
                         <CorrectionEditor editing={editing} setEditing={setEditing} vocab={data.vocab} busy={busy}
-                          onSave={async () => { const d = await run(() => api.commandScorebookCorrect(editing.event.id, editing.payload, editing.note), 'Corrected — every dependent total recalculated'); if (d) setEditing(null); }} />
+                          onSave={async () => { const d = await run(() => api.commandScorebookCorrect(editing.event.id, editing.payload, editing.note, jobId), 'Corrected — every dependent total recalculated'); if (d) setEditing(null); }} />
                       )}
                     </td>
                     <td className="px-4 py-2 text-right whitespace-nowrap">
@@ -926,14 +957,14 @@ export default function ScorebookPage() {
                         <>
                           {['plate_appearance', 'runner'].includes(ev.event_type) && <GhostButton onClick={() => setEditing({ event: ev, payload: { ...ev.payload }, note: '' })}>Correct</GhostButton>}
                           <span className="inline-block w-1" />
-                          <GhostButton onClick={() => { const note = ''; run(() => api.commandScorebookVoid(ev.id, note), 'Voided — history kept'); }}>Void</GhostButton>
+                          <GhostButton onClick={() => { const note = ''; run(() => api.commandScorebookVoid(ev.id, note, jobId), 'Voided — history kept'); }}>Void</GhostButton>
                           <span className="inline-block w-1" />
                           {disputed
-                            ? <GhostButton onClick={() => run(() => api.commandScorebookResolve(ev.id, ''), 'Resolved — back in the totals')}>Resolve</GhostButton>
+                            ? <GhostButton onClick={() => run(() => api.commandScorebookResolve(ev.id, '', jobId), 'Resolved — back in the totals')}>Resolve</GhostButton>
                             : disputing === ev.id
                               ? <span className="inline-flex items-center gap-1 flex-wrap" data-testid="dispute-reasons">
                                   {['unclear footage', 'scorer judgment', 'possible misidentification', 'needs video review'].map(reason => (
-                                    <button key={reason} onClick={async () => { const d = await run(() => api.commandScorebookDispute(ev.id, reason), `Under review (${reason}) — excluded from totals until resolved`); if (d) setDisputing(null); }}
+                                    <button key={reason} onClick={async () => { const d = await run(() => api.commandScorebookDispute(ev.id, reason, jobId), `Under review (${reason}) — excluded from totals until resolved`); if (d) setDisputing(null); }}
                                       className="px-2 py-1 rounded text-xs font-bold cursor-pointer" style={{ backgroundColor: 'rgba(251, 191, 36, 0.15)', color: '#fbbf24' }}>{reason}</button>
                                   ))}
                                   <button onClick={() => setDisputing(null)} className="px-2 py-1 rounded text-xs cursor-pointer" style={{ color: '#64748b' }}>cancel</button>
@@ -1005,9 +1036,45 @@ function CorrectionEditor({ editing, setEditing, vocab, busy, onSave }) {
   );
 }
 
+// A game scored before the jobs were paired names the opponent by typed
+// labels. Linking gives each label its player from the other job's roster, so
+// that job's players are credited for every play already scored.
+function LinkOpponents({ data, jobId, run }) {
+  const [map, setMap] = useState({});
+  const [open, setOpen] = useState(false);
+  const chosen = Object.fromEntries(Object.entries(map).filter(([, v]) => v));
+  return (
+    <section className="mt-2 rounded-xl border px-3 py-2" style={{ borderColor: 'rgba(251, 191, 36, 0.35)' }} data-testid="link-opponents">
+      <div className="flex flex-wrap items-center gap-2 text-xs">
+        <span style={{ color: '#fbbf24' }}>{data.opponent_labels.length} opponent name{data.opponent_labels.length === 1 ? ' is' : 's are'} typed labels, not {data.partner.team_name} players.</span>
+        <GhostButton onClick={() => setOpen(v => !v)} style={{ padding: '2px 10px', fontSize: 12 }}>{open ? 'Close' : 'Link players'}</GhostButton>
+      </div>
+      {open && (
+        <div className="mt-2 flex flex-col gap-1.5">
+          {data.opponent_labels.map(label => (
+            <div key={label} className="flex items-center gap-2 text-sm">
+              <span className="w-28 truncate font-bold text-white" title={label}>{label}</span>
+              <Select value={map[label] || ''} onChange={e => setMap(m => ({ ...m, [label]: e.target.value }))} aria-label={`Player for ${label}`} style={{ width: 'auto', minWidth: 200 }}>
+                <option value="">—</option>
+                {data.partner_roster.map(p => <option key={p.id} value={p.id}>{p.jersey ? `#${p.jersey} ` : ''}{p.first_name} {p.last_name}</option>)}
+              </Select>
+            </div>
+          ))}
+          <div>
+            <PrimaryButton disabled={!Object.keys(chosen).length} onClick={async () => {
+              const d = await run(() => api.commandScorebookLinkOpponents(jobId, Object.fromEntries(Object.entries(chosen).map(([k, v]) => [k, Number(v)]))), 'Linked — every play they were in is now credited to them');
+              if (d) { setOpen(false); setMap({}); }
+            }}>Link {Object.keys(chosen).length || ''} player{Object.keys(chosen).length === 1 ? '' : 's'}</PrimaryButton>
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}
+
 function BoxScore({ data }) {
-  const ours = data.tallies.filter(t => t.player_id);
-  const theirs = data.tallies.filter(t => !t.player_id);
+  const ours = data.tallies.filter(t => t.side === 'us');
+  const theirs = data.tallies.filter(t => t.side !== 'us');
   // Columns follow the appendix's stored fields; rates are derived and read "—" when there is nothing to divide by.
   const bat = ['bs_pa', 'bs_ab', 'bs_r', 'bs_h', 'bs_1b', 'bs_2b', 'bs_3b', 'bs_hr', 'bs_tb', 'bs_rbi', 'bs_bb', 'bs_ibb', 'bs_k', 'bs_hbp', 'bs_sh', 'bs_sf', 'bs_roe', 'bs_fc', 'bs_sb', 'bs_cs', 'bs_lob'];
   const batRates = ['avg', 'obp', 'slg', 'ops'];
@@ -1025,8 +1092,41 @@ function BoxScore({ data }) {
       <StatTable rows={theirs.filter(t => t.stats.bs_pa > 0)} keys={bat} rates={batRates} title="Their batting" />
       <StatTable rows={theirs.filter(t => t.stats.bs_bf > 0 || t.outs_pitched > 0)} keys={pit} rates={pitRates} title="Their pitching" />
       <StatTable rows={theirs.filter(fielded)} keys={fld} rates={fldRates} title="Their fielding" />
+      <PositionsPlayed positions={data.state.positions} opponent={data.partner?.team_name || data.job.opponent_label || 'Them'} />
       {data.tallies.length === 0 && <p className="text-sm" style={{ color: '#64748b' }}>No plays yet.</p>}
     </section>
+  );
+}
+
+// Positions by stint, from the log: "SS 1–4 · 2B 5–7". An inning counts when
+// the player was at the position for at least one plate appearance of it; a
+// current stint with no play yet shows where it starts ("2B 5–").
+const ranges = list => list.reduce((acc, n) => {
+  const last = acc.at(-1);
+  if (last && n === last[1] + 1) last[1] = n; else acc.push([n, n]);
+  return acc;
+}, []).map(([a, b]) => (a === b ? `${a}` : `${a}–${b}`)).join(', ');
+function PositionsPlayed({ positions, opponent }) {
+  if (!positions || (!positions.us.length && !positions.them.length)) return null;
+  const span = st => `${st.position} ${st.innings?.length ? ranges(st.innings) : `${st.from?.inning ?? ''}–`}`;
+  return (
+    <div className="mt-4" data-testid="positions-played">
+      {[['us', 'Our positions'], ['them', `${opponent} positions`]].map(([side, title]) => positions[side].length > 0 && (
+        <div key={side} className="mb-3">
+          <p className="text-[11px] font-bold uppercase tracking-widest mb-1" style={{ color: '#94a3b8' }}>{title} <span className="normal-case tracking-normal font-normal" style={{ color: '#64748b' }}>· by inning</span></p>
+          <table className="text-sm">
+            <tbody>
+              {positions[side].map(r => (
+                <tr key={r.key}>
+                  <td className="pr-4 py-0.5 font-bold text-white whitespace-nowrap">{r.name || r.label}</td>
+                  <td className="py-0.5 tabular-nums" style={{ color: '#cfe8ff' }}>{r.stints.map(span).join(' · ')}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ))}
+    </div>
   );
 }
 

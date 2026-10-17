@@ -10,6 +10,7 @@
 //   blocking — the metric cannot be measured from this feed. Requires an
 //              explicit, audited override to proceed anyway.
 //   warning  — measurable, but precision or reliability is degraded.
+import { footageJobIds } from './gamePairing.js';
 
 export const CAPTURE_SPECS = {
   // Frame-timed running metrics: resolution decides whether the contact and
@@ -93,7 +94,7 @@ export function assessCapture(db, jobId) {
       WHERE j.id = ? AND req.enabled = 1
       ORDER BY req.priority, req.metric_code`
   ).all(jobId);
-  const feeds = db.prepare("SELECT * FROM cmd_video_feeds WHERE job_id = ? AND status = 'ready'").all(jobId);
+  const feeds = db.prepare(`SELECT * FROM cmd_video_feeds WHERE job_id IN (${footageJobIds(db, jobId).map(() => '?').join(',')}) AND status = 'ready'`).all(...footageJobIds(db, jobId));
   const overrides = db.prepare(
     "SELECT metric_code, note, actor_id, created_at FROM cmd_capture_overrides WHERE job_id = ?"
   ).all(jobId);

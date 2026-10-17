@@ -4,6 +4,7 @@
 import { classifyReading, PITCH_TYPES, suggestMatches, importRadarCsv } from './radarImport.js';
 import { velocityRollup } from './metricRelease.js';
 import { commandRoster } from './commandRoster.js';
+import { pairingOf, pairJobIds, jobForPlayer, moveReadingToJob } from './gamePairing.js';
 
 export function mountCommandRadarRoutes(app, { db, requireInternal }) {
   app.post('/api/command/jobs/:id/radar-imports', requireInternal, (req, res) => {
@@ -49,6 +50,46 @@ export function mountCommandRadarRoutes(app, { db, requireInternal }) {
     }
   });
 
+  // Bulk: many readings to one pitcher (or back to unmatched, or invalid) in
+  // one go — a pitcher's stint, a half inning split at the pauses. A pitcher
+  // on the paired job's roster takes the readings to that job.
+  app.post('/api/command/jobs/:id/radar-readings/assign', requireInternal, (req, res) => {
+    const job = db.prepare('SELECT * FROM cmd_jobs WHERE id = ?').get(req.params.id);
+    if (!job) return res.status(404).json({ error: 'Job not found' });
+    const b = req.body || {};
+    const ids = [...new Set((Array.isArray(b.reading_ids) ? b.reading_ids : []).map(Number).filter(n => Number.isInteger(n) && n > 0))];
+    if (!ids.length) return res.status(400).json({ error: 'Choose the readings to assign' });
+    if (ids.length > 2000) return res.status(400).json({ error: 'Assign at most 2,000 readings at a time' });
+    const status = b.status || 'matched';
+    if (!['matched', 'unmatched', 'invalid'].includes(status)) return res.status(400).json({ error: 'status must be matched, unmatched or invalid' });
+    let owner = job.id;
+    if (status === 'matched') {
+      owner = jobForPlayer(db, job, b.player_id);
+      if (!owner) return res.status(400).json({ error: "Pick a player on this job's roster or the paired job's" });
+    }
+    const pair = pairJobIds(db, job);
+    const rows = db.prepare(
+      `SELECT id, job_id FROM cmd_radar_readings WHERE id IN (${ids.map(() => '?').join(',')}) AND job_id IN (${pair.map(() => '?').join(',')})`
+    ).all(...ids, ...pair);
+    if (rows.length !== ids.length) return res.status(400).json({ error: 'Some of those readings are not on this job' });
+    try {
+      db.transaction(() => {
+        for (const r of rows) {
+          if (status === 'matched') moveReadingToJob(db, r.id, owner);
+          classifyReading(db, r.id, {
+            player_id: status === 'matched' ? Number(b.player_id) : null,
+            pitch_or_exit: b.pitch_or_exit || (status === 'matched' ? 'pitch' : undefined),
+            pitch_type: b.pitch_type || undefined,
+            status,
+          }, req.internal.id);
+        }
+      })();
+    } catch (err) {
+      return res.status(err.status || 500).json({ error: err.message });
+    }
+    res.json({ assigned: rows.length, moved: rows.filter(r => r.job_id !== owner).length, job_id: owner });
+  });
+
   app.put('/api/command/radar-readings/:id', requireInternal, (req, res) => {
     try {
       res.json({ reading: classifyReading(db, Number(req.params.id), req.body || {}, req.internal.id) });
@@ -82,8 +123,11 @@ export function mountCommandRadarRoutes(app, { db, requireInternal }) {
         WHERE i.job_id = ? ORDER BY i.id`
     ).all(job.id);
 
-    // Roster = dated team roster + event roster (incl. guests) + job guests.
+    // Roster = dated team roster + event roster (incl. guests) + job guests;
+    // a paired game adds the other team's job roster for their pitchers.
     const roster = commandRoster(db, job);
+    const partner = pairingOf(db, job).partner;
+    const partnerRoster = partner ? commandRoster(db, partner) : [];
     // Suggested matches ride each unmatched reading; confirming one is an
     // ordinary classification, so nothing here can publish by itself.
     const suggestions = suggestMatches(readings);
@@ -110,6 +154,8 @@ export function mountCommandRadarRoutes(app, { db, requireInternal }) {
     res.json({
       readings: readings.map(r => ({ ...r, suggestion: suggestions.get(r.id) || null })),
       imports, roster, summaries, pitch_types: PITCH_TYPES,
+      partner: partner ? { job_id: partner.id, team_name: db.prepare('SELECT name FROM teams WHERE id = ?').get(partner.team_id)?.name || '' } : null,
+      partner_roster: partnerRoster,
     });
   });
 }

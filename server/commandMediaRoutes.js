@@ -1,6 +1,7 @@
 // Command media routes (M2): feed registration, resumable multipart upload
 // (R2 presigned parts in prod, API-relayed parts in local dev), completion →
 // probe/proxy pipeline, playback URLs, and role-gated local media streaming.
+import { footageJobIds } from './gamePairing.js';
 import { ENV, log } from './observability.js';
 import express from 'express';
 import fs from 'node:fs';
@@ -233,7 +234,9 @@ export function mountCommandMediaRoutes(app, { db, requireInternal }) {
 
   app.get('/api/command/jobs/:id/feeds', requireInternal, (req, res) => {
     res.json({
-      feeds: db.prepare('SELECT * FROM cmd_video_feeds WHERE job_id = ? ORDER BY id').all(req.params.id).map(withProcessing),
+      feeds: db.prepare(`SELECT * FROM cmd_video_feeds WHERE job_id IN (${footageJobIds(db, Number(req.params.id)).map(() => '?').join(',')}) ORDER BY job_id = ? DESC, id`)
+        .all(...footageJobIds(db, Number(req.params.id)), Number(req.params.id))
+        .map(f => ({ ...withProcessing(f), shared_from_job_id: f.job_id === Number(req.params.id) ? null : f.job_id })),
     });
   });
 

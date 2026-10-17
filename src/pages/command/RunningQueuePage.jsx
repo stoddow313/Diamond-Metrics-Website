@@ -23,7 +23,7 @@ function describeFeed(f) {
   const rate = fps ? `${Number(fps.toFixed(2))} fps` : 'fps unknown';
   const size = f.width && f.height ? `${f.height}p` : '';
   const name = f.original_name || f.label;
-  return `${name} — ${[size, rate].filter(Boolean).join(' · ')}${f.vfr ? ' · VFR' : ''}`;
+  return `${name} — ${[size, rate].filter(Boolean).join(' · ')}${f.vfr ? ' · VFR' : ''}${f.shared_from_job_id ? ` · shared from job #${f.shared_from_job_id}` : ''}`;
 }
 
 export default function RunningQueuePage() {

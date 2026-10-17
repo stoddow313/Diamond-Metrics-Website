@@ -28,6 +28,7 @@ import { startInlineWorker, FFPROBE } from './mediaWorker.js';
 import { gatewayUrlFor } from './mediaGateway.js';
 import { mountCommandOpsRoutes } from './commandOpsRoutes.js';
 import { mountScorebookRoutes } from './scorebookRoutes.js';
+import { mountGamePairingRoutes } from './gamePairingRoutes.js';
 import { mountLiveRoutes } from './liveRoutes.js';
 import { mountTournamentCheckoutRoutes } from './tournamentCheckoutRoutes.js';
 import { mountStripeWebhookRoutes } from './stripeWebhookRoutes.js';
@@ -1443,6 +1444,7 @@ mountCommandMeasureRoutes(app, { db, requireInternal });
 mountCommandReviewRoutes(app, { db, requireInternal });
 mountCommandOpsRoutes(app, { db, requireInternal, createJob });
 mountScorebookRoutes(app, { db, requireInternal });
+mountGamePairingRoutes(app, { db, requireInternal });
 
 // Customer footage intake (docs/COMMAND_TDR.md §8). Will's queue and the
 // internal team page are always mounted (internal only); the customer-facing
