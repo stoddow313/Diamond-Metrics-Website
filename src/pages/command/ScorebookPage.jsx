@@ -5,6 +5,8 @@ import FeedPlayer from './FeedPlayer';
 import { formatTimecode } from '../../lib/timecode';
 import { Field, TextInput, Select, PrimaryButton, GhostButton, ErrorNote } from '../../components/admin/ui';
 import { cardStyle } from '../../components/admin/theme';
+import { LABELS, POSITIONS, refName } from './scorebookVocab';
+import { InningNav, InningReview, CorrectionEditor, VoidedPlays, LineupEditor } from './ScorebookReview';
 
 // Scorebook (Phase 2). Keyboard-first contextual scorekeeping: the count
 // builds from pitch keys, four balls / three strikes resolve the plate
@@ -13,15 +15,9 @@ import { cardStyle } from '../../components/admin/theme';
 // who exist. Everything shown comes back from the server's replay — this
 // page never keeps its own copy of the score.
 
-const LABELS = {
-  single: '1B', double: '2B', triple: '3B', home_run: 'HR', walk: 'BB', intentional_walk: 'IBB', hit_by_pitch: 'HBP', catcher_interference: 'CI',
-  strikeout: 'K', strikeout_looking: 'Kc', groundout: 'GO', flyout: 'FO', lineout: 'LO', popout: 'PO', sacrifice_fly: 'SF', sacrifice_bunt: 'SAC',
-  fielders_choice: 'FC', reach_on_error: 'E', double_play: 'DP', triple_play: 'TP', strikeout_reached: 'K·1B',
-};
 const RESULT_KEYS = { 1: 'single', 2: 'double', 3: 'triple', 4: 'home_run', g: 'groundout', y: 'flyout', l: 'lineout', p: 'popout', e: 'reach_on_error', x: 'fielders_choice', v: 'sacrifice_fly', n: 'sacrifice_bunt', d: 'double_play' };
 const OUT_RESULTS = new Set(['strikeout', 'strikeout_looking', 'groundout', 'flyout', 'lineout', 'popout', 'sacrifice_fly', 'sacrifice_bunt', 'double_play', 'triple_play']);
 const BATTER_TO = { single: 1, double: 2, triple: 3, home_run: 4, walk: 1, intentional_walk: 1, hit_by_pitch: 1, catcher_interference: 1, fielders_choice: 1, reach_on_error: 1, strikeout_reached: 1 };
-const POSITIONS = ['P', 'C', '1B', '2B', '3B', 'SS', 'LF', 'CF', 'RF', 'DH', 'EH'];
 const FIELDED_RESULTS = new Set([...OUT_RESULTS, 'fielders_choice', 'reach_on_error']);
 const STRIKE_PITCHES = new Set(['called_strike', 'swinging_strike', 'check_swing_strike', 'foul_tip', 'foul_bunt']);
 // The count the way the engine builds it: fouls stop adding at two strikes,
@@ -37,7 +33,6 @@ function countOf(list) {
 }
 const fmtRate = (v, digits = 3) => (v == null ? '—' : digits === 3 ? v.toFixed(3).replace(/^0\./, '.') : v.toFixed(digits));
 
-const refName = r => (r ? (r.name || r.label || (r.player_id ? `#${r.player_id}` : '—')) : '—');
 const refKeyOf = r => (r?.player_id ? `p:${r.player_id}` : `l:${r?.label || ''}`);
 
 // Conventional advancement for a result: what a scorer usually confirms.
@@ -78,6 +73,8 @@ export default function ScorebookPage() {
   const [sub, setSub] = useState(null);
   // log actions
   const [editing, setEditing] = useState(null);         // { event, payload, note }
+  const [reviewHalf, setReviewHalf] = useState(null);   // id of an earlier half inning open for review
+  const [editLineup, setEditLineup] = useState(null);   // 'us' | 'them' — correcting a lineup after play
   const [finalForm, setFinalForm] = useState(null);
   // video tagging: the selected feed plays beside the scorer and every event is
   // stamped with the feed and the moment on it (PRD §5 — automatic timecode capture)
@@ -223,12 +220,14 @@ export default function ScorebookPage() {
   });
 
   // ── lineup setup ──────────────────────────────────────────────────────
+  // Every rostered player starts in the order (youth games bat the whole
+  // roster); × drops whoever isn't playing. No cap on the lineup's size.
   function startSetup() {
-    const ours = (data.roster || []).slice(0, 9).map((p, i) => ({ slot: i + 1, player_id: p.id, label: `${p.first_name} ${p.last_name}`, position: p.primary_position || '' }));
+    const ours = (data.roster || []).map((p, i) => ({ slot: i + 1, player_id: p.id, label: `${p.first_name} ${p.last_name}`, position: p.primary_position || '' }));
     const pitcherSlot = ours.find(s => (s.position || '').toUpperCase() === 'P');
     const partner = data.partner_roster || [];
     const theirs = partner.length
-      ? partner.slice(0, 9).map((p, i) => ({ slot: i + 1, player_id: p.id, label: `${p.first_name} ${p.last_name}`, position: p.primary_position || '' }))
+      ? partner.map((p, i) => ({ slot: i + 1, player_id: p.id, label: `${p.first_name} ${p.last_name}`, position: p.primary_position || '' }))
       : [1, 2, 3, 4, 5, 6, 7, 8, 9].map(n => ({ slot: n, player_id: null, label: `#${n}`, position: n === 1 ? 'P' : '' }));
     const theirPitcherSlot = theirs.find(s => (s.position || '').toUpperCase() === 'P');
     setSetup({ us_is_home: false, dh: false, ours, theirs, theirPitcher: partner.length ? (theirPitcherSlot ? String(theirPitcherSlot.player_id) : '') : '#1',
@@ -525,6 +524,11 @@ export default function ScorebookPage() {
         )}
       </section>
 
+      {tab === 'score' && lineupsReady && <InningNav data={data} selected={reviewHalf} onSelect={id => { setReviewHalf(id); setEditing(null); }} />}
+      {tab === 'score' && reviewHalf && (
+        <InningReview data={data} jobId={jobId} halfId={reviewHalf} run={run} busy={busy} editing={editing} setEditing={setEditing} onClose={() => { setReviewHalf(null); setEditing(null); }} />
+      )}
+
       {tab !== 'score' && videoPanel}
 
       {tab === 'score' && !lineupsReady && (
@@ -554,6 +558,7 @@ export default function ScorebookPage() {
                     <Select value={s.position} onChange={e => setSetup(st => { const ours = [...st.ours]; ours[i] = { ...ours[i], position: e.target.value }; return { ...st, ours }; })}>
                       <option value="">pos</option>{POSITIONS.map(p => <option key={p} value={p}>{p}</option>)}
                     </Select>
+                    <GhostButton style={{ padding: '2px 8px' }} aria-label={`Remove our slot ${i + 1}`} onClick={() => setSetup(st => ({ ...st, ours: st.ours.filter((_, j) => j !== i) }))}>×</GhostButton>
                   </div>
                 ))}
                 <div className="flex items-center gap-2 flex-wrap">
@@ -601,8 +606,12 @@ export default function ScorebookPage() {
                     <Select value={s.position} onChange={e => setSetup(st => { const theirs = [...st.theirs]; theirs[i] = { ...theirs[i], position: e.target.value }; return { ...st, theirs }; })}>
                       <option value="">pos</option>{POSITIONS.map(p => <option key={p} value={p}>{p}</option>)}
                     </Select>
+                    <GhostButton style={{ padding: '2px 8px' }} aria-label={`Remove their slot ${i + 1}`} onClick={() => setSetup(st => ({ ...st, theirs: st.theirs.filter((_, j) => j !== i) }))}>×</GhostButton>
                   </div>
                 ))}
+                <div className="mb-3">
+                  <GhostButton onClick={() => setSetup(st => ({ ...st, theirs: [...st.theirs, { slot: st.theirs.length + 1, player_id: null, label: (data.partner_roster || []).length ? '' : `#${st.theirs.length + 1}`, position: '' }] }))} data-testid="add-their-slot">+ slot</GhostButton>
+                </div>
                 {data.partner_roster?.length ? (
                   <Field label="Their starting pitcher">
                     <Select value={setup.theirPitcher} onChange={e => setSetup(st => ({ ...st, theirPitcher: e.target.value }))}>
@@ -855,7 +864,11 @@ export default function ScorebookPage() {
             {(showLineups || sub) && <>
             {['us', 'them'].map(side => (
               <div key={side} className="mb-3">
-                <p className="text-xs font-bold mb-1" style={{ color: side === battingSide ? '#38bdf8' : '#94a3b8' }}>{side === 'us' ? 'Us' : (data.job.opponent_label || 'Them')}{side === battingSide ? ' · batting' : ''} · P: {refName(state.pitcher[side])}</p>
+                <div className="flex items-center justify-between gap-2 mb-1">
+                  <p className="text-xs font-bold" style={{ color: side === battingSide ? '#38bdf8' : '#94a3b8' }}>{side === 'us' ? 'Us' : (data.partner?.team_name || data.job.opponent_label || 'Them')}{side === battingSide ? ' · batting' : ''} · P: {refName(state.pitcher[side])} · {state.lineups[side]?.slots.length || 0} in the order</p>
+                  <button type="button" onClick={() => setEditLineup(editLineup === side ? null : side)} className="text-[11px] font-bold cursor-pointer hover:underline" style={{ color: '#fbbf24' }} data-testid={`edit-lineup-${side}`}>Edit lineup</button>
+                </div>
+                {editLineup === side && <LineupEditor data={data} jobId={jobId} side={side} run={run} onDone={() => setEditLineup(null)} />}
                 {state.lineups[side]?.slots.map(s => (
                   <p key={s.slot} className="text-xs py-0.5 flex justify-between" style={{ color: side === battingSide && state.expected_batter?.slot === s.slot ? '#f8fafc' : '#94a3b8' }}>
                     <span>{s.slot}. {refName(s.current)}{s.current && s.starter && ((s.current.player_id && s.current.player_id !== s.starter.player_id) || (!s.current.player_id && s.current.label !== s.starter.label)) ? <span style={{ color: '#fbbf24' }}> (for {refName(s.starter)})</span> : null}</span>
@@ -948,7 +961,7 @@ export default function ScorebookPage() {
                         </div>
                       )}
                       {editing?.event?.id === l.id && (
-                        <CorrectionEditor editing={editing} setEditing={setEditing} vocab={data.vocab} busy={busy}
+                        <CorrectionEditor data={data} editing={editing} setEditing={setEditing} vocab={data.vocab} busy={busy}
                           onSave={async () => { const d = await run(() => api.commandScorebookCorrect(editing.event.id, editing.payload, editing.note, jobId), 'Corrected — every dependent total recalculated'); if (d) setEditing(null); }} />
                       )}
                     </td>
@@ -985,6 +998,7 @@ export default function ScorebookPage() {
               {data.log.length === 0 && <tr><td colSpan={4} className="px-4 py-6 text-sm" style={{ color: '#64748b' }}>Nothing scored yet.</td></tr>}
             </tbody>
           </table>
+          {data.voided?.length > 0 && <div className="px-4 pb-4"><VoidedPlays data={data} jobId={jobId} run={run} /></div>}
         </section>
       )}
     </div>
@@ -1002,37 +1016,6 @@ function Diamond({ bases }) {
         <rect x="-4" y="12" width="12" height="12" rx="2" fill="rgba(56,189,248,0.25)" stroke="#334155" />
       </g>
     </svg>
-  );
-}
-
-function CorrectionEditor({ editing, setEditing, vocab, busy, onSave }) {
-  const ev = editing.event;
-  const set = patch => setEditing(e => ({ ...e, payload: { ...e.payload, ...patch } }));
-  return (
-    <div className="mt-2 p-3 rounded-xl border flex flex-col gap-2" style={{ borderColor: 'rgba(251, 191, 36, 0.4)' }} data-testid="correction-editor">
-      <p className="text-xs font-bold" style={{ color: '#fbbf24' }}>Correct this {ev.event_type.replace(/_/g, ' ')} — the original stays in the history with your reason.</p>
-      {ev.event_type === 'plate_appearance' && (
-        <div className="grid grid-cols-2 gap-2">
-          <Field label="Result">
-            <Select value={editing.payload.result} onChange={e => set({ result: e.target.value })}>{vocab.pa_results.map(r => <option key={r} value={r}>{LABELS[r]} · {r.replace(/_/g, ' ')}</option>)}</Select>
-          </Field>
-          <Field label="RBI (blank = auto)"><TextInput type="number" min="0" max="4" value={editing.payload.rbi ?? ''} onChange={e => set({ rbi: e.target.value === '' ? undefined : Number(e.target.value) })} /></Field>
-          {editing.payload.result === 'reach_on_error' && <Field label="Error by (label)"><TextInput value={editing.payload.error_label || ''} onChange={e => set({ error_label: e.target.value })} /></Field>}
-        </div>
-      )}
-      {ev.event_type === 'runner' && (
-        <div className="grid grid-cols-3 gap-2">
-          <Field label="To"><Select value={editing.payload.to} onChange={e => set({ to: Number(e.target.value) })}>{[1, 2, 3, 4].map(b => <option key={b} value={b}>{b === 4 ? 'home' : `${b}B`}</option>)}</Select></Field>
-          <Field label="How"><Select value={editing.payload.how} onChange={e => set({ how: e.target.value })}>{vocab.runner_hows.map(h => <option key={h} value={h}>{h.replace(/_/g, ' ')}</option>)}</Select></Field>
-          <Field label="Out"><Select value={editing.payload.out ? '1' : '0'} onChange={e => set({ out: e.target.value === '1' })}><option value="0">safe</option><option value="1">out</option></Select></Field>
-        </div>
-      )}
-      <Field label="Reason (audit)"><TextInput value={editing.note} onChange={e => setEditing(x => ({ ...x, note: e.target.value }))} placeholder="video review: clean single, no error" /></Field>
-      <div className="flex gap-2">
-        <PrimaryButton onClick={onSave} disabled={busy || !editing.note.trim()}>Save correction</PrimaryButton>
-        <GhostButton onClick={() => setEditing(null)}>Cancel</GhostButton>
-      </div>
-    </div>
   );
 }
 

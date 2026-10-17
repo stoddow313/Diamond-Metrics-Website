@@ -394,7 +394,8 @@ export function replay(events, { ruleset = {}, disputed = new Set() } = {}) {
   for (const e of events) {
     const p = e.payload || {};
     const dis = isDisputed(e);
-    const entry = { id: e.id, sequence: e.sequence, type: e.event_type, inning: state.inning, half: state.half, outs_before: state.outs, disputed: dis, text: '',
+    const entry = { id: e.id, sequence: e.sequence, type: e.event_type, inning: state.inning, half: state.half, outs_before: state.outs, batting: state.batting, disputed: dis, text: '',
+      bases_before: Object.fromEntries([1, 2, 3].map(b => [b, state.bases[b] ? { player_id: state.bases[b].ref.player_id ?? null, label: state.bases[b].ref.label || '' } : null])),
       timecode_s: e.timecode_s ?? null, feed_id: e.selected_feed_id ?? null, clip: e.clip_start_s != null ? [e.clip_start_s, e.clip_end_s] : null };
     switch (e.event_type) {
       case 'lineup': {
@@ -505,6 +506,8 @@ export function replay(events, { ruleset = {}, disputed = new Set() } = {}) {
         if (!dis) creditInnings();
         const expected = currentBatterRef(side);
         const batter = p.batter_player_id || p.batter_label ? mkRef(side, p.batter_player_id, p.batter_label) : (expected ? { ...expected } : mkRef(side, null, 'unknown batter'));
+        const batterSlot = state.lineups[side]?.slots.find(x => refKey(x.current) === refKey(batter))?.slot ?? null;
+        entry.batter = { player_id: batter.player_id ?? null, label: batter.label || '', slot: batterSlot, explicit: !!(p.batter_player_id || p.batter_label) };
         if (expected && refKey(expected) !== refKey(batter) && !p.out_of_order_ok) issue('batting_out_of_order', 'warning', e, `Expected ${expected.label || `slot ${expected.slot}`} to bat, got ${batter.label || batter.player_id}`);
         const pitcher = p.pitcher_player_id || p.pitcher_label ? mkRef(fieldingSide(), p.pitcher_player_id, p.pitcher_label) : state.pitcher[fieldingSide()];
         const kids = (paChildren.get(e.id) || []).filter(k => !disputed.has(k.id));
@@ -1138,7 +1141,7 @@ export function voidEvent(db, eventId, actorId, note = '', { viewJobId = null } 
     const kids = db.prepare("SELECT id FROM cmd_events WHERE parent_event_id = ? AND status IN ('active','needs_review')").all(old.id);
     for (const k of kids) db.prepare("UPDATE cmd_events SET status = 'superseded' WHERE id = ?").run(k.id);
     db.prepare("UPDATE cmd_events SET status = 'superseded' WHERE id = ?").run(old.id);
-    audit(db, 'cmd_events', old.id, actorId, 'voided', note || describeForAudit(old.event_type, safeJson(old.payload)), old.status, 'superseded');
+    audit(db, 'cmd_events', old.id, actorId, 'voided', note || describeForAudit(old.event_type, safeJson(old.payload)), old.status, JSON.stringify({ status: 'superseded', children: kids.map(k => k.id) }));
     afterCorrection(db, old.job_id, actorId, `event ${old.sequence} voided`);
   });
   run();
@@ -1237,4 +1240,123 @@ export function opponentLabels(rp) {
   for (const t of rp.tallies) if (t.side === 'them' && !t.player_id && t.label && !/^unknown/.test(t.label)) labels.add(t.label);
   for (const s of rp.state.lineups.them?.slots || []) for (const r of [s.current, s.starter]) if (r && !r.player_id && r.label) labels.add(r.label);
   return [...labels];
+}
+
+// ── Review and repair (scored plays out of line with the film) ─────────────
+const VOIDED = `SELECT e.*, a.id AS void_audit_id, a.prev_state AS void_prev, a.new_state AS void_next, a.created_at AS voided_at, a.note AS void_note, ad.name AS voided_by_name
+  FROM cmd_events e
+  JOIN cmd_review_actions a ON a.id = (SELECT MAX(id) FROM cmd_review_actions WHERE target_table = 'cmd_events' AND target_id = e.id AND action = 'voided')
+  LEFT JOIN admins ad ON ad.id = a.actor_id`;
+
+// Plays voided from this job's scorebook, newest first, with the half inning
+// they were in — what Restore can bring back. An at-bat scored by the batting
+// order names no batter, so `after` (the at-bat it followed, from the
+// replayed `log`) and its pitch count tell the reviewer which one it was.
+export function voidedPlays(db, jobId, { log = [] } = {}) {
+  const { hostId } = scorebookOf(db, jobId);
+  const rows = db.prepare(`${VOIDED} WHERE e.job_id = ? AND e.status = 'superseded' AND e.superseded_by IS NULL ORDER BY a.id DESC LIMIT 100`).all(hostId);
+  const halfOf = ev => {
+    let cur = ev;
+    for (let i = 0; i < 3 && cur; i++) {
+      if (cur.event_type === 'half_inning') { const h = safeJson(cur.payload); return { inning: h.inning, half: h.half }; }
+      cur = cur.parent_event_id ? db.prepare('SELECT * FROM cmd_events WHERE id = ?').get(cur.parent_event_id) : null;
+    }
+    return { inning: null, half: null };
+  };
+  const names = new Map();
+  const nameOf = id => {
+    if (!id) return '';
+    if (!names.has(id)) { const p = db.prepare('SELECT first_name, last_name FROM players WHERE id = ?').get(id); names.set(id, p ? `${p.first_name} ${p.last_name}` : `#${id}`); }
+    return names.get(id);
+  };
+  return rows.map(e => {
+    const p = safeJson(e.payload);
+    const who = p.batter_label || nameOf(p.batter_player_id) || p.runner_label || nameOf(p.runner_player_id) || '';
+    const half = halfOf(e);
+    let what = e.event_type === 'plate_appearance' ? p.result?.replace(/_/g, ' ')
+      : e.event_type === 'runner' ? `${p.how?.replace(/_/g, ' ')} ${p.from}B → ${p.to === 4 ? 'home' : `${p.to}B`}`
+      : describeForAudit(e.event_type, p);
+    let after = null;
+    if (e.event_type === 'plate_appearance') {
+      const n = db.prepare("SELECT COUNT(*) AS n FROM cmd_events WHERE parent_event_id = ? AND event_type = 'pitch' AND superseded_by IS NULL").get(e.id).n;
+      if (n) what += ` (${n} pitch${n === 1 ? '' : 'es'})`;
+      const prior = log.filter(l => l.type === 'plate_appearance' && l.sequence < e.sequence && l.inning === half.inning && l.half === half.half).at(-1);
+      after = prior ? prior.batter?.label || prior.text : null;
+    }
+    return {
+      id: e.id, sequence: e.sequence, event_type: e.event_type, ...half,
+      text: `${who ? `${who}: ` : ''}${what}`, after, voided_at: e.voided_at, voided_by: e.voided_by_name || null, note: e.void_note || '',
+    };
+  });
+}
+
+// Bring a voided play back, with the pitches and runner plays voided with it.
+// Corrections are never "restored" — they were replaced, not voided.
+export function restoreEvent(db, eventId, actorId, note = '', { viewJobId = null } = {}) {
+  const ev = db.prepare(`${VOIDED} WHERE e.id = ? AND e.status = 'superseded' AND e.superseded_by IS NULL`).get(eventId);
+  if (!ev) throw err('Only a voided play can be restored — a corrected play is replaced, and its correction stays', 404);
+  const { viewer } = viewerOf(db, ev, viewJobId);
+  if (ev.parent_event_id) {
+    const parent = db.prepare('SELECT status, event_type FROM cmd_events WHERE id = ?').get(ev.parent_event_id);
+    if (!parent || !['active', 'needs_review'].includes(parent.status)) throw err(`Restore the ${parent?.event_type?.replace(/_/g, ' ') || 'play'} it belongs to first`, 409);
+  }
+  let children = null;
+  try { children = JSON.parse(ev.void_next || '').children; } catch { children = null; }
+  if (!Array.isArray(children)) {
+    // Voided before the children were recorded: those voided with it have no void of their own.
+    children = db.prepare(
+      `SELECT id FROM cmd_events WHERE parent_event_id = ? AND status = 'superseded' AND superseded_by IS NULL
+         AND id NOT IN (SELECT target_id FROM cmd_review_actions WHERE target_table = 'cmd_events' AND action = 'voided')`
+    ).all(ev.id).map(r => r.id);
+  }
+  const prior = ['active', 'needs_review'].includes(ev.void_prev) ? ev.void_prev : 'active';
+  db.transaction(() => {
+    db.prepare('UPDATE cmd_events SET status = ? WHERE id = ?').run(prior, ev.id);
+    const kid = db.prepare("UPDATE cmd_events SET status = 'active' WHERE id = ? AND parent_event_id = ? AND status = 'superseded' AND superseded_by IS NULL");
+    for (const id of children) kid.run(id, ev.id);
+    audit(db, 'cmd_events', ev.id, actorId, 'restored', note || `restored: ${describeForAudit(ev.event_type, safeJson(ev.payload))}`, 'superseded', prior);
+    afterCorrection(db, ev.job_id, actorId, `event ${ev.sequence} restored`);
+  })();
+  return replayJob(db, viewer);
+}
+
+// A plate appearance missed while scoring, put back where it happened: before
+// a given play, or at the end of a given half inning. Later events move down
+// one place; at-bats that follow the batting order shift to the next batter on
+// replay, as the film shows. No half inning is opened or closed for it.
+export function insertPlateAppearance(db, jobId, { before_event_id = null, half_event_id = null, pa, runners = [] } = {}, actorId) {
+  validatePayload('plate_appearance', pa || {});
+  for (const r of runners) validatePayload('runner', r);
+  const { hostId } = scorebookOf(db, jobId);
+  const top = ['plate_appearance', 'runner', 'substitution', 'state_adjustment', 'game_final', 'half_inning'];
+  let at, halfId;
+  if (before_event_id) {
+    const target = db.prepare("SELECT * FROM cmd_events WHERE id = ? AND job_id = ? AND status IN ('active','needs_review')").get(before_event_id, hostId);
+    if (!target || !top.includes(target.event_type)) throw err('Insert before a play of this scorebook', 404);
+    if (target.event_type === 'half_inning') throw err('Insert into a half inning: pick a play in it, or its end');
+    const parent = target.parent_event_id ? db.prepare('SELECT * FROM cmd_events WHERE id = ?').get(target.parent_event_id) : null;
+    if (parent?.event_type !== 'half_inning') throw err('Insert before an at-bat or a between-batter play');
+    at = target.sequence; halfId = parent.id;
+  } else if (half_event_id) {
+    const half = db.prepare("SELECT * FROM cmd_events WHERE id = ? AND job_id = ? AND event_type = 'half_inning' AND status IN ('active','needs_review')").get(half_event_id, hostId);
+    if (!half) throw err('That half inning is not in this scorebook', 404);
+    const next = db.prepare("SELECT MIN(sequence) s FROM cmd_events WHERE job_id = ? AND event_type = 'half_inning' AND status IN ('active','needs_review') AND sequence > ?").get(hostId, half.sequence).s;
+    if (next == null) throw err('That is the current half inning — score the at-bat as usual', 409);
+    at = next; halfId = half.id;
+  } else {
+    throw err('Say where the at-bat goes: before_event_id or half_event_id');
+  }
+  const ins = db.prepare(INSERT_EVENT);
+  db.transaction(() => {
+    db.prepare('UPDATE cmd_events SET sequence = sequence + ? WHERE job_id = ? AND sequence >= ?').run(1 + runners.length, hostId, at);
+    const paPayload = { ...pa, pitch_count: pa.pitch_count || 0 };
+    const paId = ins.run(hostId, at, 'plate_appearance', halfId, pa.batter_player_id || null, JSON.stringify(paPayload), null, null, null, null, actorId).lastInsertRowid;
+    audit(db, 'cmd_events', paId, actorId, 'inserted', `missed at-bat put back: ${describeForAudit('plate_appearance', paPayload)}`);
+    [...runners].sort((a, b) => b.from - a.from).forEach((r, i) => {
+      const rid = ins.run(hostId, at + 1 + i, 'runner', paId, r.runner_player_id || null, JSON.stringify(r), null, null, null, null, actorId).lastInsertRowid;
+      audit(db, 'cmd_events', rid, actorId, 'inserted', describeForAudit('runner', r));
+    });
+    afterCorrection(db, hostId, actorId, `at-bat inserted at ${at}`);
+  })();
+  return replayJob(db, jobId);
 }
