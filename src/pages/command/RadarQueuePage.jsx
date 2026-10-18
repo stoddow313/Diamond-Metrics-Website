@@ -12,6 +12,9 @@ import { cardStyle } from '../../components/admin/theme';
 
 const STATUS_COLORS = { unmatched: '#fbbf24', matched: '#4ade80', invalid: '#64748b' };
 
+// Row actions are compact so they fit beside the reading; they wrap rather than widen the table.
+const ROW_BUTTON = { padding: '4px 10px', fontSize: 12 };
+
 // Quick-pick reasons for invalidating a reading. Free text can replace or
 // extend them; whichever is chosen is what the audit trail records.
 const INVALID_REASONS = ['Radar noise', 'Wrong pitcher / player', 'Duplicate reading', 'Warm-up, not game', 'Unreadable', 'Test reading'];
@@ -355,6 +358,7 @@ export default function RadarQueuePage() {
           {visible.length === 0 ? (
             <p className="p-6 text-sm" style={{ color: '#94a3b8' }}>Nothing in this bucket.</p>
           ) : (
+            <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="text-left text-xs uppercase tracking-wider" style={{ color: '#64748b' }}>
@@ -390,7 +394,7 @@ export default function RadarQueuePage() {
                     <td className="px-4 py-2.5 font-bold text-white whitespace-nowrap">
                       {r.velocity != null ? `${r.velocity.toFixed(1)} mph` : <span style={{ color: '#64748b' }}>unreadable</span>}
                     </td>
-                    <td className="px-4 py-2.5 text-xs" style={{ color: '#64748b' }} title={r.raw_row || undefined} data-testid="reading-source">
+                    <td className="px-4 py-2.5 text-xs wrap-anywhere" style={{ color: '#64748b' }} title={r.raw_row || undefined} data-testid="reading-source">
                       {r.source === 'manual' ? (
                         <>manual entry{r.created_by_name ? ` by ${r.created_by_name}` : ''}{r.source_timestamp ? ` · ${r.source_timestamp}` : ''}</>
                       ) : (
@@ -420,7 +424,8 @@ export default function RadarQueuePage() {
                       {r.pitch_or_exit}{r.pitch_type !== 'unknown' ? ` · ${r.pitch_type}` : ''}
                     </td>
                     <td className="px-4 py-2.5"><ReadingStatus value={r.status} /></td>
-                    <td className="px-4 py-2.5 text-right whitespace-nowrap">
+                    <td className="px-4 py-2.5">
+                      <div className="flex flex-wrap justify-end gap-1.5 *:whitespace-nowrap">
                       {busyId === r.id ? (
                         <span className="text-xs font-bold" style={{ color: '#38bdf8' }}>saving…</span>
                       ) : invalidating?.id === r.id ? (
@@ -429,31 +434,29 @@ export default function RadarQueuePage() {
                         <>
                           {r.status === 'unmatched' && r.suggestion && r.velocity != null && (
                             <>
-                              <PrimaryButton
+                              <PrimaryButton style={ROW_BUTTON}
                                 onClick={() => confirmReading(r, { status: 'matched', player_id: r.suggestion.player_id, pitch_or_exit: r.suggestion.pitch_or_exit })}
                                 title={`Confirm to ${r.suggestion.first_name} ${r.suggestion.last_name} — ${r.suggestion.reason}`}
                                 data-testid="confirm-suggestion"
                               >
                                 Confirm suggestion
                               </PrimaryButton>
-                              <span className="inline-block w-1.5" />
                             </>
                           )}
                           {r.status !== 'invalid' && r.velocity != null && (
-                            <GhostButton onClick={() => confirmReading(r)} disabled={!sticky.player_id}
+                            <GhostButton style={ROW_BUTTON} onClick={() => confirmReading(r)} disabled={!sticky.player_id}
                               title={sticky.player_id ? 'Confirm to the active player above' : 'Pick an active player above first'}>
                               {r.status === 'matched' ? 'Reassign' : r.suggestion ? 'Confirm to active' : 'Confirm'}
                             </GhostButton>
                           )}
-                          <span className="inline-block w-1.5" />
                           {r.status !== 'invalid' && (
-                            <GhostButton onClick={() => setInvalidating({ id: r.id, reason: '', detail: '' })}>Invalid</GhostButton>
+                            <GhostButton style={ROW_BUTTON} onClick={() => setInvalidating({ id: r.id, reason: '', detail: '' })}>Invalid</GhostButton>
                           )}
                           {r.status === 'invalid' && (
                             // A reading that still carries its player goes straight back to that
                             // assignment and revives its one result (published values return to
                             // the profile at once); one that never matched returns to unmatched.
-                            <GhostButton
+                            <GhostButton style={ROW_BUTTON}
                               title={r.player_id ? `Restore to ${r.first_name} ${r.last_name} — revives the same result and rollups` : 'Restore to unmatched'}
                               onClick={() => confirmReading(r, r.player_id
                                 // The invalid reason stays in the audit trail; the live row should not keep wearing it.
@@ -465,6 +468,7 @@ export default function RadarQueuePage() {
                           )}
                         </>
                       )}
+                      </div>
                     </td>
                   </tr>
                   {invalidating?.id === r.id && busyId !== r.id && (
@@ -517,6 +521,7 @@ export default function RadarQueuePage() {
                 ))}
               </tbody>
             </table>
+            </div>
           )}
         </section>
 
