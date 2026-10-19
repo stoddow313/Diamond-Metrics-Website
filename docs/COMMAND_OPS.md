@@ -1051,6 +1051,26 @@ Code: `voidedPlays`, `restoreEvent` and `insertPlateAppearance` in
   plays, including plays voided before this release. A corrected play is
   replaced rather than voided, so it can't be restored. Correct it again instead.
 
+### 3.22 Linking a finished job to its tournament game (Command → job → Tournament game)
+
+A job created as a standalone game still belongs to its team, so its players'
+games already count on the team's season dashboard (through dated roster
+membership). The tournament views go through the tournament game instead.
+The scoreboard, standings and team record come from the game's final score.
+In a tournament, a player's stats count for an entry through its event roster.
+So a standalone job didn't show there.
+
+The **Tournament game** panel lists the team's tournament games on the job's
+date. **Link** keeps all the work and sets the job's tournament and game. It
+also stamps the player games the job published, and those count for the
+team's entry whoever played, event roster or not. A paired job links with it.
+If the game has no score yet, *Record this job's final* writes the released
+final (home/away from the job's side) and marks the game final. A game that
+already has a score keeps it. A game on another date, or one another job of
+the team already has, is refused, and the panel names the nearby dates or the
+job. **Unlink** makes it standalone again. A score already recorded stays; it
+is the tournament's now. Code: `server/tournamentLink.js`.
+
 ---
 
 ## 4. Backups and restore
