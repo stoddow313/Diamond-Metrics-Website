@@ -56,6 +56,26 @@ export function timingRollup(results, { key, decimals = 2 }) {
   };
 }
 
+// Derived speed (90-ft speed from home-to-first): the best (fastest) publishes;
+// average and attempt count ride as sample metadata.
+export function speedRollup(results, { key, decimals = 1 }) {
+  const values = validValues(results);
+  const unavailable = results.filter(r => r.status === 'unavailable');
+  if (values.length === 0) {
+    return { entries: [], sample: { attempts: 0, unavailable: unavailable.length }, released: false };
+  }
+  return {
+    entries: [{ metric_key: key, value: round(Math.max(...values), decimals) }],
+    sample: {
+      attempts: values.length,
+      best: round(Math.max(...values), decimals),
+      average: round(values.reduce((a, b) => a + b, 0) / values.length, decimals),
+      unavailable: unavailable.length,
+    },
+    released: true,
+  };
+}
+
 // Registry-code dispatch used by the release adapter.
 export function rollupForMetricCode(metricCode, results) {
   switch (metricCode) {
@@ -67,6 +87,8 @@ export function rollupForMetricCode(metricCode, results) {
       return timingRollup(results, { key: 'home_to_first' });
     case 'steal_time':
       return timingRollup(results, { key: 'steal_time' });
+    case 'ninety_ft_speed':
+      return speedRollup(results, { key: 'ninety_ft_speed' });
     default:
       return null;   // metric has no Phase 1 rollup mapping
   }
