@@ -1,8 +1,10 @@
 // Keeping the scorebook aligned with the film after the fact (14U Silver
 // review): lineups of any size are kept whole and can be edited after play;
 // a recorded at-bat's batter is corrected in place; deleted (voided) plays
-// come back with their pitches and runner plays; and a missed at-bat is put
-// back into an earlier inning, shifting the batting order behind it.
+// come back with their pitches and runner plays; a missed at-bat is put
+// back into an earlier inning, shifting the batting order behind it; and a
+// pitching change or fielder move is put where it happened (Huskers–Vice
+// review), so pitching lines and fielding credits follow.
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -15,7 +17,8 @@ process.env.DM_LOG_SILENT = '1';
 
 const { db } = await import('./db.js');
 const { PACKAGES } = await import('./commandLogic.js');
-const { appendEvent, appendPlateAppearance, correctEvent, voidEvent, replayJob, voidedPlays, restoreEvent, insertPlateAppearance } = await import('./scorebook.js');
+const { appendEvent, appendPlateAppearance, correctEvent, voidEvent, replayJob, voidedPlays, restoreEvent, insertPlateAppearance, placeSubstitution } = await import('./scorebook.js');
+const { pairJobs } = await import('./gamePairing.js');
 
 let admin, baseball, team;
 const P = [];   // eleven of our players, batting order 1–11
@@ -158,4 +161,106 @@ test('a missed at-bat is put back into an earlier inning; the batting order behi
   rp = insertPlateAppearance(db, j, { half_event_id: bottom1.id, pa: { result: 'walk' } }, admin);
   assert.equal(rp.log.filter(l => l.type === 'plate_appearance' && l.inning === 1 && l.half === 'bottom').length, 4);
   assert.throws(() => insertPlateAppearance(db, j, { half_event_id: rp.log.filter(l => l.type === 'half_inning').at(-1).id, pa: { result: 'walk' } }, admin), /current half inning/);
+});
+
+// ── Defensive changes put where they happened ─────────────────────────────
+const outs = (rp, id) => rp.tallies.find(t => t.player_id === id)?.outs_pitched ?? 0;
+const RELIEVER = () => P[11];   // on the roster, not in the batting order
+const reliefChange = () => ({ kind: 'pitching_change', side: 'us', player_in_id: RELIEVER(), player_in_label: 'P12 Player' });
+const halfOf = (rp, inning, half) => rp.log.find(l => l.type === 'half_inning' && l.inning === inning && l.half === half);
+const threeOuts = (j, fielders) => { for (let i = 0; i < 3; i++) pa(j, 'groundout', fielders ? { pa: { fielders } } : {}); };
+// We bat first; our starter (P9) pitches the bottom halves.
+function toBottomTwo(j) {
+  setUp(j);
+  threeOuts(j); threeOuts(j);                 // top 1, bottom 1 (starter: 3 outs)
+  threeOuts(j);                               // top 2
+  pa(j, 'groundout'); pa(j, 'walk');          // bottom 2: an out, then a runner on first
+}
+
+test('a pitching change recorded late is moved to the start of the inning: the reliever gets the whole inning', () => {
+  const j = job();
+  toBottomTwo(j);
+  const sub = appendEvent(db, j, { event_type: 'substitution', payload: reliefChange() }, admin).event;   // scored here, mid-inning…
+  pa(j, 'groundout'); pa(j, 'groundout');
+  let rp = replayJob(db, j);
+  assert.deepEqual([outs(rp, P[8]), outs(rp, RELIEVER())], [4, 2]);
+  assert.equal(stat(rp, RELIEVER(), 'bs_ir'), 1, 'as scored, he inherited the runner');
+
+  // …but the film (and GameChanger) shows he pitched the whole bottom of the 2nd.
+  assert.throws(() => placeSubstitution(db, j, { event_id: sub.id, half_event_id: halfOf(rp, 2, 'bottom').id }, admin, ''), /reason/);
+  rp = placeSubstitution(db, j, { event_id: sub.id, half_event_id: halfOf(rp, 2, 'bottom').id }, admin, 'GameChanger: relieved to start the 2nd');
+  assert.deepEqual([outs(rp, P[8]), outs(rp, RELIEVER())], [3, 3], 'every out of the 2nd is the reliever’s');
+  assert.equal(stat(rp, RELIEVER(), 'bs_ir'), 0, 'no inherited runner — the inning was his from the start');
+  assert.deepEqual([stat(rp, RELIEVER(), 'bs_bba'), stat(rp, P[8], 'bs_bba')], [1, 0], 'the walk is charged to the reliever');
+  const b2 = rp.log.filter(l => l.inning === 2 && l.half === 'bottom' && !l.child && l.type !== 'half_inning');
+  assert.equal(b2[0].type, 'substitution', 'the change now comes before the first at-bat');
+  assert.ok(b2.filter(l => l.type === 'plate_appearance').every(l => l.pitcher.player_id === RELIEVER()));
+  assert.equal(halfOf(rp, 2, 'bottom').defense.positions.find(x => x.position === 'P').player_id, RELIEVER(), 'the half shows who pitched it');
+  assert.equal(db.prepare('SELECT status FROM cmd_events WHERE id = ?').get(sub.id).status, 'superseded', 'the original stays in the history');
+  const atP = id => rp.state.positions.us.find(r => r.player_id === id)?.stints.filter(x => x.position === 'P').flatMap(x => x.innings);
+  assert.deepEqual([atP(P[8]), atP(RELIEVER())], [[1], [2]], 'positions by inning: a reliever from the bench is listed at P too');
+});
+
+test('a missed pitching change is inserted where it happened; one also scored later is flagged until voided', () => {
+  const j = job();
+  toBottomTwo(j);
+  const late = appendEvent(db, j, { event_type: 'substitution', payload: reliefChange() }, admin).event;
+  pa(j, 'groundout'); pa(j, 'groundout');
+  let rp = placeSubstitution(db, j, { payload: reliefChange(), half_event_id: halfOf(replayJob(db, j), 2, 'bottom').id }, admin, 'film: new pitcher warmed up before the 2nd');
+  assert.equal(outs(rp, RELIEVER()), 3);
+  assert.equal(stat(rp, RELIEVER(), 'bs_ir'), 0, 'a change to the pitcher already pitching inherits nothing');
+  assert.ok(rp.issues.some(i => i.code === 'pitching_change_no_change' && i.event_id === late.id), 'the late one is flagged');
+  rp = voidEvent(db, late.id, admin, 'duplicate of the change at the start of the 2nd');
+  assert.ok(!rp.issues.some(i => i.code === 'pitching_change_no_change'));
+  threeOuts(j); threeOuts(j);                 // top 3, bottom 3
+  assert.equal(outs(replayJob(db, j), RELIEVER()), 6, 'and he pitches on until the next change');
+
+  // Before a given play: he actually came in after the walk, as scored.
+  const reliefStart = replayJob(db, j).log.find(l => l.type === 'substitution' && l.inning === 2);
+  const walk = replayJob(db, j).log.find(l => l.type === 'plate_appearance' && l.inning === 2 && l.half === 'bottom' && /walk/.test(l.text));
+  const after = replayJob(db, j).log.filter(l => l.type === 'plate_appearance' && l.sequence > walk.sequence)[0];
+  rp = placeSubstitution(db, j, { event_id: reliefStart.id, before_event_id: after.id }, admin, 'film: in after the walk');
+  assert.deepEqual([outs(rp, P[8]), outs(rp, RELIEVER())], [4, 5]);
+  assert.equal(stat(rp, RELIEVER(), 'bs_ir'), 1);
+});
+
+test('fielders are corrected from a point in the game: putouts and assists follow the player who was there', () => {
+  const j = job();
+  setUp(j);                                   // P1 SS, P2 2B, P4 1B
+  threeOuts(j);
+  threeOuts(j, [6, 3]);                       // bottom 1: three 6-3 groundouts
+  let rp = replayJob(db, j);
+  assert.deepEqual([stat(rp, P[0], 'bs_a'), stat(rp, P[1], 'bs_a'), stat(rp, P[3], 'bs_po')], [3, 0, 3]);
+  // Film: in the 1st, P2 played short and P1 second.
+  const b1 = halfOf(rp, 1, 'bottom');
+  rp = placeSubstitution(db, j, { payload: { kind: 'position_change', side: 'us', slot: 2, position: 'SS' }, half_event_id: b1.id }, admin, 'film: swapped middle infield');
+  assert.deepEqual([stat(rp, P[0], 'bs_a'), stat(rp, P[1], 'bs_a')], [0, 3], 'one player per position: taking short moves P1 off it');
+  assert.equal(halfOf(rp, 1, 'bottom').defense.positions.find(x => x.position === '2B'), undefined, 'second base is open until P1 is moved there');
+  rp = placeSubstitution(db, j, { payload: { kind: 'position_change', side: 'us', slot: 1, position: '2B' }, half_event_id: b1.id }, admin, 'film: swapped middle infield');
+  assert.deepEqual([stat(rp, P[0], 'bs_a'), stat(rp, P[1], 'bs_a'), stat(rp, P[3], 'bs_po')], [0, 3, 3], 'the assists are P2’s');
+  const d = Object.fromEntries(halfOf(rp, 1, 'bottom').defense.positions.map(x => [x.position, x.player_id]));
+  assert.deepEqual([d.SS, d['2B']], [P[1], P[0]]);
+  assert.deepEqual(rp.issues.filter(i => i.code === 'slot_missing'), []);
+
+  // A defensive substitution from a play on: P12 took over at short for the last out.
+  const last = rp.log.filter(l => l.type === 'plate_appearance' && l.inning === 1 && l.half === 'bottom').at(-1);
+  rp = placeSubstitution(db, j, { payload: { kind: 'defensive', side: 'us', slot: 2, player_in_id: P[11], player_in_label: 'P12 Player', position: 'SS' }, before_event_id: last.id }, admin, 'film: sub at short for the third out');
+  assert.deepEqual([stat(rp, P[1], 'bs_a'), stat(rp, P[11], 'bs_a')], [2, 1]);
+  assert.throws(() => placeSubstitution(db, j, { payload: { kind: 'position_change', side: 'us', slot: 1, position: 'SS' }, before_event_id: rp.log.find(l => l.type === 'pitch')?.id ?? 999999 }, admin, 'x'), /before a play|before an at-bat/);
+});
+
+test("the other team's paired job places a change on its own side of the shared scorebook", () => {
+  const j = job();
+  toBottomTwo(j);
+  const org = db.prepare("INSERT INTO organizations (name) VALUES ('Vice Club')").run().lastInsertRowid;
+  const vice = db.prepare("INSERT INTO teams (organization_id, name, slug) VALUES (?, 'Vice', 'vice-d')").run(org).lastInsertRowid;
+  const order = db.prepare("INSERT INTO cmd_orders (package_key, label) VALUES ('rookie', 'Rookie')").run().lastInsertRowid;
+  const g = db.prepare("INSERT INTO cmd_jobs (sport_id, team_id, game_date, order_id, opponent_label) VALUES (?, ?, '2026-10-10', ?, 'Silver')").run(baseball, vice, order).lastInsertRowid;
+  assert.deepEqual(pairJobs(db, g, j, admin), { host_job_id: j, guest_job_id: g });
+  // From the guest's side, our team (the host's "us") is "them".
+  const rp = placeSubstitution(db, g, { payload: { ...reliefChange(), side: 'them' }, half_event_id: halfOf(replayJob(db, g), 2, 'bottom').id }, admin, 'their reliever started the 2nd');
+  assert.equal(rp.state.pitcher.them.player_id, RELIEVER(), 'the guest sees it on the other team');
+  const host = replayJob(db, j);
+  assert.equal(host.state.pitcher.us.player_id, RELIEVER(), 'stored on the host side');
+  assert.equal(outs(host, RELIEVER()), 1);
 });

@@ -2,7 +2,7 @@
 // client never keeps its own copy of the truth.
 import { replayJob, appendEvent, appendPlateAppearance, correctEvent, voidEvent, disputeEvent, resolveEvent, rulesetFor, refreshLiveSource,
          EVENT_TYPES, PA_RESULTS, PITCH_RESULTS, RUNNER_HOWS, SUB_KINDS, FINAL_REASONS, BATTED_BALLS, DIRECTIONS, POSITION_NUMBERS, setEventClip, setStartingPitcher,
-         linkOpponentPlayers, opponentLabels, voidedPlays, restoreEvent, insertPlateAppearance } from './scorebook.js';
+         linkOpponentPlayers, opponentLabels, voidedPlays, restoreEvent, insertPlateAppearance, placeSubstitution } from './scorebook.js';
 import { pairingOf, pairJobIds, partnerRoster } from './gamePairing.js';
 import { PITCH_TYPES } from './radarImport.js';
 import { requirementEnabled, METRIC_BY_ATTEMPT } from './measurementLogic.js';
@@ -73,6 +73,13 @@ export function mountScorebookRoutes(app, { db, requireInternal }) {
   // A missed at-bat put back where it happened: { before_event_id | half_event_id, pa, runners }.
   app.post('/api/command/jobs/:id/scorebook/insert-plate-appearance', requireInternal, (req, res) => handle(res, () => {
     const rp = insertPlateAppearance(db, Number(req.params.id), req.body || {}, req.internal.id);
+    res.status(201).json(payloadFor(Number(req.params.id), rp));
+  }));
+
+  // A defensive change put where it happened: { event_id? (move/correct one), payload?, half_event_id (its start) | before_event_id, note }.
+  app.post('/api/command/jobs/:id/scorebook/defensive-change', requireInternal, (req, res) => handle(res, () => {
+    const { note = '', ...body } = req.body || {};
+    const rp = placeSubstitution(db, Number(req.params.id), body, req.internal.id, String(note));
     res.status(201).json(payloadFor(Number(req.params.id), rp));
   }));
 
