@@ -1018,15 +1018,28 @@ Code: `voidedPlays`, `restoreEvent` and `insertPlateAppearance` in
   lineup* fixes a lineup after play: add a missing player, reorder (↑ ↓), change
   a player or a position. A warning appears when a substitution points at a
   slot that moved.
-- **Earlier innings:** the *Innings* chips (T1 B1 … "now") open a half's
-  at-bats, each showing the outs and bases before it and the batter's slot.
-  *Back to the current inning* returns to live scoring.
+- **Earlier innings:** the *Innings* chips (T1 B1 …) open a half's
+  at-bats, each showing the outs and bases before it and the batter's slot. The
+  header names who pitched the half; ⓘ shows the defense at its first at-bat.
+  *Live* returns to scoring. In a final game every half opens, the last one too.
 - **Wrong batter:** *Correct* → *Batter*. Pick the player who actually batted
   (this marks the at-bat as deliberately out of order), or leave *Batting order*.
   The play is kept, and the at-bats after it continue from the corrected batter.
 - **Missed at-bat:** *Insert before* a play, or *+ Missed at-bat at the end of this
   half* for a past half. The batting order behind it shifts. The current half is
   scored as usual.
+- **Pitcher or fielders wrong:** a substitution row's *Correct / move* changes
+  who came in, or *When* it happened: the start of any half, or before a play
+  in this half. *+ Defensive change* places a missed pitching change,
+  defensive substitution or position change the same way. The change holds
+  from that point until the next one, so pitching lines (outs, pitches, hits,
+  walks, inherited runners), putouts and assists, and positions by inning all
+  follow on replay. The defensive lineup never has to be set in advance.
+  A pitching change scored late and also placed at the start is flagged
+  (`pitching_change_no_change`) until the late one is voided. Each fielding
+  position holds one player: moving someone to short takes it from whoever had
+  it, who then needs their own change (the form says who). A reliever who isn't
+  in the batting order is listed at P in positions by inning.
 - **Deleted (voided) plays:** *Removed from this half* (on the inning view) and
   *Removed plays* (Play by play) list them with their pitch count and the
   at-bat they followed. *Restore* brings a play back with its pitches and runner

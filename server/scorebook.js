@@ -246,6 +246,16 @@ export function replay(events, { ruleset = {}, disputed = new Set() } = {}) {
     closeStint(side, slot.slot);
     if (pos) openStints[side].set(slot.slot, { side, key: refKey(slot.current), ref: slot.current, position: pos, from: at(), innings: new Set() });
   };
+  // A pitcher who is not in the batting order (a reliever from the bench)
+  // has no slot, so their stint at P is kept on its own.
+  const benchPitcher = side => {
+    const pit = state.pitcher[side];
+    const inSlot = pit && state.lineups[side]?.slots.some(x => refKey(x.current) === refKey(pit) && String(x.position || '').toUpperCase() === 'P');
+    if (!pit || inSlot) { closeStint(side, 'P'); return; }
+    if (openStints[side].get('P')?.key === refKey(pit)) return;
+    closeStint(side, 'P');
+    openStints[side].set('P', { side, key: refKey(pit), ref: pit, position: 'P', from: at(), innings: new Set() });
+  };
   // An inning counts for a stint when the player was at the position for at
   // least one plate appearance of it: in the field, or batting for a DH.
   const creditInnings = () => {
@@ -290,6 +300,18 @@ export function replay(events, { ruleset = {}, disputed = new Set() } = {}) {
     const slot = lu?.slots.find(x => POSITION_NUMBERS[(x.position || '').toUpperCase()] === n);
     if (slot) return slot.current;
     return n === 1 ? state.pitcher[side] : null;
+  };
+  // The defense as it stood: who played each position, for review.
+  const defenseOf = side => ({
+    side,
+    positions: Object.entries(POSITION_NUMBERS).map(([position, n]) => { const r = fielderAt(side, n); return r ? { position, player_id: r.player_id ?? null, label: r.label || '' } : null; }).filter(Boolean),
+  });
+  let halfEntry = null;   // the current half's log entry, which records its defense at the first plate appearance
+  // One player per fielding position: whoever takes a position leaves the
+  // player who had it without one until they are moved too (DH and EH can repeat).
+  const takePosition = (side, s, pos) => {
+    if (!POSITION_NUMBERS[pos]) return;
+    for (const x of state.lineups[side].slots) if (x !== s && String(x.position || '').toUpperCase() === pos) { x.position = ''; restint(side, x); }
   };
   // Scoring notation "6-4-3": every fielder but the last threw (assist), the
   // last `outs` fielders recorded a putout, and everyone on a double / triple
@@ -440,6 +462,7 @@ export function replay(events, { ruleset = {}, disputed = new Set() } = {}) {
           }
         }
         entry.inning = p.inning; entry.half = p.half;
+        halfEntry = entry;
         entry.text = `${p.half === 'top' ? 'Top' : 'Bottom'} ${p.inning} — ${state.batting === 'us' ? 'we bat' : 'they bat'}${p.auto ? ' (auto)' : ''}`;
         break;
       }
@@ -452,10 +475,8 @@ export function replay(events, { ruleset = {}, disputed = new Set() } = {}) {
           if (!s) { issue('slot_missing', 'warning', e, `Slot ${p.slot} is not in the lineup`); break; }
           const pos = String(p.position).toUpperCase();
           s.position = pos;
-          if (pos === 'P') {
-            state.pitcher[side] = s.current;
-            for (const x of lu.slots) if (x !== s && String(x.position || '').toUpperCase() === 'P') { x.position = ''; restint(side, x); }
-          }
+          if (pos === 'P') state.pitcher[side] = s.current;
+          takePosition(side, s, pos);
           restint(side, s);
           entry.text = `position change: ${s.current.label || s.current.player_id} to ${pos} (slot ${p.slot})`;
           break;
@@ -476,7 +497,7 @@ export function replay(events, { ruleset = {}, disputed = new Set() } = {}) {
         if (['pinch_hitter', 'defensive', 're_entry'].includes(p.kind)) {
           const s = lu.slots.find(x => x.slot === p.slot);
           if (!s) issue('slot_missing', 'warning', e, `Slot ${p.slot} is not in the lineup`);
-          else { s.current = inRef; if (p.position) s.position = p.position; if ((p.position || '').toUpperCase() === 'P') state.pitcher[side] = inRef; restint(side, s); }
+          else { s.current = inRef; if (p.position) { s.position = p.position; takePosition(side, s, String(p.position).toUpperCase()); } if ((p.position || '').toUpperCase() === 'P') state.pitcher[side] = inRef; restint(side, s); }
         } else if (p.kind === 'pinch_runner' || p.kind === 'courtesy_runner') {
           const r = state.bases[p.base];
           if (!r) issue('no_runner_on_base', 'warning', e, `No runner on ${p.base} to replace`);
@@ -485,8 +506,11 @@ export function replay(events, { ruleset = {}, disputed = new Set() } = {}) {
         } else if (p.kind === 'pitching_change') {
           // Runners on base when a reliever enters are inherited: they stay
           // charged to the pitcher who put them on, and count against the
-          // reliever as inherited runners (scored when they come home).
-          if (state.batting && state.batting !== side && state.half && !state.half_complete && !dis) tally(inRef).bs_ir += runnersOn();
+          // reliever as inherited runners (scored when they come home). A
+          // change to the pitcher already pitching changes nothing — usually
+          // a change recorded late and also placed where it happened.
+          if (state.pitcher[side] && refKey(state.pitcher[side]) === inKey) issue('pitching_change_no_change', 'warning', e, `${inRef.label || 'That pitcher'} was already pitching — void this pitching change, or move it to where the change happened`);
+          else if (state.batting && state.batting !== side && state.half && !state.half_complete && !dis) tally(inRef).bs_ir += runnersOn();
           state.pitcher[side] = inRef;   // inherited runners keep their responsible pitcher
           if (p.slot) { const s = lu.slots.find(x => x.slot === p.slot); if (s) { s.current = inRef; s.position = 'P'; } }
           // position labels follow the ball: whoever is pitching shows P, the previous pitcher no longer does
@@ -510,6 +534,8 @@ export function replay(events, { ruleset = {}, disputed = new Set() } = {}) {
         entry.batter = { player_id: batter.player_id ?? null, label: batter.label || '', slot: batterSlot, explicit: !!(p.batter_player_id || p.batter_label) };
         if (expected && refKey(expected) !== refKey(batter) && !p.out_of_order_ok) issue('batting_out_of_order', 'warning', e, `Expected ${expected.label || `slot ${expected.slot}`} to bat, got ${batter.label || batter.player_id}`);
         const pitcher = p.pitcher_player_id || p.pitcher_label ? mkRef(fieldingSide(), p.pitcher_player_id, p.pitcher_label) : state.pitcher[fieldingSide()];
+        entry.pitcher = pitcher ? { player_id: pitcher.player_id ?? null, label: pitcher.label || '' } : null;
+        if (halfEntry && !halfEntry.defense) halfEntry.defense = defenseOf(fieldingSide());
         const kids = (paChildren.get(e.id) || []).filter(k => !disputed.has(k.id));
         const pitches = kids.filter(k => k.event_type === 'pitch');
         const runners = kids.filter(k => k.event_type === 'runner');
@@ -687,6 +713,7 @@ export function replay(events, { ruleset = {}, disputed = new Set() } = {}) {
       default:
         entry.text = e.event_type;
     }
+    if (e.event_type === 'lineup' || e.event_type === 'substitution') for (const sd of ['us', 'them']) if (state.lineups[sd]) benchPitcher(sd);
     log.push(entry);
   }
   // unresolved disputes are always surfaced
@@ -798,6 +825,10 @@ export function replayJob(db, jobId) {
   const posIds = ['us', 'them'].flatMap(side => result.state.positions[side].filter(r => r.player_id).map(r => r.player_id)).filter(id => !names.has(id));
   if (posIds.length) for (const p of db.prepare(`SELECT id, first_name, last_name FROM players WHERE id IN (${posIds.map(() => '?').join(',')})`).all(...posIds)) names.set(p.id, `${p.first_name} ${p.last_name}`);
   for (const side of ['us', 'them']) for (const r of result.state.positions[side]) r.name = r.player_id ? names.get(r.player_id) || r.label : r.label;
+  // The log names each at-bat's pitcher and each half's defense; a lineup's pitcher can come by id alone.
+  const logIds = [...new Set(result.log.flatMap(l => [l.pitcher?.player_id, ...(l.defense?.positions || []).map(x => x.player_id)]).filter(id => id && !names.has(id)))];
+  if (logIds.length) for (const p of db.prepare(`SELECT id, first_name, last_name FROM players WHERE id IN (${logIds.map(() => '?').join(',')})`).all(...logIds)) names.set(p.id, `${p.first_name} ${p.last_name}`);
+  for (const l of result.log) for (const r of [l.pitcher, ...(l.defense?.positions || [])]) if (r?.player_id && !r.label) r.label = names.get(r.player_id) || '';
   return { job, host_job_id: host.id, shared: pair.role !== null, flipped: flip, events, ...result };
 }
 
@@ -1357,6 +1388,56 @@ export function insertPlateAppearance(db, jobId, { before_event_id = null, half_
       audit(db, 'cmd_events', rid, actorId, 'inserted', describeForAudit('runner', r));
     });
     afterCorrection(db, hostId, actorId, `at-bat inserted at ${at}`);
+  })();
+  return replayJob(db, jobId);
+}
+
+// A defensive change put where it happened: a pitching change, defensive
+// substitution or position change, new (missed while scoring) or an existing
+// substitution moved and/or corrected (recorded late, or wrong). It goes at
+// the start of a half inning or before a given play; every play after it
+// replays with the defense it sets, so pitching lines, fielding credits and
+// positions by inning follow. A moved event is superseded by its replacement.
+export function placeSubstitution(db, jobId, { event_id = null, payload = null, before_event_id = null, half_event_id = null } = {}, actorId, note = '') {
+  const { hostId, flip } = scorebookOf(db, jobId);
+  let old = null;
+  if (event_id) {
+    old = db.prepare("SELECT * FROM cmd_events WHERE id = ? AND job_id = ? AND status IN ('active','needs_review')").get(event_id, hostId);
+    if (!old || old.event_type !== 'substitution') throw err('That substitution is not in this scorebook', 404);
+  }
+  if (!payload && old) payload = flip ? flipPayload('substitution', safeJson(old.payload)) : safeJson(old.payload);
+  validatePayload('substitution', payload || {});
+  checkOpponentPlayers(db, jobId, 'substitution', payload);
+  const stored = flip ? flipPayload('substitution', payload) : payload;
+  let at;
+  if (before_event_id) {
+    const target = db.prepare("SELECT * FROM cmd_events WHERE id = ? AND job_id = ? AND status IN ('active','needs_review')").get(before_event_id, hostId);
+    if (!target || !['plate_appearance', 'runner', 'substitution', 'state_adjustment', 'game_final'].includes(target.event_type)) throw err('Place the change before a play of this scorebook', 404);
+    const parent = target.parent_event_id ? db.prepare('SELECT event_type FROM cmd_events WHERE id = ?').get(target.parent_event_id) : null;
+    if (parent && parent.event_type !== 'half_inning') throw err('Place the change before an at-bat or a between-batter play, not inside one');
+    at = target.sequence;
+  } else if (half_event_id) {
+    const half = db.prepare("SELECT * FROM cmd_events WHERE id = ? AND job_id = ? AND event_type = 'half_inning' AND status IN ('active','needs_review')").get(half_event_id, hostId);
+    if (!half) throw err('That half inning is not in this scorebook', 404);
+    at = half.sequence + 1;   // before the half's first play
+  } else if (old) {
+    at = old.sequence;        // corrected where it is
+  } else {
+    throw err('Say where the change goes: half_event_id (its start) or before_event_id');
+  }
+  if (!note.trim()) throw err('Give a reason — the change is audited');
+  const what = describeForAudit('substitution', stored);
+  db.transaction(() => {
+    db.prepare('UPDATE cmd_events SET sequence = sequence + 1 WHERE job_id = ? AND sequence >= ?').run(hostId, at);
+    const id = db.prepare(INSERT_EVENT).run(hostId, at, 'substitution', null, stored.player_in_id || null, JSON.stringify(stored),
+      old?.selected_feed_id ?? null, old?.timecode_s ?? null, old?.clip_start_s ?? null, old?.clip_end_s ?? null, actorId).lastInsertRowid;
+    if (old) {
+      db.prepare("UPDATE cmd_events SET status = 'superseded', superseded_by = ? WHERE id = ?").run(id, old.id);
+      audit(db, 'cmd_events', id, actorId, 'corrected', `${note.trim()} — ${what}${old.sequence !== at ? ' (moved)' : ''}`, String(old.payload).slice(0, 600), JSON.stringify(stored).slice(0, 600));
+    } else {
+      audit(db, 'cmd_events', id, actorId, 'inserted', `${note.trim()} — missed ${what}`);
+    }
+    afterCorrection(db, hostId, actorId, `substitution ${old ? 'corrected' : 'inserted'} at ${at}`);
   })();
   return replayJob(db, jobId);
 }
