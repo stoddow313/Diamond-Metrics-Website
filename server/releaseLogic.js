@@ -10,6 +10,8 @@ import { assessCapture } from './captureSpec.js';
 import { loadEvents } from './scorebook.js';
 
 const httpError = (message, status = 400) => Object.assign(new Error(message), { status });
+// Derived metrics ride their parent: no data, QA flag or undelivered notice of their own.
+const DERIVED = new Map([['ninety_ft_speed', 'home_to_first']]);
 
 // Results that still count: never superseded, never withdrawn.
 const ACTIVE_RESULTS = `
@@ -112,7 +114,7 @@ export function computeQaFlags(db, jobId) {
   }
 
   for (const m of metrics) {
-    if (m.metric_code === 'ninety_ft_speed') continue;   // derived — rides home_to_first
+    if (DERIVED.has(m.metric_code)) continue;
     if (!results.some(r => r.metric_code === m.metric_code)) {
       flags.push({ code: 'metric_no_data', level: 'warning', label: `${m.label}: no results recorded`, detail: 'This ordered metric will release as unavailable and the customer will be notified.' });
     }
@@ -166,7 +168,7 @@ export function releasePlan(db, jobId, { publishedOnly = false } = {}) {
     }
     for (const [playerId, playerResults] of byPlayer) {
       const rollup = rollupForMetricCode(metric.metric_code, playerResults);
-      if (!rollup) continue;   // no Phase 1 publish mapping (e.g. derived 90-ft speed)
+      if (!rollup) continue;   // no publish mapping for this metric
       plan.push({ metric_code: metric.metric_code, method: metric.method, player_id: playerId, rollup, results: playerResults });
     }
   }
@@ -354,11 +356,12 @@ export function resyncPublishedRollups(db, jobId, actorId = null, reason = '') {
 // values that were released before a job was flagged synthetic, or that were
 // withdrawn by code older than the immediate resync.
 export function backfillPublishedRollups(db, actorId = null) {
+  const caughtUp = publishDerivedWithParents(db, actorId);
   const jobIds = new Set([
     ...db.prepare('SELECT DISTINCT command_job_id AS id FROM games WHERE command_job_id IS NOT NULL').all().map(r => r.id),
     ...db.prepare("SELECT DISTINCT job_id AS id FROM cmd_metric_results WHERE status = 'published'").all().map(r => r.id),
   ]);
-  const summary = { jobs: jobIds.size, jobs_changed: 0, entries_changed: 0, games_removed: 0 };
+  const summary = { jobs: jobIds.size, jobs_changed: 0, entries_changed: 0, games_removed: 0, derived_published: caughtUp };
   for (const jobId of jobIds) {
     const r = resyncPublishedRollups(db, jobId, actorId, 'boot reconciliation');
     if (r.changes.length || r.gamesRemoved) summary.jobs_changed += 1;
@@ -366,6 +369,31 @@ export function backfillPublishedRollups(db, actorId = null) {
     summary.games_removed += r.gamesRemoved || 0;
   }
   return summary;
+}
+
+// Releases before 90-ft speed had a profile key skipped it: its approved
+// results stayed 'approved' while the home-to-first time they derive from
+// published. Those go out now, with their parent — once, then never again,
+// since a release publishes both together from here on.
+function publishDerivedWithParents(db, actorId) {
+  const rows = db.prepare(
+    `SELECT d.id, d.job_id FROM cmd_metric_results d
+       JOIN cmd_jobs j ON j.id = d.job_id AND j.metric_release_status = 'released'
+       JOIN cmd_metric_results p ON p.evidence_kind = d.evidence_kind AND p.evidence_id = d.evidence_id
+            AND p.metric_code = ? AND p.superseded_by IS NULL AND p.status = 'published'
+      WHERE d.metric_code = ? AND d.status = 'approved' AND d.superseded_by IS NULL`
+  );
+  let n = 0;
+  db.transaction(() => {
+    for (const [derived, parent] of DERIVED) {
+      for (const r of rows.all(parent, derived)) {
+        db.prepare("UPDATE cmd_metric_results SET status = 'published', updated_at = datetime('now') WHERE id = ?").run(r.id);
+        auditResult(db, r.id, actorId, 'published', `released with its ${parent.replace(/_/g, '-')} result (catch-up: ${derived} had no profile key when the job released)`, 'approved', 'published');
+        n += 1;
+      }
+    }
+  })();
+  return n;
 }
 
 // ---------------------------------------------------------------------------
@@ -409,7 +437,7 @@ export function releaseMetrics(db, jobId, actorId) {
   // job-wide. Deduped against the last notification so a correction
   // re-release doesn't re-email an unchanged situation.
   const undelivered = metrics
-    .filter(m => m.publishes_to.length > 0)
+    .filter(m => m.publishes_to.length > 0 && !DERIVED.has(m.metric_code))
     .filter(m => !plan.some(p => p.metric_code === m.metric_code && p.rollup.released))
     .map(m => m.metric_code);
   if (undelivered.length > 0) {

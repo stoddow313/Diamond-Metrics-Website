@@ -417,7 +417,12 @@ per metric, for life.**
   changed fact — different player, different metric, a new measured value —
   puts that same row back to `draft` for review and pulls the stale value
   from the profile until it is approved and released again. Derived 90-ft
-  speed never outranks the home-to-first it is computed from.
+  speed never outranks the home-to-first it is computed from. It publishes
+  with it, to the profile's *90-Foot Speed* (mph; the fastest of the game
+  shows). Jobs released before that key existed left their approved speeds
+  unpublished. Boot reconciliation publishes those, but only where the
+  home-to-first time they derive from is published
+  (`published_rollups_reconciled` → `derived_published`).
 - **Idempotent**: repeating the same confirmation changes nothing and audits
   nothing new. A partial unique index (`idx_cmd_results_one_live_per_evidence`)
   guards the invariant for live rows; legacy supersede chains from before

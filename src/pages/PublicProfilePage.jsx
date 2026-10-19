@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { Fragment, useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import {
@@ -20,7 +20,7 @@ import { pageBg, headerBar, cardStyle, text, rowBorder, headBorder } from '../co
 const METRIC_ICONS = {
   max_exit_velo: Rocket, avg_exit_velo: Zap, hard_hit_pct: Flame, contact_pct: Target,
   launch_angle: TrendingUp, sprint_speed: Gauge, dash_60: Timer, sprint_30: Timer,
-  home_to_first: Timer, arm_strength: Dumbbell, max_velo: Rocket, avg_velo: Zap,
+  home_to_first: Timer, ninety_ft_speed: Gauge, arm_strength: Dumbbell, max_velo: Rocket, avg_velo: Zap,
   strike_pct: Target, whiff_pct: Wind, command_score: Crosshair, pop_time: Timer,
   throw_accuracy: Target, blocking_score: Shield, reaction_time: Zap, range_score: Activity,
 };
@@ -56,9 +56,9 @@ function fmt(value, def) {
   return s;
 }
 
-// Season rates from the box sums, per the appendix: three decimals, never a
-// value when the denominator is zero. Innings come from outs.
-function seasonRates(group, s) {
+// Rates from box sums — a season's or one game's — per the appendix: three
+// decimals, never a value when the denominator is zero. Innings come from outs.
+function boxRates(group, s) {
   const r3 = (n, d) => (d > 0 ? (n / d).toFixed(3).replace(/^0\./, '.') : null);
   const r2 = (n, d) => (d > 0 ? (n / d).toFixed(2) : null);
   const v = k => s[k] ?? 0;
@@ -540,6 +540,16 @@ function GameSummaryTab({ data }) {
     for (const pt of m.series) valueByGameAndKey[`${pt.gameId}:${m.key}`] = pt.value;
   }
   const rows = [...games].reverse().filter(g => boxMetrics.some(m => valueByGameAndKey[`${g.id}:${m.key}`] !== undefined));
+  // Each game's AVG / OBP / SLG / OPS beside its line, the season's in the totals row.
+  const RATE_COLS = ['AVG', 'OBP', 'SLG', 'OPS'];
+  const batting = boxMetrics.some(m => m.key === 'bs_ab');
+  const gameRates = g => Object.fromEntries(boxRates('batting', Object.fromEntries(boxMetrics.map(m => [m.key, valueByGameAndKey[`${g.id}:${m.key}`]]))));
+  const seasonBatting = Object.fromEntries(boxRates('batting', Object.fromEntries(boxMetrics.map(m => [m.key, m.headline]))));
+  const rateCell = (v, first, style) => (
+    <td className={`py-2 px-1.5 text-right tabular-nums ${first ? 'pl-3 border-l' : ''}`} style={{ borderColor: '#1e3a5f', ...style }}>
+      {v ?? <span className="font-normal" style={{ color: '#475569' }}>—</span>}
+    </td>
+  );
 
   return (
     <div className="flex flex-col gap-4">
@@ -552,7 +562,7 @@ function GameSummaryTab({ data }) {
         {[['batting', 'Batting'], ['pitching', 'Pitching'], ['fielding', 'Fielding']].map(([group, label]) => {
           const tiles = boxMetrics.filter(m => (m.group || 'batting') === group);
           if (!tiles.length) return null;
-          const rates = seasonRates(group, Object.fromEntries(boxMetrics.map(m => [m.key, m.headline])));
+          const rates = boxRates(group, Object.fromEntries(boxMetrics.map(m => [m.key, m.headline])));
           return (
             <div key={group} className="mb-3">
               <div className="flex items-center gap-3 mb-1.5 flex-wrap">
@@ -578,11 +588,14 @@ function GameSummaryTab({ data }) {
 
       {/* Box score game log */}
       <Card title="Box Scores" className="overflow-x-auto">
-        <table className="w-full text-xs" style={{ minWidth: 120 + boxMetrics.length * 44 }}>
+        <table className="w-full text-xs" style={{ minWidth: 120 + (boxMetrics.length + (batting ? RATE_COLS.length : 0)) * 44 }}>
           <thead>
             <tr className="text-left text-[10px] uppercase tracking-wider border-b" style={{ color: text.faint, ...headBorder }}>
               <th className="py-2 pr-3 font-bold">Date</th>
               <th className="py-2 pr-3 font-bold">Event</th>
+              {batting && RATE_COLS.map((k, i) => (
+                <th key={k} className={`py-2 px-1.5 font-bold text-right ${i === 0 ? 'pl-3 border-l' : ''}`} style={{ borderColor: '#1e3a5f' }} title={`${k} in this game`}>{k}</th>
+              ))}
               {boxMetrics.map(m => (
                 <th key={m.key} className="py-2 px-1.5 font-bold text-right" title={m.label}>{m.short}</th>
               ))}
@@ -593,6 +606,7 @@ function GameSummaryTab({ data }) {
               <tr key={g.id} className="border-b" style={rowBorder}>
                 <td className="py-2 pr-3 whitespace-nowrap" style={{ color: text.secondary }}>{niceDate(g.game_date)}</td>
                 <td className="py-2 pr-3 font-bold whitespace-nowrap" style={{ color: text.body }}>{g.opponent || typeLabel(g.game_type)}{g.result && <ResultBadge result={g.result} />}</td>
+                {batting && (() => { const r = gameRates(g); return RATE_COLS.map((k, i) => <Fragment key={k}>{rateCell(r[k], i === 0, { color: text.body, fontWeight: 700 })}</Fragment>); })()}
                 {boxMetrics.map(m => {
                   const v = valueByGameAndKey[`${g.id}:${m.key}`];
                   return (
@@ -607,6 +621,7 @@ function GameSummaryTab({ data }) {
           <tfoot>
             <tr className="border-t-2" style={{ borderColor: '#1e3a5f' }}>
               <td className="py-2 pr-3 text-[10px] font-bold uppercase tracking-wider" style={{ color: text.faint }} colSpan={2}>Totals</td>
+              {batting && RATE_COLS.map((k, i) => <Fragment key={k}>{rateCell(seasonBatting[k], i === 0, { color: text.accent, fontWeight: 800 })}</Fragment>)}
               {boxMetrics.map(m => (
                 <td key={m.key} className="py-2 px-1.5 text-right font-extrabold" style={{ color: text.accent }}>{fmt(m.headline, m)}</td>
               ))}

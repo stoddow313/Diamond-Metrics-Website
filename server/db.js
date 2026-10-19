@@ -1362,11 +1362,12 @@ db.exec(`
        (metric_code, label, category, availability_tier, recipe_version, unit, decimals, method, publishes_to, capture_requirements, dependencies, sellable, active)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)`
   );
-  const setActive = db.prepare('UPDATE cmd_metric_registry SET active = ?, recipe_version = ? WHERE metric_code = ?');
+  const setActive = db.prepare('UPDATE cmd_metric_registry SET active = ?, recipe_version = ?, publishes_to = ? WHERE metric_code = ?');
   for (const r of REGISTRY_SEED) {
     insMetric.run(r.metric_code, r.label, r.category, r.availability_tier, r.recipe_version, r.unit, r.decimals,
       r.method, JSON.stringify(r.publishes_to || []), r.capture_requirements || '', JSON.stringify(r.dependencies || []), r.active);
-    setActive.run(r.active, r.recipe_version, r.metric_code);   // phase activation is code-driven
+    // Phase activation and the profile keys a metric publishes to are code-driven.
+    setActive.run(r.active, r.recipe_version, JSON.stringify(r.publishes_to || []), r.metric_code);
   }
   const insProfile = db.prepare('INSERT OR IGNORE INTO cmd_capture_profiles (key, label, expected_metrics, notes) VALUES (?, ?, ?, ?)');
   for (const cp of CAPTURE_PROFILE_SEED) insProfile.run(cp.key, cp.label, JSON.stringify(cp.expected_metrics), cp.notes);
