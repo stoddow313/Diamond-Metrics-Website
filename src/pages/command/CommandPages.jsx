@@ -8,6 +8,7 @@ import BrandMark from '../../components/BrandMark';
 import { Field, TextInput, Select, PrimaryButton, GhostButton, ErrorNote } from '../../components/admin/ui';
 import { cardStyle } from '../../components/admin/theme';
 import PairingPanel from './PairingPanel';
+import TournamentLinkPanel from './TournamentLinkPanel';
 
 // Diamond Metrics Command — internal analyst platform (M1: production queue,
 // job setup, job detail). Access: admin | analyst | reviewer | fulfillment. Customer
@@ -852,6 +853,8 @@ export function JobDetailPage() {
               )}
             </div>
           </section>
+
+          <TournamentLinkPanel job={job} onChanged={async () => { try { const { job: updated } = await api.commandJob(job.id); setJob(updated); } catch (err) { setError(err.message); } }} />
 
           <PairingPanel job={job} />
 

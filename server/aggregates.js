@@ -33,19 +33,32 @@ const metricByKey = new Map(METRICS.map(m => [m.key, m]));
 // All of a team's attributed player-games. A game belongs to the team when
 // the player's dated membership covered the game day (season/team view), or
 // when the player was on the team's event roster and the game fell inside
-// the tournament window (tournament view).
+// the tournament window (tournament view), or when a Command job of the team
+// is linked to one of the entry's tournament games (tournamentLink.js).
 export function attributedGames(db, team, filters = {}) {
   const memberships = db.prepare('SELECT * FROM roster_memberships WHERE team_id = ?').all(team.id);
 
   let allowedPlayerIds = null;         // null = derive from memberships per game date
   let window = null;                   // {from, to} date window
   let guestIds = new Set();
+  let linkedGameIds = new Set();       // player games a job of this team linked to the entry's tournament games
+  const candidateLinked = new Set();   // their players, when not on the event roster
 
-  if (filters.entry) {                 // tournament context: event roster decides
+  if (filters.entry) {                 // tournament context: event roster decides…
     const rows = db.prepare('SELECT * FROM event_rosters WHERE entry_id = ?').all(filters.entry.id);
     allowedPlayerIds = new Set(rows.map(r => r.player_id));
     guestIds = new Set(rows.filter(r => r.is_guest).map(r => r.player_id));
     window = { from: filters.entry.start_date, to: filters.entry.end_date };
+    // …and a game a Command job of this team analyzed for one of the entry's
+    // tournament games counts for it whoever played: the job's roster decided.
+    const linked = db.prepare(
+      `SELECT g.id, g.player_id FROM games g
+         JOIN cmd_jobs j ON j.id = g.command_job_id
+         JOIN tournament_games tg ON tg.id = g.tournament_game_id
+        WHERE j.team_id = ? AND (tg.home_entry_id = ? OR tg.away_entry_id = ?) AND tg.archived_at IS NULL`
+    ).all(team.id, filters.entry.id, filters.entry.id);
+    linkedGameIds = new Set(linked.map(r => r.id));
+    for (const r of linked) if (!allowedPlayerIds.has(r.player_id)) candidateLinked.add(r.player_id);
   }
 
   const seasonRow = filters.seasonId
@@ -53,7 +66,7 @@ export function attributedGames(db, team, filters = {}) {
     : null;
 
   const candidateIds = allowedPlayerIds
-    ? [...allowedPlayerIds]
+    ? [...new Set([...allowedPlayerIds, ...candidateLinked])]
     : [...new Set(memberships.map(m => m.player_id))];
   if (candidateIds.length === 0) return [];
 
@@ -91,7 +104,7 @@ export function attributedGames(db, team, filters = {}) {
     if (filters.opponent && !(g.opponent || '').toLowerCase().includes(filters.opponent.toLowerCase())) continue;
 
     if (allowedPlayerIds) {
-      if (!allowedPlayerIds.has(g.player_id)) continue;
+      if (!allowedPlayerIds.has(g.player_id) && !linkedGameIds.has(g.id)) continue;
     } else {
       // membership must cover the game day; season filter narrows to that
       // season's memberships (window falls back to the season dates).

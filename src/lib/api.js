@@ -188,6 +188,10 @@ export const api = {
   commandPairing: (jobId) => request(`/api/command/jobs/${jobId}/pairing`),
   commandPair: (jobId, partnerJobId) => request(`/api/command/jobs/${jobId}/pairing`, { method: 'POST', body: { partner_job_id: partnerJobId } }),
   commandUnpair: (jobId) => request(`/api/command/jobs/${jobId}/pairing`, { method: 'DELETE' }),
+  // A job created as a standalone game, linked to its tournament game afterwards
+  commandTournamentLink: (jobId) => request(`/api/command/jobs/${jobId}/tournament-link`),
+  commandTournamentLinkSet: (jobId, body) => request(`/api/command/jobs/${jobId}/tournament-link`, { method: 'POST', body }),
+  commandTournamentUnlink: (jobId) => request(`/api/command/jobs/${jobId}/tournament-link`, { method: 'DELETE' }),
   commandScorebookStartingPitcher: (jobId, body) => request(`/api/command/jobs/${jobId}/scorebook/starting-pitcher`, { method: 'POST', body }),
   commandEmailTest: (to) => request('/api/command/email/test', { method: 'POST', body: { to } }),
   commandBackupVerify: () => request('/api/command/backups/verify', { method: 'POST' }),
