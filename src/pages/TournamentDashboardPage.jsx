@@ -138,7 +138,7 @@ export default function TournamentDashboardPage() {
               {tournament.organizer && <span>· {tournament.organizer}</span>}
             </p>
           </div>
-          {!tournament.published && (
+          {!(tournament.published && tournament.visibility === 'public') && (
             <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-1 rounded" style={{ backgroundColor: 'rgba(251, 191, 36, 0.14)', color: '#fbbf24' }}>
               Preview — not published
             </span>

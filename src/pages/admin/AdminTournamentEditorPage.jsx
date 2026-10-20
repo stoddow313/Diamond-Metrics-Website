@@ -74,6 +74,8 @@ export default function AdminTournamentEditorPage() {
   if (error && !detail) return <ErrorNote>{error}</ErrorNote>;
   if (!detail) return <p style={{ color: '#94a3b8' }}>Loading…</p>;
   const { tournament, divisions, entries, games, aliases } = detail;
+  // Public = published with public visibility (what the dashboard checks).
+  const isPublic = !!tournament.published && tournament.visibility === 'public';
 
   return (
     <div>
@@ -99,10 +101,12 @@ export default function AdminTournamentEditorPage() {
           </GhostButton>
           <GhostButton
             type="button"
-            onClick={() => act(() => api.updateTournament(tournament.id, { published: tournament.published ? 0 : 1 }), tournament.published ? 'Unpublished' : 'Published')}
-            style={tournament.published ? { borderColor: '#166534', color: '#4ade80' } : {}}
+            onClick={() => act(() => api.updateTournament(tournament.id, isPublic ? { published: 0, visibility: 'private' } : { published: 1, visibility: 'public' }), isPublic ? 'Unpublished — the dashboard is private again' : 'Published — anyone with the link can view the dashboard')}
+            style={isPublic ? { borderColor: '#166534', color: '#4ade80' } : {}}
+            title={isPublic ? 'Make the dashboard private again' : 'Let anyone with the link view the dashboard without signing in'}
+            data-testid="tournament-publish"
           >
-            {tournament.published ? 'Published ✓' : 'Publish'}
+            {isPublic ? 'Published ✓' : 'Publish'}
           </GhostButton>
         </div>
       </div>

@@ -15,7 +15,7 @@ No code has been written against this plan yet.
 | Domain model | organizations → teams → seasons → dated `roster_memberships` → players; tournaments → divisions → `tournament_entries` → `event_rosters` (guests) → `tournament_games`; per-player `games` (performance context, links `tournament_game_id`/`event_id`) → `stat_entries` (game_id, metric_key, value, excluded) |
 | Metric path | `metricCatalog.js` (code-defined registry incl. `zeroMeansUnmeasured`) → `stat_entries` → read-time aggregation (`aggregates.js`, DM_AGG_V1 stamps) + Pro Day rating engine (versioned benchmarks, stored `player_ratings`) → profiles/dashboards |
 | Imports | Client-parsed CSV → JSON rows → server `importEngine.js` (dry-run plan, duplicate resolution, idempotent apply, `import_audits`) |
-| Publish gates | `players.is_public`, tournament `published+visibility`, team dashboards private by default; approved values ARE `stat_entries` rows |
+| Publish gates | `players.is_public`, tournament `published+visibility` (Admin's Publish sets both), team dashboards private unless `teams.public_dashboard`; approved values ARE `stat_entries` rows |
 | Media | Player photos only, stored on the 1 GB disk. No video anywhere. No background jobs, no queue, no transcoding, no error monitoring |
 | Environments | Prod only (Vercel + Render). Local dev. No staging |
 

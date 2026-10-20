@@ -784,7 +784,7 @@ app.put('/api/organizations/:id', requireAdmin, (req, res) => {
 });
 
 // ── Teams ────────────────────────────────────────────────────────────────
-const TEAM_FIELDS = ['organization_id', 'name', 'age_group', 'level', 'logo_url', 'active'];
+const TEAM_FIELDS = ['organization_id', 'name', 'age_group', 'level', 'logo_url', 'active', 'public_dashboard'];
 
 app.get('/api/teams', requireAdmin, (_req, res) => {
   res.json({
@@ -833,6 +833,7 @@ app.put('/api/teams/:id', requireAdmin, (req, res) => {
   if (!db.prepare('SELECT 1 FROM teams WHERE id = ?').get(req.params.id)) return res.status(404).json({ error: 'Team not found' });
   const data = pickFields(req.body, TEAM_FIELDS);
   if (!Object.keys(data).length) return res.status(400).json({ error: 'No fields to update' });
+  if ('public_dashboard' in data) data.public_dashboard = [true, 1, '1', 'true'].includes(data.public_dashboard) ? 1 : 0;
   data.updated_at = new Date().toISOString();
   res.json({ team: crudUpdate('teams', req.params.id, data) });
 });
@@ -1183,9 +1184,11 @@ app.get('/api/view/teams/:slug', (req, res) => {
   ).get(req.params.slug);
   if (!team) return res.status(404).json({ error: 'Team not found' });
 
-  // §9 default: team dashboards are private.
+  // §9 default: team dashboards are private. An admin can open one to
+  // everyone (Admin → Teams → Public dashboard), e.g. a demo team for marketing.
   const viewer = resolveViewer(req);
   const allowed =
+    team.public_dashboard === 1 ||
     viewer.kind === 'admin' ||
     (viewer.kind === 'staff' && staffCanViewTeam(viewer, team.id)) ||
     (viewer.kind === 'player' && !!db.prepare(
