@@ -46,6 +46,17 @@ export default function AdminTeamEditorPage() {
     } catch (err) { setError(err.message); }
   }
 
+  // Public dashboard: anyone with the link sees it without signing in (demo / marketing teams).
+  async function togglePublic() {
+    const next = team.public_dashboard ? 0 : 1;
+    if (next && !confirm(`Make ${team.name}'s dashboard public? Anyone with the link sees it without signing in: roster names, stats and leaderboards. Use it for demo or marketing teams.`)) return;
+    setError('');
+    try {
+      const { team: updated } = await api.updateTeam(teamId, { public_dashboard: next });
+      setTeam(t => ({ ...t, ...updated }));
+    } catch (err) { setError(err.message); }
+  }
+
   async function addMember(e) {
     e.preventDefault();
     setError('');
@@ -84,6 +95,8 @@ export default function AdminTeamEditorPage() {
           <a href={`/teams/${team.slug}`} target="_blank" rel="noreferrer" className="hover:underline" style={{ color: '#38bdf8' }}>
             View dashboard ↗
           </a>
+          {' · '}
+          <span style={{ color: team.public_dashboard ? '#4ade80' : '#64748b' }}>{team.public_dashboard ? 'Public — no sign-in needed' : 'Private'}</span>
         </p>
       </div>
 
@@ -95,6 +108,11 @@ export default function AdminTeamEditorPage() {
           <h2 className="text-lg font-bold text-white">Team</h2>
           <div className="flex items-center gap-3">
             {saved && <span className="text-xs font-bold" style={{ color: '#4ade80' }}>Saved ✓</span>}
+            <GhostButton type="button" onClick={togglePublic} data-testid="team-public"
+              title={team.public_dashboard ? 'Anyone with the link can view the dashboard — click to make it private again' : 'Let anyone with the link view the dashboard without signing in'}
+              style={team.public_dashboard ? { borderColor: '#166534', color: '#4ade80' } : {}}>
+              {team.public_dashboard ? 'Public dashboard ✓' : 'Make dashboard public'}
+            </GhostButton>
             <PrimaryButton type="submit">Save</PrimaryButton>
           </div>
         </div>

@@ -104,8 +104,8 @@ export default function AdminTournamentsPage() {
                   <td className="px-5 py-3" style={{ color: '#cfe8ff' }}>{t.entry_count}</td>
                   <td className="px-5 py-3" style={{ color: '#cfe8ff' }}>{t.game_count}</td>
                   <td className="px-5 py-3">
-                    <span className="text-xs font-bold" style={{ color: t.published ? '#4ade80' : '#64748b' }}>
-                      {t.published ? 'Published' : 'Private'}
+                    <span className="text-xs font-bold" style={{ color: t.published && t.visibility === 'public' ? '#4ade80' : '#64748b' }}>
+                      {t.published && t.visibility === 'public' ? 'Published' : 'Private'}
                     </span>
                   </td>
                 </tr>

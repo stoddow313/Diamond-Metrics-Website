@@ -352,6 +352,8 @@ addColumnIfMissing('players', 'date_of_birth', 'date_of_birth TEXT');
 addColumnIfMissing('games', 'event_id', 'event_id INTEGER REFERENCES events(id)');
 // Per-player performance context can point at the shared tournament game.
 addColumnIfMissing('games', 'tournament_game_id', 'tournament_game_id INTEGER REFERENCES tournament_games(id)');
+// Team dashboards are private (§9) unless an admin opens one to everyone — a demo or marketing team.
+addColumnIfMissing('teams', 'public_dashboard', 'public_dashboard INTEGER NOT NULL DEFAULT 0');
 // Admin exclusion of invalid/duplicate observations without deleting them.
 addColumnIfMissing('stat_entries', 'excluded', 'excluded INTEGER NOT NULL DEFAULT 0');
 // Command metric-release adapter provenance (Phase 4.2 / Command M1+):
