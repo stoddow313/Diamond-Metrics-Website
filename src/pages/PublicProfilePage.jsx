@@ -73,7 +73,8 @@ function boxRates(group, s) {
     out.push(['ERA', r2(9 * v('bs_er'), ip)], ['WHIP', r2(v('bs_bba') + v('bs_ha'), ip)], ['K/9', r2(9 * v('bs_kp'), ip)], ['BB/9', r2(9 * v('bs_bba'), ip)]);
   }
   if (group === 'fielding' && (s.bs_po != null || s.bs_a != null || s.bs_e != null)) {
-    out.push(['FPCT', r3(v('bs_po') + v('bs_a'), v('bs_po') + v('bs_a') + v('bs_e'))]);
+    const tc = v('bs_po') + v('bs_a') + v('bs_e');
+    out.push(['TC', tc > 0 ? String(tc) : null], ['FPCT', r3(v('bs_po') + v('bs_a'), tc)]);
   }
   return out.filter(([, val]) => val != null);
 }
@@ -518,9 +519,85 @@ function TeamsAndEvents({ data }) {
   );
 }
 
+// Fielding from the published box score (putouts, assists, errors): chances
+// and fielding % for the season and each game, as the in-game box score shows
+// them. Zeros are not stored, so a game with chances and no error reads E 0.
+const FIELDING_KEYS = ['bs_po', 'bs_a', 'bs_e', 'bs_dp', 'bs_pb'];
+const fpctOf = (po, a, e) => (po + a + e > 0 ? ((po + a) / (po + a + e)).toFixed(3).replace(/^0\./, '.') : null);
+function fieldingLines({ metrics, games }) {
+  if (!['bs_po', 'bs_a', 'bs_e'].some(k => metrics[k])) return null;
+  const byGame = new Map();
+  for (const k of FIELDING_KEYS) for (const pt of metrics[k]?.series || []) {
+    if (!byGame.has(pt.gameId)) byGame.set(pt.gameId, {});
+    byGame.get(pt.gameId)[k] = pt.value;
+  }
+  const line = x => {
+    const [po, a, e, dp, pb] = FIELDING_KEYS.map(k => Number(x[k] ?? 0));
+    return { po, a, e, dp, pb, tc: po + a + e, fpct: fpctOf(po, a, e) };
+  };
+  const rows = [...games].reverse().filter(g => byGame.has(g.id)).map(g => ({ game: g, ...line(byGame.get(g.id)) }));
+  return { season: line(Object.fromEntries(FIELDING_KEYS.map(k => [k, metrics[k]?.headline ?? 0]))), rows };
+}
+
+function FieldingBox({ data }) {
+  const f = fieldingLines(data);
+  if (!f) return null;
+  const { season, rows } = f;
+  const cols = [['tc', 'TC', 'Total chances'], ['po', 'PO', 'Putouts'], ['a', 'A', 'Assists'], ['e', 'E', 'Errors'], ['dp', 'DP', 'Double plays'], ...(season.pb ? [['pb', 'PB', 'Passed balls']] : [])];
+  return (
+    <Card title="Fielding · box score" className="overflow-x-auto">
+      <div className="flex flex-wrap items-stretch gap-3 mb-3" data-testid="fielding-season">
+        <div className="rounded-xl border px-4 py-2.5 flex items-center gap-2" style={cardStyle}>
+          <Shield size={16} style={{ color: text.accent }} />
+          <div>
+            <p className="text-xl font-extrabold text-white leading-none">{season.fpct ?? '—'}</p>
+            <p className="text-[9px] font-bold uppercase tracking-wider mt-1" style={{ color: text.faint }}>Fielding %</p>
+          </div>
+        </div>
+        {cols.map(([k, short, label]) => (
+          <div key={k} className="rounded-xl border px-3 py-2.5 text-center min-w-[56px]" style={cardStyle} title={label}>
+            <p className="text-lg font-extrabold text-white leading-none">{season[k]}</p>
+            <p className="text-[9px] font-bold uppercase tracking-wider mt-1" style={{ color: text.faint }}>{short}</p>
+          </div>
+        ))}
+      </div>
+      <table className="w-full text-xs min-w-[520px]">
+        <thead>
+          <tr className="text-left text-[10px] uppercase tracking-wider border-b" style={{ color: text.faint, ...headBorder }}>
+            <th className="py-2 pr-3 font-bold">Date</th>
+            <th className="py-2 pr-3 font-bold">Event</th>
+            {cols.map(([k, short, label]) => <th key={k} className="py-2 px-1.5 font-bold text-right" title={label}>{short}</th>)}
+            <th className="py-2 pl-3 font-bold text-right">FPCT</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map(r => (
+            <tr key={r.game.id} className="border-b" style={rowBorder}>
+              <td className="py-2 pr-3 whitespace-nowrap" style={{ color: text.secondary }}>{niceDate(r.game.game_date)}</td>
+              <td className="py-2 pr-3 font-bold whitespace-nowrap" style={{ color: text.body }}>{r.game.opponent || typeLabel(r.game.game_type)}</td>
+              {cols.map(([k]) => <td key={k} className="py-2 px-1.5 text-right font-bold text-white tabular-nums">{r[k]}</td>)}
+              <td className="py-2 pl-3 text-right font-bold tabular-nums" style={{ color: text.body }}>{r.fpct ?? '—'}</td>
+            </tr>
+          ))}
+        </tbody>
+        <tfoot>
+          <tr className="border-t-2" style={{ borderColor: '#1e3a5f' }}>
+            <td className="py-2 pr-3 text-[10px] font-bold uppercase tracking-wider" style={{ color: text.faint }} colSpan={2}>Season</td>
+            {cols.map(([k]) => <td key={k} className="py-2 px-1.5 text-right font-extrabold tabular-nums" style={{ color: text.accent }}>{season[k]}</td>)}
+            <td className="py-2 pl-3 text-right font-extrabold tabular-nums" style={{ color: text.accent }}>{season.fpct ?? '—'}</td>
+          </tr>
+        </tfoot>
+      </table>
+    </Card>
+  );
+}
+
 function GameSummaryTab({ data }) {
   const { metrics, games, catalog } = data;
-  const boxMetrics = catalog.metrics.filter(m => m.category === 'box' && metrics[m.key]).map(m => metrics[m.key]);
+  // A player with fielding chances and no error has no stored E (zeros aren't published): it reads 0.
+  const fielding = fieldingLines(data);
+  const boxMetrics = catalog.metrics.filter(m => m.category === 'box' && (metrics[m.key] || (m.key === 'bs_e' && fielding)))
+    .map(m => metrics[m.key] || { ...m, headline: 0, series: [] });
   const pendingGames = games.filter(g => g.box_score_pending);
 
   if (boxMetrics.length === 0) {
@@ -545,6 +622,8 @@ function GameSummaryTab({ data }) {
   const batting = boxMetrics.some(m => m.key === 'bs_ab');
   const gameRates = g => Object.fromEntries(boxRates('batting', Object.fromEntries(boxMetrics.map(m => [m.key, valueByGameAndKey[`${g.id}:${m.key}`]]))));
   const seasonBatting = Object.fromEntries(boxRates('batting', Object.fromEntries(boxMetrics.map(m => [m.key, m.headline]))));
+  const fieldingByGame = new Map((fielding?.rows || []).map(r => [r.game.id, r]));
+  const rateCount = (batting ? RATE_COLS.length : 0) + (fielding ? 1 : 0);
   const rateCell = (v, first, style) => (
     <td className={`py-2 px-1.5 text-right tabular-nums ${first ? 'pl-3 border-l' : ''}`} style={{ borderColor: '#1e3a5f', ...style }}>
       {v ?? <span className="font-normal" style={{ color: '#475569' }}>—</span>}
@@ -588,7 +667,7 @@ function GameSummaryTab({ data }) {
 
       {/* Box score game log */}
       <Card title="Box Scores" className="overflow-x-auto">
-        <table className="w-full text-xs" style={{ minWidth: 120 + (boxMetrics.length + (batting ? RATE_COLS.length : 0)) * 44 }}>
+        <table className="w-full text-xs" style={{ minWidth: 120 + (boxMetrics.length + rateCount) * 44 }}>
           <thead>
             <tr className="text-left text-[10px] uppercase tracking-wider border-b" style={{ color: text.faint, ...headBorder }}>
               <th className="py-2 pr-3 font-bold">Date</th>
@@ -596,6 +675,7 @@ function GameSummaryTab({ data }) {
               {batting && RATE_COLS.map((k, i) => (
                 <th key={k} className={`py-2 px-1.5 font-bold text-right ${i === 0 ? 'pl-3 border-l' : ''}`} style={{ borderColor: '#1e3a5f' }} title={`${k} in this game`}>{k}</th>
               ))}
+              {fielding && <th className={`py-2 px-1.5 font-bold text-right ${batting ? '' : 'pl-3 border-l'}`} style={{ borderColor: '#1e3a5f' }} title="Fielding % in this game">FPCT</th>}
               {boxMetrics.map(m => (
                 <th key={m.key} className="py-2 px-1.5 font-bold text-right" title={m.label}>{m.short}</th>
               ))}
@@ -607,8 +687,10 @@ function GameSummaryTab({ data }) {
                 <td className="py-2 pr-3 whitespace-nowrap" style={{ color: text.secondary }}>{niceDate(g.game_date)}</td>
                 <td className="py-2 pr-3 font-bold whitespace-nowrap" style={{ color: text.body }}>{g.opponent || typeLabel(g.game_type)}{g.result && <ResultBadge result={g.result} />}</td>
                 {batting && (() => { const r = gameRates(g); return RATE_COLS.map((k, i) => <Fragment key={k}>{rateCell(r[k], i === 0, { color: text.body, fontWeight: 700 })}</Fragment>); })()}
+                {fielding && rateCell(fieldingByGame.get(g.id)?.fpct, !batting, { color: text.body, fontWeight: 700 })}
                 {boxMetrics.map(m => {
-                  const v = valueByGameAndKey[`${g.id}:${m.key}`];
+                  const stored = valueByGameAndKey[`${g.id}:${m.key}`];
+                  const v = stored === undefined && m.key === 'bs_e' && fieldingByGame.get(g.id)?.tc ? 0 : stored;   // chances, no error
                   return (
                     <td key={m.key} className="py-2 px-1.5 text-right font-bold text-white">
                       {v === undefined ? <span className="font-normal" style={{ color: '#475569' }}>—</span> : fmt(v, m)}
@@ -622,6 +704,7 @@ function GameSummaryTab({ data }) {
             <tr className="border-t-2" style={{ borderColor: '#1e3a5f' }}>
               <td className="py-2 pr-3 text-[10px] font-bold uppercase tracking-wider" style={{ color: text.faint }} colSpan={2}>Totals</td>
               {batting && RATE_COLS.map((k, i) => <Fragment key={k}>{rateCell(seasonBatting[k], i === 0, { color: text.accent, fontWeight: 800 })}</Fragment>)}
+              {fielding && rateCell(fielding.season.fpct, !batting, { color: text.accent, fontWeight: 800 })}
               {boxMetrics.map(m => (
                 <td key={m.key} className="py-2 px-1.5 text-right font-extrabold" style={{ color: text.accent }}>{fmt(m.headline, m)}</td>
               ))}
@@ -1027,7 +1110,7 @@ export default function PublicProfilePage({ portal = false }) {
             {tab === 'hitting' && <CategoryTab categoryKey="hitting" data={data} extras={<HittingExtras data={data} />} />}
             {tab === 'pitching' && <CategoryTab categoryKey="pitching" data={data} extras={<PitchingExtras />} />}
             {tab === 'running' && <CategoryTab categoryKey="running" data={data} />}
-            {tab === 'defense' && <CategoryTab categoryKey="defense" data={data} />}
+            {tab === 'defense' && <CategoryTab categoryKey="defense" data={data} extras={fieldingLines(data) ? <FieldingBox data={data} /> : null} />}
             {tab === 'biomechanics' && <BiomechanicsTab />}
             {tab === 'development' && <DevelopmentTab games={data.games} />}
             {tab === 'video' && <VideoTab />}
