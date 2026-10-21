@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Link, Outlet, useNavigate, useParams } from 'react-router-dom';
 import { useAuth } from '../../context/AuthContext';
 import { api } from '../../lib/api';
+import EventDesk from '../command/EventDesk';
 import BrandMark from '../../components/BrandMark';
 import { cardStyle } from '../../components/admin/theme';
 import { useIntakeConfig } from '../../lib/intake';
@@ -67,6 +68,18 @@ export function StaffHomePage() {
       <p className="text-sm mb-6" style={{ color: '#94a3b8' }}>
         Access assigned by Diamond Metrics. Performance analytics are on the way — rosters and schedules are live now.
       </p>
+
+      {data.events?.length > 0 && (
+        <section className="rounded-2xl border p-6 mb-6" style={cardStyle} data-testid="staff-events">
+          <h2 className="text-lg font-bold text-white mb-3">Event check-in</h2>
+          {data.events.map(e => (
+            <Link key={e.id} to={`/staff/events/${e.id}`} className="block py-2 border-t hover:bg-slate-800/40 px-2 -mx-2 rounded" style={{ borderColor: '#1e3a5f' }}>
+              <span className="font-bold text-white">{e.name}</span>
+              <span className="text-sm ml-2" style={{ color: '#94a3b8' }}>{e.days.map(d => d.label).join(' · ')}{e.location ? ` · ${e.location}` : ''}</span>
+            </Link>
+          ))}
+        </section>
+      )}
 
       <div className="grid md:grid-cols-2 gap-6 items-start">
         <section className="rounded-2xl border p-6" style={cardStyle}>
@@ -218,6 +231,18 @@ export function StaffTournamentPage() {
           </p>
         ))}
       </section>
+    </div>
+  );
+}
+
+// A booth login's check-in screen for one event (the same desk Command uses).
+export function StaffEventPage() {
+  const { eventId } = useParams();
+  return (
+    <div>
+      <Link to="/staff" className="text-xs hover:underline print:hidden" style={{ color: '#64748b' }}>← Your teams & events</Link>
+      <h1 className="text-2xl font-bold text-white mb-4 mt-1 print:hidden">Check-in</h1>
+      <EventDesk eventId={eventId} />
     </div>
   );
 }

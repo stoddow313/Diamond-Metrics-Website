@@ -132,7 +132,7 @@ export const api = {
   // staff (coach/director) access
   getAccess: (kind, id) => request(`/api/${kind}/${id}/access`),           // kind: 'teams' | 'tournaments'
   addAccess: (kind, id, email) => request(`/api/${kind}/${id}/access`, { method: 'POST', body: { email } }),
-  removeAccess: (kind, id) => request(`/api/${kind === 'teams' ? 'team' : 'tournament'}-access/${id}`, { method: 'DELETE' }),
+  removeAccess: (kind, id) => request(kind === 'command/events' ? `/api/command/event-access/${id}` : `/api/${kind === 'teams' ? 'team' : 'tournament'}-access/${id}`, { method: 'DELETE' }),
   staffInviteInfo: (token) => request(`/api/staff-invites/${token}`, { auth: false }),
   claimStaffInvite: (token, name, password) => request(`/api/staff-invites/${token}/claim`, { method: 'POST', body: { name, password }, auth: false }),
   staffOverview: () => request('/api/staff/overview'),
@@ -246,6 +246,25 @@ export const api = {
 
   // Paid tournament (QR checkout) orders (Command); admin and fulfillment mark one delivered
   commandTournamentOrders: () => request('/api/command/tournament-orders'),
+  // Event registration (server/eventRoutes.js): public page, the booth desk, setup in Command
+  publicEvents: () => request('/api/public/events', { auth: false }),
+  publicEvent: (slug) => request(`/api/public/events/${encodeURIComponent(slug)}`),
+  registerForEvent: (slug, body) => request(`/api/public/events/${encodeURIComponent(slug)}/register`, { method: 'POST', body, auth: false }),
+  eventRegistrationBySession: (sessionId) => request(`/api/public/event-registrations/session/${encodeURIComponent(sessionId)}`, { auth: false }),
+  deskEvents: (archived = false) => request(`/api/desk/events${archived ? '?archived=1' : ''}`),
+  deskEvent: (id) => request(`/api/desk/events/${id}`),
+  deskCheckIn: (rid, checkedIn) => request(`/api/desk/registrations/${encodeURIComponent(rid)}/check-in`, { method: 'PUT', body: { checked_in: checkedIn } }),
+  deskBoothPayment: (rid, method, note = '') => request(`/api/desk/registrations/${encodeURIComponent(rid)}/booth-payment`, { method: 'PUT', body: { method, note } }),
+  deskPayLink: (rid) => request(`/api/desk/registrations/${encodeURIComponent(rid)}/pay-link`, { method: 'POST' }),
+  deskWalkUp: (eventId, body) => request(`/api/desk/events/${eventId}/walk-ups`, { method: 'POST', body }),
+  deskRosterCsv: async (eventId) => {
+    const res = await fetch(`/api/desk/events/${eventId}/roster.csv`, { headers: { Authorization: `Bearer ${getToken()}` } });
+    if (!res.ok) throw new Error(`Export failed (${res.status})`);
+    return res.blob();
+  },
+  commandCreateEvent: (body) => request('/api/command/events', { method: 'POST', body }),
+  commandEventSetup: (id) => request(`/api/command/events/${id}/setup`),
+  commandUpdateEvent: (id, body) => request(`/api/command/events/${id}`, { method: 'PUT', body }),
   commandSetTournamentOrderDelivered: (orderId, delivered) =>
     request(`/api/command/tournament-orders/${encodeURIComponent(orderId)}/delivered`, { method: 'PUT', body: { delivered } }),
 

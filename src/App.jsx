@@ -9,7 +9,7 @@ import ProgramsPage from './pages/ProgramsPage';
 import LoginPage from './pages/LoginPage';
 import ClaimPage from './pages/ClaimPage';
 import ClaimStaffPage from './pages/ClaimStaffPage';
-import { StaffLayout, StaffHomePage, StaffTeamPage, StaffTournamentPage } from './pages/staff/StaffPages';
+import { StaffLayout, StaffHomePage, StaffTeamPage, StaffTournamentPage, StaffEventPage } from './pages/staff/StaffPages';
 import { CommandLayout, ProductionQueuePage, NewJobPage, JobDetailPage } from './pages/command/CommandPages';
 import FeedViewerPage from './pages/command/FeedViewerPage';
 import RadarQueuePage from './pages/command/RadarQueuePage';
@@ -45,6 +45,8 @@ import { SubmitStartPage, SubmitWizardPage, InternalSubmitterNotice } from './pa
 import { MySubmissionsPage, SubmissionStatusPage } from './pages/intake/SubmissionPages';
 import { SignupRoute, ForgotPasswordPage, ResetPasswordPage, VerifyEmailPage, AccountPage } from './pages/intake/AccountPages';
 import FindYourPlayerPage from './pages/FindYourPlayerPage';
+import { EventSignupPage, EventRegisteredPage, EventsIndexPage } from './pages/events/EventPages';
+import { EventsListPage, EventPage } from './pages/command/EventsPages';
 import PlayerIntakeCompletePage from './pages/PlayerIntakeCompletePage';
 import PrivacyPage from './pages/PrivacyPage';
 
@@ -97,6 +99,9 @@ function AppRoutes() {
       <Route path="/account/verify" element={<VerifyEmailPage />} />
       <Route path="/find-your-player" element={<FindYourPlayerPage />} />
       <Route path="/find-your-player/complete" element={<PlayerIntakeCompletePage />} />
+      <Route path="/events" element={<EventsIndexPage />} />
+      <Route path="/events/:slug" element={<EventSignupPage />} />
+      <Route path="/events/:slug/registered" element={<EventRegisteredPage />} />
       <Route path="/privacy" element={<PrivacyPage />} />
       <Route path="/claim/:token" element={<ClaimPage />} />
       <Route path="/claim-staff/:token" element={<ClaimStaffPage />} />
@@ -117,6 +122,7 @@ function AppRoutes() {
         <Route index element={<StaffHomePage />} />
         <Route path="teams/:teamId" element={<StaffTeamPage />} />
         <Route path="tournaments/:tournamentId" element={<StaffTournamentPage />} />
+        <Route path="events/:eventId" element={<StaffEventPage />} />
       </Route>
       <Route path="/command" element={<InternalRoute><CommandLayout /></InternalRoute>}>
         <Route index element={<ProductionQueuePage />} />
@@ -134,6 +140,8 @@ function AppRoutes() {
         <Route path="intake/deletions/:requestId" element={<IntakeDeletionRequestPage />} />
         <Route path="intake/:id" element={<IntakeRecordPage />} />
         <Route path="tournament-orders" element={<TournamentOrdersPage />} />
+        <Route path="events" element={<EventsListPage />} />
+        <Route path="events/:eventId" element={<EventPage />} />
         <Route path="team" element={<InternalRoute roles={['admin']}><TeamPage /></InternalRoute>} />
       </Route>
       <Route path="/admin" element={<RoleRoute role="admin"><AdminLayout /></RoleRoute>}>

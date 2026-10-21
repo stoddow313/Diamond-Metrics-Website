@@ -41,7 +41,7 @@ export default function ClaimStaffPage() {
 
   const inputClass = 'w-full px-4 py-3 rounded-xl border text-white text-sm outline-none focus:border-sky-400';
   const inputStyle = { backgroundColor: 'rgba(30, 41, 59, 0.95)', borderColor: '#334155' };
-  const assignments = info ? [...(info.teams || []), ...(info.tournaments || [])] : [];
+  const assignments = info ? [...(info.teams || []), ...(info.tournaments || []), ...(info.events || [])] : [];
 
   return (
     <div className="min-h-screen flex items-center justify-center px-4" style={{ background: 'linear-gradient(180deg, #06122b 0%, #081a3d 100%)' }}>
