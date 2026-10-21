@@ -1071,6 +1071,77 @@ the team already has, is refused, and the panel names the nearby dates or the
 job. **Unlink** makes it standalone again. A score already recorded stays; it
 is the tournament's now. Code: `server/tournamentLink.js`.
 
+
+### 3.23 Event registration: Pro Day sign-ups and booth check-in (Command → Events)
+
+An event (a Pro Day, showcase or camp) gets one public page, `/events/{slug}`.
+Parents register there and pay on Stripe. Staff check players in from a live
+list at the booth. Code: `server/eventLogic.js` (rules), `eventStore.js`,
+`eventRoutes.js`; pages `src/pages/events/`, `src/pages/command/EventsPages.jsx`
+and `EventDesk.jsx`.
+
+**Setting one up** (admin or fulfillment): Command → Events → **+ New event**
+(name, day or days, price) creates a draft. Its **Setup** tab holds:
+- details, location and what to bring;
+- each day, with an optional player limit;
+- "Either day", and the registration window;
+- an optional tournament link;
+- the consent statement (each registration keeps a hash of the version it
+  accepted).
+
+Statuses:
+- **Draft:** only staff signed in to Command can open the page, with a
+  preview banner.
+- **Open:** takes registrations.
+- **Closed:** the page says so; walk-ups still work at the booth.
+- **Archived:** hidden.
+
+**List publicly** puts an open event on `/events` and on its tournament's page.
+Unlisted, it's reachable only by the link.
+
+**Links and QR codes:** Setup shows the link with **Copy link** and
+**Download QR** (a print-size PNG). A source tag (`?src=flyer`, `booth`) records
+which code a sign-up came from; never personal data. Changing the link keeps
+the old one working, so printed codes don't go stale.
+
+**Payment:** the registration is saved first. Our server then starts a Stripe
+Checkout at the event's price (no Price ID to configure), with the
+registration's `ER-XXXX-XXXX` id as `client_reference_id`. Stripe gets ids and
+the email for the receipt, no player name. The existing
+`checkout.session.completed` webhook (§3.18) marks it paid. It accepts only a
+session we started for that registration and ignores redeliveries. No new
+Stripe setting is needed. A day's limit counts paid registrations (two parents
+can overshoot it by one at the same moment). "Either day" stays open while any
+day has room.
+
+**The desk** (Check-in tab; booth logins at `/staff/events/{id}`):
+- **The list:** refreshes every 5 seconds, with search, filters (not checked
+  in, checked in, unpaid), a day filter, and counts.
+- **Check in:** one tap, after payment; tap again to undo. A tap made while
+  the connection is down is saved on the device and sent when it returns (the
+  banner says so).
+- **+ Walk-up:** the same form, then either **Pay by QR on their phone** (the
+  row turns Paid by itself) or cash, Venmo, other or comped at the booth, with
+  a note.
+- **Unpaid rows** (a parent left checkout) get **Pay by QR** or **Paid at
+  booth**. A registration whose checkout never started (Stripe down) isn't
+  listed.
+- **Paid twice:** a registration paid at the booth that Stripe then also
+  confirms is logged `event_registration_paid_twice` and alerted. Refund one
+  in Stripe.
+- **Export:** **Export CSV**, and **Print roster** for a paper backup with
+  tick boxes.
+
+Any internal role can look at the desk. Acting needs admin, fulfillment or a
+booth login.
+
+**Booth logins:** Setup → Booth logins → an email. A new email gets an invite
+link to set a password (a staff account, as for coaches). The login sees only
+that event's check-in. Remove the access after the event.
+
+Not built yet: emails from us (Stripe's receipt is the confirmation), refunds
+(in Stripe), and creating a Pro Day job from the checked-in players.
+
 ---
 
 ## 4. Backups and restore

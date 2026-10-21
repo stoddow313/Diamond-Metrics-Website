@@ -99,7 +99,7 @@ export default function TournamentDashboardPage() {
   }
   if (!data) return shell(<p className="mt-16 text-center" style={{ color: text.secondary }}>Loading tournament…</p>);
 
-  const { tournament, coverage, counts, divisions, entries, games, standings, leaderboards, top_performers, players_with_data, calc } = data;
+  const { tournament, coverage, counts, divisions, entries, games, standings, leaderboards, top_performers, players_with_data, calc, signups = [] } = data;
   const board = leaderboards?.[boardTab];
 
   const sortStandings = rows => {
@@ -157,6 +157,16 @@ export default function TournamentDashboardPage() {
           </CoverageNote>
           <CalcStamp calc={calc} />
         </div>
+        {/* Listed sign-ups linked to this tournament (Command → Events), e.g. its Pro Day. */}
+        {signups.length > 0 && (
+          <div className="mt-3 flex flex-wrap gap-2" data-testid="tournament-signups">
+            {signups.map(s => (
+              <Link key={s.slug} to={`/events/${s.slug}`} className="px-3 py-1.5 rounded-lg text-sm font-bold" style={{ backgroundColor: text.accent, color: '#06122b' }}>
+                {s.name} — register →
+              </Link>
+            ))}
+          </div>
+        )}
       </div>
 
       {/* top performers — Pro-Day-styled cards */}

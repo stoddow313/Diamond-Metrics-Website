@@ -271,6 +271,7 @@ intake; a consent checkbox; an order detail page with its history.
 | 2026-10-01 | New internal role `fulfillment` for Will; admins create internal logins on Command → Team; default owner of new submissions is an admin setting | Confirmed by owner |
 | 2026-10-01 | Uploaded files stay on the submission until hand-off, then become Command feeds on the same stored object; deleted or unfinished feeds are never reused | Decided |
 | 2026-10-01 | Footage terms ship as versioned draft wording (`2026-10-draft-1`, `pending_legal`); every acceptance is identifiable once legal approves the final text | **Pending legal** |
+| 2026-10-21 | Event sign-ups (Pro Days, showcases) run on our own page with a Stripe Checkout per registration (`ER-` id as `client_reference_id`, amount from the event, `price_data`), not a Google Form + Payment Link: payment never needs matching to a form row; check-in is a live Command list; booth helpers are staff accounts granted one event | Decided (owner + Will, Gobbler Pro Day) |
 | 2026-08-20 | Analysts/reviewers are roles on the internal `admins` table; one person may review+publish in V1 | Confirmed by owner |
 | 2026-08-20 | `steal_time` added as a new public metric key (profiles Running tab); radar pitch velocity publishes to existing `max_velo`/`avg_velo` | Confirmed by owner |
 | 2026-08-20 | Phase 1 publishes numbers only; evidence clips stay internal/role-gated | Confirmed by owner |

@@ -30,6 +30,9 @@ import { mountCommandOpsRoutes } from './commandOpsRoutes.js';
 import { mountScorebookRoutes } from './scorebookRoutes.js';
 import { mountGamePairingRoutes } from './gamePairingRoutes.js';
 import { mountTournamentLinkRoutes } from './tournamentLinkRoutes.js';
+import { upsertStaffInvite as upsertInvite, accessList } from './staffAccess.js';
+import { mountEventRoutes } from './eventRoutes.js';
+import { parseDays } from './eventLogic.js';
 import { mountLiveRoutes } from './liveRoutes.js';
 import { mountTournamentCheckoutRoutes } from './tournamentCheckoutRoutes.js';
 import { mountStripeWebhookRoutes } from './stripeWebhookRoutes.js';
@@ -905,6 +908,7 @@ app.put('/api/roster/:id', requireAdmin, (req, res) => {
 // Admin CRUD plus the correction tools (edit, move, merge, withdraw,
 // archive, delete with a dependency summary, restore): tournamentAdminRoutes.js.
 mountTournamentAdminRoutes(app, { db, requireAdmin });
+mountEventRoutes(app, { db, principals });
 
 // ── Server-side imports (requirements §8) ────────────────────────────────
 // Dry-run preview → duplicate resolution → transactional apply + audit.
@@ -961,29 +965,8 @@ app.post('/api/admin/metrics/zero-cleanup', requireAdmin, (req, res) => {
 
 // ── Staff access: admin assignment + invite, claim, scoped reads ─────────
 
-function upsertStaffInvite(email) {
-  // Existing account → no invite needed, assignment alone grants access.
-  if (db.prepare('SELECT 1 FROM staff_users WHERE email = ?').get(email)) return null;
-  const existing = db.prepare(
-    `SELECT token FROM staff_invites WHERE email = ? AND claimed_at IS NULL AND expires_at > datetime('now')`
-  ).get(email);
-  if (existing) return existing.token;
-  const token = randomBytes(16).toString('hex');
-  db.prepare(`INSERT INTO staff_invites (token, email, expires_at) VALUES (?, ?, datetime('now', '+30 days'))`).run(token, email);
-  return token;
-}
-
-function accessListFor(kind, id) {
-  const table = kind === 'team' ? 'team_users' : 'tournament_users';
-  const col = kind === 'team' ? 'team_id' : 'tournament_id';
-  return db.prepare(
-    `SELECT au.*, su.name AS claimed_name,
-            CASE WHEN su.id IS NULL THEN 0 ELSE 1 END AS claimed,
-            (SELECT token FROM staff_invites si WHERE si.email = au.email AND si.claimed_at IS NULL AND si.expires_at > datetime('now')) AS invite_token
-     FROM ${table} au LEFT JOIN staff_users su ON su.email = au.email
-     WHERE au.${col} = ? ORDER BY au.email`
-  ).all(id);
-}
+const upsertStaffInvite = email => upsertInvite(db, email);
+const accessListFor = (kind, id) => (kind === 'team' ? accessList(db, 'team_users', 'team_id', id) : accessList(db, 'tournament_users', 'tournament_id', id));
 
 for (const kind of ['team', 'tournament']) {
   const table = kind === 'team' ? 'team_users' : 'tournament_users';
@@ -1022,11 +1005,12 @@ app.get('/api/staff-invites/:token', (req, res) => {
   if (!invite) return res.status(404).json({ error: 'Invite not found' });
   const teams = db.prepare('SELECT t.name FROM team_users tu JOIN teams t ON t.id = tu.team_id WHERE tu.email = ?').all(invite.email).map(r => r.name);
   const tournaments = db.prepare('SELECT tr.name FROM tournament_users tu JOIN tournaments tr ON tr.id = tu.tournament_id WHERE tu.email = ?').all(invite.email).map(r => r.name);
+  const events = db.prepare('SELECT e.name FROM event_users eu JOIN signup_events e ON e.id = eu.event_id WHERE eu.email = ?').all(invite.email).map(r => r.name);
   res.json({
     email: invite.email,
     claimed: !!invite.claimed_at,
     expired: db.prepare(`SELECT 1 FROM staff_invites WHERE token = ? AND expires_at <= datetime('now')`).get(req.params.token) != null,
-    teams, tournaments,
+    teams, tournaments, events,
   });
 });
 
@@ -1063,7 +1047,13 @@ app.get('/api/staff/overview', requireStaff, (req, res) => {
      FROM tournament_users tu JOIN tournaments tr ON tr.id = tu.tournament_id
      WHERE tu.email = ? ORDER BY tr.start_date DESC`
   ).all(req.staff.email);
-  res.json({ staff: { email: req.staff.email, name: req.staff.name }, teams, tournaments });
+  // Booth logins: the events this account checks players in for.
+  const events = db.prepare(
+    `SELECT e.id, e.name, e.slug, e.days, e.location, e.status, eu.role
+     FROM event_users eu JOIN signup_events e ON e.id = eu.event_id
+     WHERE eu.email = ? AND e.status != 'archived' ORDER BY e.created_at DESC`
+  ).all(req.staff.email).map(e => ({ ...e, days: parseDays(e.days) }));
+  res.json({ staff: { email: req.staff.email, name: req.staff.name }, teams, tournaments, events });
 });
 
 app.get('/api/staff/teams/:id', requireStaff, (req, res) => {
@@ -1418,6 +1408,7 @@ app.get('/api/view/tournaments/:slug', (req, res) => {
     players_with_data: playerAggs.length,
     calc: calcStamp(mins),
     tournament: publicTournament,
+    signups: db.prepare("SELECT name, slug, event_type FROM signup_events WHERE tournament_id = ? AND listed = 1 AND status = 'open' ORDER BY created_at").all(tournament.id),
     // §5: every tournament view states how much of the event is analyzed.
     coverage: { games_total: games.length, games_final: finals },
     counts: { divisions: divisions.length, teams: entries.length, players: playerCount },

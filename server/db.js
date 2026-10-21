@@ -1300,6 +1300,114 @@ addColumnIfMissing('tournament_orders', 'delivered_at', 'delivered_at TEXT');
 addColumnIfMissing('tournament_orders', 'delivered_by', 'delivered_by INTEGER REFERENCES admins(id)');
 addColumnIfMissing('tournament_order_events', 'actor_id', 'actor_id INTEGER REFERENCES admins(id)'); // staff actions only
 
+// ═══ Event registration (server/eventLogic.js, docs/COMMAND_OPS.md §3.23) ═══
+// One public sign-up page per event (a Pro Day, showcase or camp), paid by a
+// Stripe Checkout our server starts for each registration, and a live
+// check-in list in Command. Set up in Command → Events: nothing in code.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS signup_events (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    slug            TEXT NOT NULL UNIQUE,                    -- /events/{slug}; old slugs live on in signup_event_aliases
+    name            TEXT NOT NULL,
+    event_type      TEXT NOT NULL DEFAULT 'pro_day',         -- pro_day | showcase | camp | clinic | other
+    location        TEXT NOT NULL DEFAULT '',
+    description     TEXT NOT NULL DEFAULT '',
+    what_to_bring   TEXT NOT NULL DEFAULT '',
+    days            TEXT NOT NULL DEFAULT '[]',              -- [{ date: 'YYYY-MM-DD', label?, capacity? }]
+    allow_either    INTEGER NOT NULL DEFAULT 1,              -- offer "Either day" when there are two or more
+    price_cents     INTEGER NOT NULL,
+    status          TEXT NOT NULL DEFAULT 'draft',           -- draft | open | closed | archived
+    listed          INTEGER NOT NULL DEFAULT 0,              -- on /events and its tournament's page
+    opens_on        TEXT,                                    -- registration window (dates, inclusive); NULL: no limit
+    closes_on       TEXT,
+    tournament_id   INTEGER REFERENCES tournaments(id),
+    consent_text    TEXT NOT NULL,
+    consent_version TEXT NOT NULL,                           -- a hash of consent_text: what each registration accepted
+    created_by      INTEGER REFERENCES admins(id),
+    created_at      TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at      TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+  CREATE TABLE IF NOT EXISTS signup_event_aliases (
+    slug       TEXT PRIMARY KEY,
+    event_id   INTEGER NOT NULL REFERENCES signup_events(id) ON DELETE CASCADE,
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+
+  CREATE TABLE IF NOT EXISTS event_registrations (
+    id                       INTEGER PRIMARY KEY AUTOINCREMENT,
+    registration_id          TEXT NOT NULL UNIQUE,           -- ER-XXXX-XXXX, random; Stripe's client_reference_id
+    event_id                 INTEGER NOT NULL REFERENCES signup_events(id),
+    status                   TEXT NOT NULL DEFAULT 'pending', -- pending | paid
+    guardian_name            TEXT NOT NULL,
+    email                    TEXT NOT NULL,
+    phone                    TEXT NOT NULL DEFAULT '',
+    player_name              TEXT NOT NULL,
+    player_age               INTEGER,
+    player_team              TEXT NOT NULL DEFAULT '',
+    preferred_day            TEXT NOT NULL DEFAULT '',       -- YYYY-MM-DD or 'either'
+    consent_version          TEXT NOT NULL DEFAULT '',
+    consent_at               TEXT,
+    source                   TEXT NOT NULL DEFAULT '',       -- ?src= tag: qr, flyer, booth… (never personal data)
+    walk_up                  INTEGER NOT NULL DEFAULT 0,
+    created_by_kind          TEXT NOT NULL DEFAULT 'parent', -- parent | internal | staff
+    created_by_id            INTEGER,
+    payment_method           TEXT,                           -- stripe | cash | venmo | other | comp
+    amount_total             INTEGER,                        -- cents
+    currency                 TEXT,
+    stripe_session_id        TEXT,                           -- the session that paid
+    stripe_payment_intent_id TEXT,
+    paid_event_id            TEXT,
+    paid_at                  TEXT,
+    paid_note                TEXT NOT NULL DEFAULT '',
+    paid_by_kind             TEXT,
+    paid_by_id               INTEGER,
+    paid_by_name             TEXT,
+    checked_in_at            TEXT,
+    checked_in_by_kind       TEXT,
+    checked_in_by_id         INTEGER,
+    checked_in_by_name       TEXT,
+    created_at               TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at               TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+  CREATE INDEX IF NOT EXISTS idx_event_registrations_event ON event_registrations(event_id, status);
+
+  -- Every Checkout Session started for a registration (the parent's, a booth
+  -- pay link): Stripe's paid event must name one of them.
+  CREATE TABLE IF NOT EXISTS event_registration_sessions (
+    session_id      TEXT PRIMARY KEY,
+    registration_id INTEGER NOT NULL REFERENCES event_registrations(id),
+    created_at      TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+
+  -- Append-only history; data carries ids only, never names, emails or phones.
+  CREATE TABLE IF NOT EXISTS event_registration_history (
+    id              INTEGER PRIMARY KEY AUTOINCREMENT,
+    registration_id INTEGER NOT NULL REFERENCES event_registrations(id),
+    event_type      TEXT NOT NULL,
+    actor_kind      TEXT NOT NULL,                           -- parent | stripe | internal | staff
+    actor_id        INTEGER,
+    data            TEXT NOT NULL DEFAULT '{}',
+    created_at      TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+  CREATE INDEX IF NOT EXISTS idx_event_registration_history ON event_registration_history(registration_id, id);
+  CREATE TRIGGER IF NOT EXISTS trg_event_registration_history_no_update BEFORE UPDATE ON event_registration_history
+  BEGIN SELECT RAISE(ABORT, 'the registration history is append-only'); END;
+  CREATE TRIGGER IF NOT EXISTS trg_event_registration_history_no_delete BEFORE DELETE ON event_registration_history
+  BEGIN SELECT RAISE(ABORT, 'the registration history is append-only'); END;
+
+  -- Booth logins: a staff account (staff_users, invite-claimed) granted one event.
+  CREATE TABLE IF NOT EXISTS event_users (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    event_id   INTEGER NOT NULL REFERENCES signup_events(id) ON DELETE CASCADE,
+    email      TEXT NOT NULL,
+    role       TEXT NOT NULL DEFAULT 'booth',
+    created_at TEXT NOT NULL DEFAULT (datetime('now')),
+    UNIQUE (event_id, email)
+  );
+`);
+// A Stripe event this server acted on can be a registration's, not only a tournament order's.
+addColumnIfMissing('stripe_events', 'registration_id', 'registration_id INTEGER REFERENCES event_registrations(id)');
+
 // Paired game jobs (server/gamePairing.js): the two teams of one game get a
 // job each — own order, customer and release — but one set of footage and one
 // scorebook. The second team's job (the guest) points at the first (the host):

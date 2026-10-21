@@ -1,0 +1,24 @@
+/* Event registration pages: the Find Your Player look (FindYourPlayerPage.css) plus the parts it lacks. */
+.event-facts { display: grid; gap: 10px; margin: 24px 0 0; padding: 18px 20px; border: 1px solid rgba(125, 211, 252, .22); border-radius: 14px; background: rgba(11, 60, 96, .22); }
+.event-facts div { display: grid; grid-template-columns: 64px 1fr; gap: 12px; }
+.event-facts dt { color: #7dd3fc; font-size: 12px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; padding-top: 2px; }
+.event-facts dd { margin: 0; color: #e5f2fa; line-height: 1.45; }
+
+.event-days { border: 0; margin: 0; padding: 0; min-width: 0; }
+.event-days legend { margin-bottom: 6px; padding: 0; color: #31465c; font-size: 13px; font-weight: 800; }
+.event-day-options { display: flex; flex-wrap: wrap; gap: 8px; }
+.event-day { display: inline-flex !important; flex-direction: row !important; align-items: center; gap: 8px !important; min-height: 44px; padding: 0 14px; border: 1px solid #bccbd7; border-radius: 8px; background: #fff; color: #0e243e !important; font-weight: 700 !important; cursor: pointer; }
+.event-day input { width: auto !important; min-height: 0 !important; margin: 0; accent-color: #0b5990; }
+.event-day.is-selected { border-color: #0284c7; background: rgba(56, 189, 248, .12); }
+.event-day.is-full { cursor: not-allowed; opacity: .55; }
+.event-day small { color: #b42318; font-size: 11px; font-weight: 800; text-transform: uppercase; }
+
+.event-consent { gap: 4px !important; }
+.event-consent-row { display: flex; align-items: flex-start; gap: 10px; padding: 12px 14px; border: 1px solid #d5e0e8; border-radius: 8px; background: #f6f9fb; color: #31465c; font-size: 13px; font-weight: 400 !important; line-height: 1.5; }
+.event-consent-row input { width: 18px !important; min-height: 18px !important; height: 18px; margin-top: 2px; flex: none; accent-color: #0b5990; }
+
+.event-index-list { display: grid; gap: 14px; margin-top: 24px; }
+.event-index-card { display: flex; flex-direction: column; gap: 6px; padding: 20px 22px; border: 1px solid rgba(125, 211, 252, .22); border-radius: 14px; background: rgba(11, 60, 96, .22); color: #e5f2fa; text-decoration: none; }
+.event-index-card strong { color: #fff; font-size: 22px; }
+.event-index-card:hover { border-color: rgba(125, 211, 252, .55); }
+.event-index-price { color: #7dd3fc; font-weight: 800; }

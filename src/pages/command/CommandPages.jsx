@@ -294,6 +294,7 @@ export function CommandLayout() {
             <nav className="hidden md:flex flex-wrap items-center gap-x-3 gap-y-1 text-sm font-bold whitespace-nowrap">
               <Link to="/command/intake" className="hover:underline" style={{ color: '#cfe8ff' }}>Intake</Link>
               <Link to="/command/tournament-orders" className="hover:underline" style={{ color: '#cfe8ff' }}>Tournament orders</Link>
+              <Link to="/command/events" className="hover:underline" style={{ color: '#cfe8ff' }}>Events</Link>
               <Link to="/command" className="hover:underline" style={{ color: '#cfe8ff' }}>Production Queue</Link>
               <Link to="/command/new" className="hover:underline" style={{ color: '#cfe8ff' }}>New Job</Link>
               <Link to="/command/bulk" className="hover:underline" style={{ color: '#cfe8ff' }}>Bulk</Link>

@@ -8,7 +8,9 @@ import express from 'express';
 import { readStripeConfig, stripeWebhooks } from './stripeConfig.js';
 import { PACKAGES } from './tournamentOrderLogic.js';
 import { getOrderByOrderId, getOrder, attachSession, recordStripeEvent, markPaid } from './tournamentOrderStore.js';
-import { captureError, log } from './observability.js';
+import { captureError, log, alertOps } from './observability.js';
+import { isRegistrationId } from './eventLogic.js';
+import { recordRegistrationCheckout } from './eventStore.js';
 
 // checkout.session.completed, in one transaction. The event id is recorded
 // first, so a redelivered event stops there; then the order — found by the id
@@ -40,6 +42,27 @@ export function recordCheckoutCompleted(db, event) {
   })();
 }
 
+function registrationEvent(db, event, res) {
+  let result;
+  try {
+    result = recordRegistrationCheckout(db, event);
+  } catch (err) {
+    captureError(err, { event: 'stripe_webhook_failed', event_id: event.id });
+    return res.status(500).json({ error: 'Could not record this event; Stripe will retry it.' });
+  }
+  const session = event.data.object;
+  const ids = { event_id: event.id, session_id: session.id, registration_id: result.registration?.registration_id };
+  if (result.outcome === 'foreign') log('info', 'stripe_webhook_ignored', { event_id: event.id, session_id: session.id });
+  else if (result.outcome === 'session_mismatch') log('warn', 'stripe_webhook_session_mismatch', ids);
+  else if (result.outcome === 'not_paid') log('warn', 'stripe_webhook_not_paid', { ...ids, payment_status: session.payment_status });
+  else if (result.outcome === 'paid_twice') {
+    // Paid at the booth and then online too: a refund is someone's to make.
+    log('warn', 'event_registration_paid_twice', ids);
+    alertOps('A Pro Day registration was paid twice (booth and card) — refund one in Stripe', ids);
+  } else log('info', `stripe_webhook_registration_${result.outcome}`, ids);
+  return res.json({ received: true });
+}
+
 export function mountStripeWebhookRoutes(app, { db }) {
   app.post('/api/stripe/webhook', express.raw({ type: () => true, limit: '1mb' }), (req, res) => {
     const config = readStripeConfig();
@@ -62,6 +85,10 @@ export function mountStripeWebhookRoutes(app, { db }) {
       return res.status(400).json({ error: 'Invalid Stripe signature.' });
     }
     if (event.type !== 'checkout.session.completed') return res.json({ received: true });
+
+    // An event registration (ER-…, eventRoutes.js) has its own record; every
+    // other checkout is a tournament order, as before.
+    if (isRegistrationId(event.data?.object?.client_reference_id)) return registrationEvent(db, event, res);
 
     let result;
     try {
