@@ -47,6 +47,7 @@ import { SignupRoute, ForgotPasswordPage, ResetPasswordPage, VerifyEmailPage, Ac
 import FindYourPlayerPage from './pages/FindYourPlayerPage';
 import PlayerIntakeCompletePage from './pages/PlayerIntakeCompletePage';
 import PrivacyPage from './pages/PrivacyPage';
+import ProDayPage from './pages/ProDayPage';
 
 function RoleRoute({ role, children }) {
   const { user, loading } = useAuth();
@@ -97,6 +98,7 @@ function AppRoutes() {
       <Route path="/account/verify" element={<VerifyEmailPage />} />
       <Route path="/find-your-player" element={<FindYourPlayerPage />} />
       <Route path="/find-your-player/complete" element={<PlayerIntakeCompletePage />} />
+      <Route path="/pro-day" element={<ProDayPage />} />
       <Route path="/privacy" element={<PrivacyPage />} />
       <Route path="/claim/:token" element={<ClaimPage />} />
       <Route path="/claim-staff/:token" element={<ClaimStaffPage />} />
