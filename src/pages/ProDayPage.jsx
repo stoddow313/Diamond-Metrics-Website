@@ -153,7 +153,7 @@ export default function ProDayPage() {
             <p>Register in advance for Diamond Metrics Pro Day on November 6 or 7.</p>
             <div className="pro-day-prices" aria-label="Pro Day pricing">
               <p>Pro Day pricing</p>
-              <div><span>Team price</span><strong>Coming soon</strong></div>
+              <div><span>Team price</span><strong>$900</strong></div>
               <div><span>Individual price</span><strong>$75</strong></div>
             </div>
             <p className="pro-day-address">
