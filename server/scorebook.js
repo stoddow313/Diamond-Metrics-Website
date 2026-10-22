@@ -12,6 +12,9 @@
 //                     — a linked radar reading is matched to the pitcher of record (our pitchers only) through the
 //                       radar lifecycle, so the velocity publishes once, from one row (PRD §5.1 "when known").
 //   plate_appearance  … time_home_to_first?: true queues a home-to-first timing attempt for the batter at the play's moment
+//   plate_appearance  … spray?: { x, y, side? } — where a ball in play landed (the scorebook's field widget): home plate
+//                       at (0,0), straightaway center up the y axis, 1 = the outfield fence; side = the side the batter hit
+//                       from when the roster can't say (a switch hitter). The zone (pull / middle / oppo) is computed.
 //   runner            … time_steal?: true queues a steal timing attempt for the runner; attempt_id? links an existing one
 //   runner            { runner_player_id?, runner_label?, from: 1|2|3, to: 1|2|3|4, how, out?, fielders?, unearned?, group?, error_player_id?, error_label?, error_position?, note? }
 //
@@ -28,7 +31,7 @@
 //                     Applied at its point in the log and surfaced to reviewers as an info issue; never silent.
 import { commandRoster } from './commandRoster.js';
 import { classifyReading, PITCH_TYPES } from './radarImport.js';
-import { createAttempt } from './measurementLogic.js';
+import { createAttempt, requirementEnabled } from './measurementLogic.js';
 import { pairingOf, pairJobIds, footageJobIds, partnerRoster, jobForPlayer, flipEvents, flipPayload, moveReadingToJob } from './gamePairing.js';
 
 export const SCOREBOOK_VERSION = 'CMD_SCOREBOOK_V1';
@@ -50,7 +53,7 @@ const BALL_PITCHES = new Set(['ball', 'intentional_ball', 'hit_by_pitch']);
 const SWING_PITCHES = new Set(['swinging_strike', 'check_swing_strike', 'foul', 'foul_tip', 'foul_bunt', 'in_play']);
 const WHIFF_PITCHES = new Set(['swinging_strike', 'check_swing_strike']);
 const STRIKEOUTS = new Set(['strikeout', 'strikeout_looking', 'strikeout_reached']);
-const IN_PLAY_RESULTS = new Set(['single', 'double', 'triple', 'home_run', 'groundout', 'flyout', 'lineout', 'popout', 'sacrifice_fly', 'sacrifice_bunt', 'fielders_choice', 'reach_on_error', 'double_play', 'triple_play']);
+export const IN_PLAY_RESULTS = new Set(['single', 'double', 'triple', 'home_run', 'groundout', 'flyout', 'lineout', 'popout', 'sacrifice_fly', 'sacrifice_bunt', 'fielders_choice', 'reach_on_error', 'double_play', 'triple_play']);
 export const RUNNER_HOWS = ['advance', 'stolen_base', 'caught_stealing', 'pickoff', 'wild_pitch', 'passed_ball', 'balk', 'error', 'out', 'scored_on_play', 'defensive_indifference'];
 export const SUB_KINDS = ['pinch_hitter', 'pinch_runner', 'courtesy_runner', 'defensive', 'pitching_change', 're_entry', 'position_change'];
 export const FINAL_REASONS = ['regulation', 'run_rule', 'time_limit', 'forfeit', 'darkness', 'other'];
@@ -144,6 +147,12 @@ export function validatePayload(type, p = {}) {
       if (p.pitch_count != null) need(Number.isInteger(p.pitch_count) && p.pitch_count >= 0, 'pitch_count must be a whole number');
       if (p.time_home_to_first != null) need(typeof p.time_home_to_first === 'boolean', 'time_home_to_first must be true or false');
       if (p.attempt_id != null) need(Number.isInteger(p.attempt_id) && p.attempt_id > 0, 'attempt_id must be a running attempt id');
+      if (p.spray != null) {
+        const sp = p.spray;
+        need(sp && typeof sp === 'object' && Number.isFinite(sp.x) && Number.isFinite(sp.y) && Math.abs(sp.x) <= 2 && sp.y >= -0.5 && sp.y <= 2, 'spray is a landing spot { x, y } on the field');
+        if (sp.side != null) need(['L', 'R'].includes(sp.side), "spray.side is 'L' or 'R'");
+        need(IN_PLAY_RESULTS.has(p.result), 'A landing spot goes with a ball in play');
+      }
       return;
     case 'pitch':
       need(PITCH_RESULTS.includes(p.result), `pitch result must be one of ${PITCH_RESULTS.join(', ')}`);
@@ -203,6 +212,24 @@ function emptyTally() {
   };
 }
 
+// Spray zones from a landing spot: the angle off straightaway center, ±15°
+// for middle, and the pull side is the batter's — left field for a righty.
+export function sprayAngle({ x, y }) { return Math.atan2(x, y) * 180 / Math.PI; }
+export function sprayZone(spot, side) {
+  const a = sprayAngle(spot);
+  if (Math.abs(a) <= 15) return 'middle';
+  return (a < 0) === (side !== 'L') ? 'pull' : 'oppo';
+}
+// The side a batter hit from: the scorer's pick, else the roster's bats; a
+// switch hitter bats opposite the pitcher's arm; unknown counts as a righty.
+export function battingSide(spot, batter, pitcher) {
+  if (spot?.side === 'L' || spot?.side === 'R') return spot.side;
+  const bats = String(batter?.bats || '').toUpperCase();
+  if (bats === 'L' || bats === 'R') return bats;
+  if (bats === 'S' || bats === 'B') return String(pitcher?.throws || '').toUpperCase() === 'L' ? 'R' : 'L';
+  return 'R';
+}
+
 export function ipFromOuts(outs) {
   return Number(`${Math.floor(outs / 3)}.${outs % 3}`);
 }
@@ -210,7 +237,7 @@ export function ipFromOuts(outs) {
 // events: active rows only (status 'active'), ordered by sequence, id. Rows
 // with status 'needs_review' are passed in `disputed` (a Set of ids) so their
 // contributions can be excluded while the game still flows.
-export function replay(events, { ruleset = {}, disputed = new Set() } = {}) {
+export function replay(events, { ruleset = {}, disputed = new Set(), handedness = () => null } = {}) {
   const innings = ruleset.innings || 7;
   const state = {
     inning: 0, half: null, batting: null, outs: 0, balls: 0, strikes: 0,
@@ -267,6 +294,8 @@ export function replay(events, { ruleset = {}, disputed = new Set() } = {}) {
   let pitcherFlagged = false;
   const tallies = new Map();
   const names = new Map();
+  const sprayByKey = new Map();    // batter → { pull, middle, oppo } from landing spots
+  const battedBalls = [];          // every placed landing spot, for the published spray chart
   const erUncertain = new Set();   // pitchers with a run whose earned status awaits scorer judgment
   const chargedPlays = new Set();  // one WP / PB / BK per play, however many runners moved
   const issues = [];
@@ -535,6 +564,7 @@ export function replay(events, { ruleset = {}, disputed = new Set() } = {}) {
         if (expected && refKey(expected) !== refKey(batter) && !p.out_of_order_ok) issue('batting_out_of_order', 'warning', e, `Expected ${expected.label || `slot ${expected.slot}`} to bat, got ${batter.label || batter.player_id}`);
         const pitcher = p.pitcher_player_id || p.pitcher_label ? mkRef(fieldingSide(), p.pitcher_player_id, p.pitcher_label) : state.pitcher[fieldingSide()];
         entry.pitcher = pitcher ? { player_id: pitcher.player_id ?? null, label: pitcher.label || '' } : null;
+        entry.result = p.result;
         if (halfEntry && !halfEntry.defense) halfEntry.defense = defenseOf(fieldingSide());
         const kids = (paChildren.get(e.id) || []).filter(k => !disputed.has(k.id));
         const pitches = kids.filter(k => k.event_type === 'pitch');
@@ -597,6 +627,19 @@ export function replay(events, { ruleset = {}, disputed = new Set() } = {}) {
         if (res === 'intentional_walk') { bt.bs_ibb += 1; pt.bs_ibba += 1; }
         if (res === 'hit_by_pitch') { bt.bs_hbp += 1; pt.bs_hbpa += 1; }
         if (STRIKEOUTS.has(res)) { bt.bs_k += 1; pt.bs_kp += 1; }
+        // Where the ball landed (never inferred from the outcome): its zone by angle and the batter's side.
+        if (p.spray && IN_PLAY_RESULTS.has(res)) {
+          const hand = battingSide(p.spray, handedness(batter), pitcher ? handedness(pitcher) : null);
+          const zone = sprayZone(p.spray, hand);
+          entry.spray = { x: p.spray.x, y: p.spray.y, zone, side: hand };
+          if (!dis) {
+            const k = refKey(batter);
+            const sp = sprayByKey.get(k) || { pull: 0, middle: 0, oppo: 0 };
+            sp[zone] += 1;
+            sprayByKey.set(k, sp);
+            battedBalls.push({ event_id: e.id, team: side, player_id: batter.player_id ?? null, label: batter.label || '', x: p.spray.x, y: p.spray.y, zone, side: hand, result: res, inning: state.inning, half: state.half });
+          }
+        }
         if (res === 'sacrifice_bunt') bt.bs_sh += 1;
         if (res === 'sacrifice_fly') bt.bs_sf += 1;
         if (res === 'fielders_choice') bt.bs_fc += 1;
@@ -771,9 +814,9 @@ export function replay(events, { ruleset = {}, disputed = new Set() } = {}) {
     const { outs_pitched, ...rest } = t;
     rest.bs_tb = rest.bs_1b + 2 * rest.bs_2b + 3 * rest.bs_3b + 4 * rest.bs_hr;
     const stats = { ...rest, bs_ip: ipFromOuts(outs_pitched) };
-    return { key: k, player_id: ref.player_id ?? null, label: ref.label || '', side: ref.side || null, stats, outs_pitched, rates: ratesFor(stats, outs_pitched), er_uncertain: erUncertain.has(k) };
+    return { key: k, player_id: ref.player_id ?? null, label: ref.label || '', side: ref.side || null, stats, outs_pitched, rates: ratesFor(stats, outs_pitched), er_uncertain: erUncertain.has(k), spray: sprayByKey.get(k) || null };
   });
-  return { version: SCOREBOOK_VERSION, state: out, tallies: tallyList, issues, log };
+  return { version: SCOREBOOK_VERSION, state: out, tallies: tallyList, issues, log, batted_balls: battedBalls };
 }
 
 // ── Persistence helpers ────────────────────────────────────────────────────
@@ -810,7 +853,16 @@ export function replayJob(db, jobId) {
     for (const e of events) if (e.event_type === 'pitch' && e.payload?.radar_reading_id) { const r = rows.get(e.payload.radar_reading_id); if (r && r.status !== 'invalid') e.velocity = r.velocity; }
   }
   const disputed = new Set(events.filter(e => e.status === 'needs_review').map(e => e.id));
-  const result = replay(events, { ruleset: rulesetFor(db, host), disputed });
+  // Bats / throws for every rostered player the log names: spray zones follow the batter's side.
+  const playerIds = new Set();
+  for (const e of events) {
+    const p = e.payload || {};
+    for (const id of [p.batter_player_id, p.pitcher_player_id, p.player_in_id, ...(p.slots || []).map(s => s.player_id)]) if (id) playerIds.add(id);
+  }
+  const hands = playerIds.size
+    ? new Map(db.prepare(`SELECT id, bats, throws FROM players WHERE id IN (${[...playerIds].map(() => '?').join(',')})`).all(...playerIds).map(p => [p.id, p]))
+    : new Map();
+  const result = replay(events, { ruleset: rulesetFor(db, host), disputed, handedness: ref => (ref?.player_id ? hands.get(ref.player_id) || null : null) });
   // Decorate tallies with names for our players.
   const ids = result.tallies.filter(t => t.player_id).map(t => t.player_id);
   const names = ids.length ? new Map(db.prepare(`SELECT id, first_name, last_name FROM players WHERE id IN (${ids.map(() => '?').join(',')})`).all(...ids).map(p => [p.id, `${p.first_name} ${p.last_name}`])) : new Map();
@@ -855,11 +907,16 @@ export function liveRecordReport(db, jobId) {
   const rp = replayJob(db, jobId);
   const roster = commandRoster(db, rp.job);
   const rosterById = new Map(roster.map(p => [p.id, p]));
+  const sprayOn = requirementEnabled(db, jobId, 'spray_direction');
   const rows = rp.tallies.filter(t => t.player_id && t.side === 'us').map(t => {
     // Publish what the log supports: non-zero box-score fields (PA always), and
     // never an earned-run figure the scorer has not ruled on yet.
     const stats = Object.fromEntries(Object.entries(t.stats).filter(([k, v]) => (k.startsWith('bs_') && v !== 0 || k === 'bs_pa') && k !== 'bs_ip' && !(k === 'bs_er' && t.er_uncertain)));
     if (t.outs_pitched > 0) stats.bs_outs = t.outs_pitched;   // innings are stored as outs; the display shows thirds
+    // Spray chart (ordered): the game's pull / middle / oppo shares of its charted batted balls.
+    const sp = sprayOn ? t.spray : null;
+    const n = sp ? sp.pull + sp.middle + sp.oppo : 0;
+    if (n > 0) Object.assign(stats, { spray_balls: n, pull_pct: Math.round(100 * sp.pull / n), middle_pct: Math.round(100 * sp.middle / n), oppo_pct: Math.round(100 * sp.oppo / n) });
     return { key: `live:${t.player_id}`, group: 'scorebook', row: null, jersey: rosterById.get(t.player_id)?.jersey || '', name: t.name || t.label, stats, player_id: t.player_id, player_name: t.name || t.label, resolved_by: 'scorebook', skipped: false };
   });
   const blocking = rp.issues.filter(i => i.level === 'blocking');

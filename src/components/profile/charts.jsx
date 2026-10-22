@@ -1,6 +1,9 @@
 // Lightweight pure-SVG chart primitives for the public player profile.
 // All charts are deterministic (no Math.random at render) so profiles are stable.
 
+import { FieldSvg, SpotDot, ZoneWedges } from '../FieldDiagram';
+import { ZONES, ZONE_COLOR, ZONE_LABEL, zoneShares } from '../../lib/spray';
+
 const BLUE = '#38bdf8';
 const LIGHT_BLUE = '#60a5fa';
 const GRID = 'rgba(148, 163, 184, 0.18)';
@@ -162,85 +165,33 @@ export function RingGauge({ label, value }) {
   );
 }
 
-// ── Spray chart (mockup: dots on a baseball field) ────────────────────────
-// We capture pull/middle/oppo % — dots are distributed across the three field
-// wedges to match those rates (seeded, so the same profile always renders
-// identically). Pull side depends on batter handedness.
-function mulberry32(seed) {
-  let a = seed >>> 0;
-  return () => {
-    a |= 0; a = (a + 0x6D2B79F5) | 0;
-    let t = Math.imul(a ^ (a >>> 15), 1 | a);
-    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
-
-export function SprayChart({ pullPct, middlePct, oppoPct, bats, seed = 7 }) {
-  const w = 260, h = 200;
-  const home = { x: w / 2, y: h - 18 };
-  const total = (pullPct || 0) + (middlePct || 0) + (oppoPct || 0);
-  if (!total) return null;
-
-  const nDots = 36;
-  const rand = mulberry32(seed);
-  // Field spans -45°..+45° from straightaway center. Left field = negative.
-  // Righty pulls to left field; lefty pulls to right field.
-  const pullLeft = (bats || 'R').toUpperCase() !== 'L';
-  const wedges = [
-    { share: (pullLeft ? pullPct : oppoPct) / total, from: -43, to: -16, color: '#ef4444' },   // left field
-    { share: middlePct / total,                     from: -15, to: 15,  color: '#3b82f6' },    // center
-    { share: (pullLeft ? oppoPct : pullPct) / total, from: 16,  to: 43,  color: '#f59e0b' },   // right field
-  ];
-
-  const dots = [];
-  for (const wd of wedges) {
-    const count = Math.round(wd.share * nDots);
-    for (let i = 0; i < count; i++) {
-      const ang = (wd.from + rand() * (wd.to - wd.from)) * (Math.PI / 180);
-      const dist = 55 + rand() * 95;
-      dots.push({
-        x: home.x + Math.sin(ang) * dist,
-        y: home.y - Math.cos(ang) * dist * 0.92,
-        color: wd.color,
-      });
-    }
-  }
-
-  const foulL = { x: home.x + Math.sin(-45 * Math.PI / 180) * 165, y: home.y - Math.cos(-45 * Math.PI / 180) * 152 };
-  const foulR = { x: home.x + Math.sin(45 * Math.PI / 180) * 165, y: home.y - Math.cos(45 * Math.PI / 180) * 152 };
-  const base = 34;
-
-  const legend = [
-    { label: 'PULL', color: pullLeft ? '#ef4444' : '#f59e0b', pct: pullPct },
-    { label: 'MIDDLE', color: '#3b82f6', pct: middlePct },
-    { label: 'OPPO', color: pullLeft ? '#f59e0b' : '#ef4444', pct: oppoPct },
-  ];
-
+// ── Spray chart: where each batted ball landed ───────────────────────────
+// Dots are the landing spots placed in the scorebook, coloured by zone (pull /
+// middle / oppo for the side the batter hit from). Shares recorded before
+// landing spots existed shade the three zones instead — never invented dots.
+export function SprayChart({ balls = [], pullPct, middlePct, oppoPct, count, bats }) {
+  const placed = balls.length > 0;
+  const shares = placed ? zoneShares(balls) : null;
+  const pct = placed ? shares.pct : { pull: pullPct || 0, middle: middlePct || 0, oppo: oppoPct || 0 };
+  const n = placed ? shares.n : count;
+  if (!placed && !(pct.pull + pct.middle + pct.oppo)) return null;
+  // A switch hitter's dots each carry their own side; shading follows the roster's.
+  const side = String(bats || 'R').toUpperCase() === 'L' ? 'L' : 'R';
   return (
     <div className="w-full">
-      <svg viewBox={`0 0 ${w} ${h}`} className="w-full mx-auto block" style={{ maxHeight: 150 }}>
-        {/* outfield grass + arc */}
-        <path d={`M ${home.x} ${home.y} L ${foulL.x} ${foulL.y} A 170 158 0 0 1 ${foulR.x} ${foulR.y} Z`}
-          fill="#f0fdf4" stroke="#bbf7d0" strokeWidth="1.5" />
-        {/* infield diamond */}
-        <path d={`M ${home.x} ${home.y} L ${home.x - base} ${home.y - base} L ${home.x} ${home.y - base * 2} L ${home.x + base} ${home.y - base} Z`}
-          fill="#fef3c7" stroke="#fcd34d" strokeWidth="1.5" />
-        {/* bases */}
-        {[[home.x, home.y], [home.x - base, home.y - base], [home.x, home.y - base * 2], [home.x + base, home.y - base]].map(([bx, by], i) => (
-          <rect key={i} x={bx - 3} y={by - 3} width="6" height="6" fill="#fff" stroke="#d4d4d8" transform={`rotate(45 ${bx} ${by})`} />
-        ))}
-        {dots.map((d, i) => (
-          <circle key={i} cx={d.x} cy={d.y} r="3" fill={d.color} opacity="0.85" />
-        ))}
-      </svg>
-      <div className="flex justify-center gap-4 mt-1">
-        {legend.map(l => (
-          <span key={l.label} className="flex items-center gap-1.5 text-[10px] font-bold" style={{ color: '#94a3b8' }}>
-            <span className="w-2 h-2 rounded-full" style={{ backgroundColor: l.color }} />
-            {l.label} {Math.round(l.pct)}%
+      <FieldSvg style={{ maxHeight: 170 }} className="mx-auto" guides={placed}>
+        {placed
+          ? balls.map((b, i) => <SpotDot key={i} spot={b} zone={b.zone} r={3.4} opacity={0.9} />)
+          : <ZoneWedges pct={pct} side={side} />}
+      </FieldSvg>
+      <div className="flex justify-center flex-wrap gap-x-4 gap-y-1 mt-2">
+        {ZONES.map(z => (
+          <span key={z} className="flex items-center gap-1.5 text-[10px] font-bold uppercase" style={{ color: MUTED }}>
+            <span className="w-2 h-2 rounded-full" style={{ backgroundColor: ZONE_COLOR[z] }} />
+            {ZONE_LABEL[z]} {Math.round(pct[z])}%
           </span>
         ))}
+        {n > 0 && <span className="text-[10px] font-bold uppercase" style={{ color: '#64748b' }} title="Batted balls charted">n = {n}</span>}
       </div>
     </div>
   );

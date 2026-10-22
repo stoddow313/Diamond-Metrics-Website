@@ -62,19 +62,19 @@ test('only Rookie is orderable in V1; the others carry a reason and an env overr
 test('a custom order with no metrics is refused by the requirement builder itself', () => {
   const registry = db.prepare('SELECT * FROM cmd_metric_registry').all();
   assert.throws(() => buildRequirements({ packageKey: 'custom', addonCodes: [], registry }), /no metric requirements/);
-  assert.equal(buildRequirements({ packageKey: 'rookie', registry }).length, 4);
+  assert.equal(buildRequirements({ packageKey: 'rookie', registry }).length, 6);
 });
 
 test('the last active metric requirement on a job cannot be disabled', () => {
   const { order } = makeJob();
   const reqs = db.prepare('SELECT * FROM cmd_metric_requirements WHERE order_id = ? ORDER BY id').all(order);
-  assert.equal(reqs.length, 4);
-  // Disabling three of four is fine.
-  for (const r of reqs.slice(0, 3)) {
+  assert.equal(reqs.length, 6);
+  // Disabling all but one is fine.
+  for (const r of reqs.slice(0, -1)) {
     assertRequirementToggle(db, r, 0);
     db.prepare('UPDATE cmd_metric_requirements SET enabled = 0 WHERE id = ?').run(r.id);
   }
-  assert.throws(() => assertRequirementToggle(db, reqs[3], 0), /at least one active metric requirement/);
+  assert.throws(() => assertRequirementToggle(db, reqs.at(-1), 0), /at least one active metric requirement/);
   assertRequirementToggle(db, reqs[0], 1);   // re-enabling is always allowed
 });
 

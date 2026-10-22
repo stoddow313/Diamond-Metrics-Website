@@ -20,7 +20,7 @@ import { pageBg, headerBar, cardStyle, text, rowBorder, headBorder } from '../co
 const METRIC_ICONS = {
   max_exit_velo: Rocket, avg_exit_velo: Zap, hard_hit_pct: Flame, contact_pct: Target,
   launch_angle: TrendingUp, sprint_speed: Gauge, dash_60: Timer, sprint_30: Timer,
-  home_to_first: Timer, ninety_ft_speed: Gauge, arm_strength: Dumbbell, max_velo: Rocket, avg_velo: Zap,
+  home_to_first: Timer, ninety_ft_speed: Gauge, time_to_home: Timer, steal_time: Timer, arm_strength: Dumbbell, max_velo: Rocket, avg_velo: Zap,
   strike_pct: Target, whiff_pct: Wind, command_score: Crosshair, pop_time: Timer,
   throw_accuracy: Target, blocking_score: Shield, reaction_time: Zap, range_score: Activity,
 };
@@ -334,22 +334,41 @@ function CategoryTab({ categoryKey, data, extras = null }) {
   );
 }
 
+// The spray chart for every game pooled, or one game at a time.
+function SprayPanel({ data }) {
+  const { metrics, player, games } = data;
+  const balls = data.batted_balls || [];
+  const [gameId, setGameId] = useState('all');
+  const series = k => metrics[k]?.series || [];
+  const charted = games.filter(g => balls.some(b => b.game_id === g.id) || ['pull_pct', 'middle_pct', 'oppo_pct'].some(k => series(k).some(s => s.gameId === g.id)));
+  const one = gameId === 'all' ? null : Number(gameId);
+  const value = k => (one == null ? metrics[k]?.headline : series(k).find(s => s.gameId === one)?.value);
+  return (
+    <div className="w-full flex flex-col items-center gap-2">
+      {charted.length > 1 && (
+        <select value={gameId} onChange={e => setGameId(e.target.value)} aria-label="Spray chart games" data-testid="spray-games"
+          className="self-end rounded-md border px-2 py-1 text-[11px] font-bold cursor-pointer" style={{ backgroundColor: 'rgba(15, 23, 42, 0.9)', borderColor: '#334155', color: text.body }}>
+          <option value="all">All games</option>
+          {[...charted].reverse().map(g => <option key={g.id} value={g.id}>{niceDate(g.game_date)} · {g.opponent || typeLabel(g.game_type)}</option>)}
+        </select>
+      )}
+      <SprayChart balls={one == null ? balls : balls.filter(b => b.game_id === one)}
+        pullPct={value('pull_pct')} middlePct={value('middle_pct')} oppoPct={value('oppo_pct')} count={value('spray_balls')} bats={player.bats} />
+    </div>
+  );
+}
+
 function HittingExtras({ data }) {
-  const { metrics, player } = data;
+  const { metrics } = data;
   const evBuckets = evDistributionBuckets(metrics);
   const la = launchAngleSegments(metrics);
-  const hasSpray = metrics.pull_pct || metrics.middle_pct || metrics.oppo_pct;
+  const hasSpray = metrics.pull_pct || metrics.middle_pct || metrics.oppo_pct || data.batted_balls?.length;
   if (!evBuckets && !la && !hasSpray) return null;
   return (
     <div className="grid sm:grid-cols-2 xl:grid-cols-3 gap-4">
       {hasSpray && (
         <ChartCard title="Spray Chart">
-          <SprayChart
-            pullPct={metrics.pull_pct?.headline || 0}
-            middlePct={metrics.middle_pct?.headline || 0}
-            oppoPct={metrics.oppo_pct?.headline || 0}
-            bats={player.bats}
-          />
+          <SprayPanel data={data} />
         </ChartCard>
       )}
       {evBuckets && (
@@ -383,7 +402,7 @@ function OverviewTab({ data, heroMetrics, onViewAll }) {
   const { metrics, player, games } = data;
   const evBuckets = evDistributionBuckets(metrics);
   const la = launchAngleSegments(metrics);
-  const hasSpray = metrics.pull_pct || metrics.middle_pct || metrics.oppo_pct;
+  const hasSpray = metrics.pull_pct || metrics.middle_pct || metrics.oppo_pct || data.batted_balls?.length;
   const evTrend = metrics.avg_exit_velo?.series?.length > 1 ? metrics.avg_exit_velo
     : metrics.max_exit_velo?.series?.length > 1 ? metrics.max_exit_velo
     : metrics.avg_velo?.series?.length > 1 ? metrics.avg_velo
@@ -403,12 +422,7 @@ function OverviewTab({ data, heroMetrics, onViewAll }) {
   if (hasSpray) {
     analyticsCards.push({
       key: 'spray', title: 'Spray Chart',
-      node: <SprayChart
-        pullPct={metrics.pull_pct?.headline || 0}
-        middlePct={metrics.middle_pct?.headline || 0}
-        oppoPct={metrics.oppo_pct?.headline || 0}
-        bats={player.bats}
-      />,
+      node: <SprayPanel data={data} />,
     });
   }
   if (evBuckets) analyticsCards.push({ key: 'dist', title: 'Exit Velocity Distribution', node: <Histogram buckets={evBuckets} /> });

@@ -1,5 +1,5 @@
 // Command M4 routes: running-attempt queues + the measurement drawer.
-import { createAttempt, saveMeasurement, markUnavailable, reassignAttempt, UNAVAILABLE_REASONS, ATTEMPT_TYPES } from './measurementLogic.js';
+import { createAttempt, saveMeasurement, markUnavailable, reassignAttempt, UNAVAILABLE_REASONS, ATTEMPT_TYPES, METRIC_BY_ATTEMPT, requirementEnabled } from './measurementLogic.js';
 import { footageJobIds } from './gamePairing.js';
 import { timingRollup } from './metricRelease.js';
 import { commandRoster } from './commandRoster.js';
@@ -67,7 +67,7 @@ export function mountCommandMeasureRoutes(app, { db, requireInternal }) {
 
     // Live per-player timing rollups from current draft/unavailable results.
     const summaries = [];
-    for (const code of ['home_to_first', 'steal_time']) {
+    for (const code of ['home_to_first', 'steal_time', 'time_to_home']) {
       // Withdrawn (invalidated) and superseded results never enter the preview.
       const rows = db.prepare(
         `SELECT player_id, value, status FROM cmd_metric_results
@@ -85,6 +85,8 @@ export function mountCommandMeasureRoutes(app, { db, requireInternal }) {
       }
     }
 
-    res.json({ attempts, roster, feeds, summaries, unavailable_reasons: UNAVAILABLE_REASONS, attempt_types: ATTEMPT_TYPES });
+    // Only the attempt types this order includes (Rookie: all three).
+    const attemptTypes = ATTEMPT_TYPES.filter(t => requirementEnabled(db, job.id, METRIC_BY_ATTEMPT[t]));
+    res.json({ attempts, roster, feeds, summaries, unavailable_reasons: UNAVAILABLE_REASONS, attempt_types: attemptTypes });
   });
 }

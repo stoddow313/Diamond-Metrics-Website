@@ -39,7 +39,7 @@ export function commandRoster(db, jobOrId) {
   if (byPlayer.size === 0) return [];
   const ids = [...byPlayer.keys()];
   const players = db.prepare(
-    `SELECT id, first_name, last_name, primary_position FROM players WHERE id IN (${ids.map(() => '?').join(',')})`
+    `SELECT id, first_name, last_name, primary_position, bats, throws FROM players WHERE id IN (${ids.map(() => '?').join(',')})`
   ).all(...ids);
   return players
     .map(p => {

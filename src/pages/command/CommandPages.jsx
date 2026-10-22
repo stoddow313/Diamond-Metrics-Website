@@ -690,6 +690,16 @@ export function JobDetailPage() {
     }
   }
 
+  async function addRequirement(code) {
+    setError('');
+    try {
+      const { job: updated } = await api.commandAddRequirement(jobId, code);
+      setJob(updated);
+    } catch (err) {
+      setError(err.message);
+    }
+  }
+
   async function toggleRequirement(r) {
     try {
       await api.commandToggleRequirement(r.id, !r.enabled);
@@ -792,6 +802,14 @@ export function JobDetailPage() {
               </div>
             </div>
           ))}
+          {(job.addable_metrics || []).length > 0 && (
+            <div className="pt-3 border-t flex flex-wrap items-center gap-2" style={{ borderColor: '#1e3a5f' }} data-testid="addable-metrics">
+              <span className="text-[11px] font-bold uppercase tracking-widest" style={{ color: '#64748b' }} title="The package includes these now; this job was made before it did">New in {job.order_label}</span>
+              {job.addable_metrics.map(m => (
+                <GhostButton key={m.metric_code} onClick={() => addRequirement(m.metric_code)} title={m.capture_requirements} data-testid={`add-metric-${m.metric_code}`}>+ {m.label}</GhostButton>
+              ))}
+            </div>
+          )}
         </section>
         </div>
 

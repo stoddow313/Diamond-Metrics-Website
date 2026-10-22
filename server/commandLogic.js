@@ -17,8 +17,9 @@ export const REGISTRY_SEED = [
   { metric_code: 'pitch_velocity_video', label: 'Pitch Velocity — Video Estimate', category: 'pitching', availability_tier: 'B', recipe_version: 'CMD_V1', unit: 'mph', decimals: 1, method: 'video_estimated', publishes_to: [], capture_requirements: 'Calibrated side view, 120 fps preferred', active: 0 },
   { metric_code: 'exit_velocity_video', label: 'Exit Velocity — Video Estimate', category: 'hitting', availability_tier: 'B', recipe_version: 'CMD_V1', unit: 'mph', decimals: 1, method: 'video_estimated', publishes_to: [], capture_requirements: 'Calibrated side view, 120 fps preferred', active: 0 },
   { metric_code: 'launch_angle_video', label: 'Launch Angle — Video Estimate', category: 'hitting', availability_tier: 'B', recipe_version: 'CMD_V1', unit: '°', decimals: 1, method: 'video_estimated', publishes_to: ['launch_angle'], capture_requirements: 'Fixed calibrated side view; 120 fps; contact + 4-5 flight frames', active: 0 },
-  { metric_code: 'spray_direction', label: 'Spray Direction', category: 'hitting', availability_tier: 'A', recipe_version: 'CMD_V1', unit: '%', decimals: 0, method: 'manual', publishes_to: ['pull_pct', 'middle_pct', 'oppo_pct'], capture_requirements: 'Behind-home/elevated view sufficient to classify fair BIP', active: 0 },
-  { metric_code: 'time_to_home', label: 'Pitcher Time to Home', category: 'pitching', availability_tier: 'B', recipe_version: 'CMD_V1', unit: 's', decimals: 2, method: 'frame_timed', publishes_to: [], capture_requirements: 'Stretch delivery + catcher receive visible; 60 fps minimum', active: 0 },
+  // Spray chart: a landing spot placed in the scorebook for each batted ball; it publishes with the game record (pull/middle/oppo %, the count, the dots), so no metric-release keys.
+  { metric_code: 'spray_direction', label: 'Spray Chart', category: 'rookie', availability_tier: 'A', recipe_version: 'CMD_V1', unit: '%', decimals: 0, method: 'manual', publishes_to: [], capture_requirements: 'Landing spot placed in the scorebook for each batted ball (hit, out or error)', active: 1 },
+  { metric_code: 'time_to_home', label: 'Pitcher Time to Home', category: 'rookie', availability_tier: 'A', recipe_version: 'CMD_V1', unit: 's', decimals: 2, method: 'frame_timed', publishes_to: ['time_to_home'], capture_requirements: 'Pitcher’s first move and the catcher’s glove visible; 1080p/30 minimum, 60 preferred', active: 1 },
   { metric_code: 'strike_pct', label: 'Strike Percentage', category: 'pitching', availability_tier: 'A', recipe_version: 'CMD_V1', unit: '%', decimals: 1, method: 'scorebook_derived', publishes_to: ['strike_pct'], capture_requirements: 'Complete pitch-by-pitch scorebook', active: 0 },
   { metric_code: 'whiff_pct', label: 'Whiff Percentage', category: 'pitching', availability_tier: 'A', recipe_version: 'CMD_V1', unit: '%', decimals: 1, method: 'scorebook_derived', publishes_to: ['whiff_pct'], capture_requirements: 'Complete pitch-by-pitch scorebook', active: 0 },
   { metric_code: 'command_target', label: 'Command / Target Accuracy', category: 'pitching', availability_tier: 'A', recipe_version: 'CMD_V1', unit: '', decimals: 0, method: 'manual', publishes_to: ['command_score', 'target_accuracy'], capture_requirements: 'Pitch outcome + analyst intended-location judgment', active: 0 },
@@ -35,7 +36,7 @@ export const REGISTRY_SEED = [
 export const PACKAGES = {
   rookie: {
     label: 'Rookie',
-    metric_codes: ['pitch_velocity_radar', 'home_to_first', 'steal_time', 'ninety_ft_speed'],
+    metric_codes: ['pitch_velocity_radar', 'home_to_first', 'steal_time', 'ninety_ft_speed', 'time_to_home', 'spray_direction'],
     orderable: true,
   },
   // Defined for the roadmap, not orderable yet: every add-on and Pro module
@@ -45,7 +46,7 @@ export const PACKAGES = {
   // enable one early on staging).
   rookie_plus: {
     label: 'Rookie + add-ons',
-    metric_codes: ['pitch_velocity_radar', 'home_to_first', 'steal_time', 'ninety_ft_speed'],
+    metric_codes: ['pitch_velocity_radar', 'home_to_first', 'steal_time', 'ninety_ft_speed', 'time_to_home', 'spray_direction'],
     allows_addons: true,
     orderable: false,
     unavailable_reason: 'no add-on modules are implemented yet, so it would be identical to Rookie',
@@ -106,15 +107,24 @@ export function buildRequirements({ packageKey, addonCodes = [], registry }) {
     const row = byCode.get(code);
     if (!row) throw new Error(`Unknown metric code: ${code}`);
     if (!row.active) throw new Error(`Metric not yet available to order: ${code}`);
-    requirements.push({
-      metric_code: code,
-      priority: row.category === 'rookie' ? 10 : 100,
-      capture_requirement: row.capture_requirements,
-      enabled: 1,
-    });
+    requirements.push(requirementFor(row));
   }
   if (requirements.length === 0) throw new Error('Order has no metric requirements');
   return requirements.sort((a, b) => a.priority - b.priority || a.metric_code.localeCompare(b.metric_code));
+}
+
+export function requirementFor(row) {
+  return { metric_code: row.metric_code, priority: row.category === 'rookie' ? 10 : 100, capture_requirement: row.capture_requirements, enabled: 1 };
+}
+
+// Metrics an existing order can still take on: its package's active codes it
+// lacks — a package that grew after the job was made (Rookie, 2026-10).
+export function addableMetrics(packageKey, existingCodes, registry) {
+  const pkg = PACKAGES[packageKey];
+  if (!pkg) return [];
+  const have = new Set(existingCodes);
+  const byCode = new Map(registry.map(r => [r.metric_code, r]));
+  return pkg.metric_codes.filter(c => !have.has(c) && byCode.get(c)?.active).map(c => byCode.get(c));
 }
 
 // ── Status machines (two-release model) ──────────────────────────────────

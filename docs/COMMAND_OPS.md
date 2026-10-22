@@ -1142,6 +1142,38 @@ that event's check-in. Remove the access after the event.
 Not built yet: emails from us (Stripe's receipt is the confirmation), refunds
 (in Stripe), and creating a Pro Day job from the checked-in players.
 
+### 3.24 Pitcher time to home and the spray chart (Rookie)
+
+Both are in the Rookie package from 2026-10-21. A job made before
+that shows **New in Rookie** under Metric requirements: **+ Pitcher Time to
+Home** and **+ Spray Chart** add them to that job's order.
+
+**Time to home** is timed in the Running queue like home-to-first. Pick *time
+to home* and the pitcher, then mark **First move** (the first frame of
+continuous motion toward the plate after the set) and **Catcher receives**. A
+pickoff or step-off is not an attempt. 1080p at 30 fps is measurable (a
+warning); 60 fps is preferred. Release publishes the game's average delivery,
+which the profile's Pitching tab shows with a game log; the overall figure is
+the average of the games.
+
+**Spray chart.** With the spray chart on the order, the scorebook's result
+panel shows a field for every ball in play (hit, out or error) in place of the
+Direction pick. Tap where the ball landed, not where it was fielded. The chip
+reads Pull, Middle or Oppo for the batter's side. **L / R** sets the side when
+the roster can't (a switch hitter, or no bats on file); otherwise leave it.
+The spot is optional while scoring live. Plays without one show **no spot** in
+the play-by-play; **Correct** the play to place or move it, and a released
+record re-publishes at once. Box score → *Our spray chart* shows the dots,
+each batter's shares and how many balls in play are placed.
+
+Release publishes, per player and game, Pull %, Middle %, Opposite Field %
+and Batted Balls Charted, and the dots. The profile's spray chart (Overview
+and Hitting) plots the dots for all games or one game, with the shares and
+n. Spray data from before landing spots shades the three zones instead. In a
+paired game either team's order opens the field, and each job publishes its
+own players. Code: `server/scorebook.js` (`sprayZone`, `battingSide`),
+`server/gameRecord.js`, `src/components/FieldDiagram.jsx`.
+
 ---
 
 ## 4. Backups and restore

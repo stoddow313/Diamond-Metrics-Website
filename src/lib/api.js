@@ -158,6 +158,7 @@ export const api = {
   commandUpdateJob: (id, fields) => request(`/api/command/jobs/${id}`, { method: 'PUT', body: fields }),
   commandJobStatus: (id, kind, to, note = '') => request(`/api/command/jobs/${id}/status`, { method: 'POST', body: { kind, to, note } }),
   commandToggleRequirement: (id, enabled) => request(`/api/command/requirements/${id}`, { method: 'PUT', body: { enabled } }),
+  commandAddRequirement: (jobId, metricCode) => request(`/api/command/jobs/${jobId}/requirements`, { method: 'POST', body: { metric_code: metricCode } }),
   commandAttachGameRecordSource: (jobId, source) => request(`/api/command/jobs/${jobId}/game-record-sources`, { method: 'POST', body: source }),
   commandRegisterFeed: (jobId, meta) => request(`/api/command/jobs/${jobId}/feeds`, { method: 'POST', body: meta }),
   commandPresignPart: (feedId, uploadId, partNumber) => request(`/api/command/feeds/${feedId}/parts/presign`, { method: 'POST', body: { uploadId, partNumber } }),

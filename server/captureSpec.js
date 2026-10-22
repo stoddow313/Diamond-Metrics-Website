@@ -17,6 +17,7 @@ export const CAPTURE_SPECS = {
   // base-touch frames are legible; frame rate decides the timing floor.
   home_to_first: { min_height: 1080, min_fps: 30, preferred_fps: 60, needs_video: true, view: 'Contact and first base both visible' },
   steal_time:    { min_height: 1080, min_fps: 30, preferred_fps: 60, needs_video: true, view: 'Committed start and destination base both visible' },
+  time_to_home:  { min_height: 1080, min_fps: 30, preferred_fps: 60, needs_video: true, view: 'Pitcher’s first move and the catcher’s glove both visible' },
   ninety_ft_speed: { derived_from: 'home_to_first' },
   // Radar velocity comes from the radar device, not the video.
   pitch_velocity_radar: { needs_video: false },
@@ -29,7 +30,6 @@ export const CAPTURE_SPECS = {
   launch_angle_video:    { min_height: 1080, min_fps: 120, needs_video: true, view: 'Side view (1B/3B line): contact plus 4–5 flight frames' },
   pitch_velocity_video:  { min_height: 1080, min_fps: 120, needs_video: true, view: 'Side view with release and plate' },
   of_throw_velocity_video: { min_height: 1080, min_fps: 120, needs_video: true, view: 'Side view of the throw, release to catch' },
-  time_to_home:          { min_height: 1080, min_fps: 60, needs_video: true, view: 'Side view with release and plate' },
   ss_to_first:           { min_height: 1080, min_fps: 60, needs_video: true, view: 'Release and first-base receipt both visible' },
   reaction_time:         { min_height: 1080, min_fps: 60, needs_video: true, view: 'Controlled session: start signal and first movement visible' },
   sprint_30:             { min_height: 1080, min_fps: 60, needs_video: true, view: 'Controlled lane: start and finish markers visible' },

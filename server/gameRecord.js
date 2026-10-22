@@ -12,6 +12,7 @@
 // columns, maps common labels to box-score keys, and reports every column it
 // could not place instead of guessing.
 import { resyncPublishedRollups } from './releaseLogic.js';
+import { requirementEnabled } from './measurementLogic.js';
 import { commandRoster } from './commandRoster.js';
 import { liveRecordReport, setGameRecordReleaseHook, replayJob, refreshLiveSource } from './scorebook.js';
 
@@ -295,6 +296,17 @@ export function releaseGameRecord(db, jobId, actorId = null) {
           written.push({ player_id: p.player_id, metric_key: k, value: v });
         }
         keysByPlayer.set(p.player_id, new Set(Object.keys(p.stats)));
+      }
+      // The spray chart's dots: every landing spot our players' batted balls have
+      // (ordered spray chart, live scorebook only), rewritten on each release.
+      db.prepare('DELETE FROM published_batted_balls WHERE game_id IN (SELECT id FROM games WHERE command_job_id = ?)').run(jobId);
+      if (requirementEnabled(db, jobId, 'spray_direction') && sources.some(src => src.source_kind === 'live_internal')) {
+        const credited = new Set(players.map(p => p.player_id));
+        const insBall = db.prepare('INSERT INTO published_batted_balls (game_id, player_id, event_id, x, y, zone, bats, result) VALUES (?, ?, ?, ?, ?, ?, ?, ?)');
+        for (const b of replayJob(db, jobId).batted_balls) {
+          if (b.team !== 'us' || !credited.has(b.player_id)) continue;
+          insBall.run(gameFor(b.player_id), b.player_id, b.event_id, b.x, b.y, b.zone, b.side, b.result);
+        }
       }
       // Stale scorebook keys from an earlier release leave when the record no longer carries them.
       for (const [playerId, gameId] of gameIds) {

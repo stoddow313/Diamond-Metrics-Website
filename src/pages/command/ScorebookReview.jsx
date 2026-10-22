@@ -7,6 +7,8 @@ import { useState } from 'react';
 import { api } from '../../lib/api';
 import { Field, TextInput, Select, PrimaryButton, GhostButton } from '../../components/admin/ui';
 import { InfoTip } from '../../components/Tooltip';
+import { FieldSpot } from '../../components/FieldDiagram';
+import { rosterSide, ZONE_COLOR, ZONE_LABEL } from '../../lib/spray';
 import { LABELS, POSITIONS, playerChoices, refName, battingIn, halfLabel } from './scorebookVocab';
 
 const baseList = bases => [1, 2, 3].filter(b => bases?.[b]).map(b => `${b}B ${bases[b].label || ''}`.trim());
@@ -65,6 +67,10 @@ export function CorrectionEditor({ data, editing, setEditing, vocab, busy, onSav
   const ev = editing.event;
   const entry = data.log.find(l => l.id === ev.id);
   const set = patch => setEditing(e => ({ ...e, payload: { ...e.payload, ...patch } }));
+  // The landing spot goes with a ball in play; changing the result to one that is not drops it.
+  const sprayOn = ev.event_type === 'plate_appearance' && data.modules?.spray && (vocab.in_play_results || []).includes(editing.payload.result);
+  const hands = id => (id ? [...(data.roster || []), ...(data.partner_roster || [])].find(p => p.id === id) : null);
+  const side = rosterSide(hands(editing.payload.batter_player_id || entry?.batter?.player_id)?.bats, hands(entry?.pitcher?.player_id)?.throws);
   return (
     <div className="mt-2 p-3 rounded-xl border flex flex-col gap-2" style={{ borderColor: 'rgba(251, 191, 36, 0.4)' }} data-testid="correction-editor">
       <p className="text-xs font-bold" style={{ color: '#fbbf24' }}>Correct this {ev.event_type.replace(/_/g, ' ')} — the original stays in the history with your reason.</p>
@@ -72,10 +78,18 @@ export function CorrectionEditor({ data, editing, setEditing, vocab, busy, onSav
         <div className="grid grid-cols-2 gap-2">
           <BatterField data={data} entry={entry} payload={editing.payload} onChange={payload => setEditing(e => ({ ...e, payload }))} />
           <Field label="Result">
-            <Select value={editing.payload.result} onChange={e => set({ result: e.target.value })}>{vocab.pa_results.map(r => <option key={r} value={r}>{LABELS[r]} · {r.replace(/_/g, ' ')}</option>)}</Select>
+            <Select value={editing.payload.result} onChange={e => {
+              const result = e.target.value;
+              setEditing(x => { const { spray, ...rest } = x.payload; return { ...x, payload: spray && (vocab.in_play_results || []).includes(result) ? { ...rest, spray, result } : { ...rest, result } }; });
+            }}>{vocab.pa_results.map(r => <option key={r} value={r}>{LABELS[r]} · {r.replace(/_/g, ' ')}</option>)}</Select>
           </Field>
           <Field label="RBI (blank = auto)"><TextInput type="number" min="0" max="4" value={editing.payload.rbi ?? ''} onChange={e => set({ rbi: e.target.value === '' ? undefined : Number(e.target.value) })} /></Field>
           {editing.payload.result === 'reach_on_error' && <Field label="Error by (label)"><TextInput value={editing.payload.error_label || ''} onChange={e => set({ error_label: e.target.value })} /></Field>}
+          {sprayOn && (
+            <div className="col-span-2">
+              <FieldSpot value={editing.payload.spray || null} onChange={spray => setEditing(e => { const { spray: _old, ...rest } = e.payload; return { ...e, payload: spray ? { ...rest, spray } : rest }; })} rosterSide={side} testId="correct-spot" />
+            </div>
+          )}
         </div>
       )}
       {ev.event_type === 'runner' && (
@@ -246,6 +260,14 @@ function DefensiveChange({ data, jobId, run, half, plays, existing, onDone }) {
   );
 }
 
+// A play's landing spot at a glance: its zone's dot, or a flag when a ball in play has none yet.
+export function SpotMark({ entry, data }) {
+  if (entry.type !== 'plate_appearance' || !data.modules?.spray) return null;
+  if (entry.spray) return <span className="inline-block w-2 h-2 rounded-full ml-2 align-middle" style={{ backgroundColor: ZONE_COLOR[entry.spray.zone] }} title={`Landing spot · ${ZONE_LABEL[entry.spray.zone]}`} data-testid={`spot-${entry.id}`} />;
+  if (!(data.vocab.in_play_results || []).includes(entry.result)) return null;
+  return <span className="ml-2 text-[10px] font-bold uppercase tracking-wider align-middle" style={{ color: '#fbbf24' }} title="No landing spot yet — Correct this play to place it" data-testid={`no-spot-${entry.id}`}>no spot</span>;
+}
+
 const defenseLine = d => (d?.positions || []).map(x => `${x.position} ${x.label || (x.player_id ? `#${x.player_id}` : '?')}`).join(' · ');
 
 // One half: its plays with the state before each, and their repairs.
@@ -275,7 +297,7 @@ export function InningReview({ data, jobId, halfId, run, busy, editing, setEditi
             <div className="flex flex-wrap items-center gap-2 text-sm">
               <span className="text-[11px] tabular-nums w-24" style={{ color: '#64748b' }}>{l.outs_before} out{l.outs_before === 1 ? '' : 's'}{baseList(l.bases_before).length ? ` · ${baseList(l.bases_before).map(x => x.split(' ')[0]).join(',')}` : ''}</span>
               <span className="flex-1 min-w-[200px]" style={{ color: '#cfe8ff' }}>
-                {l.batter?.slot ? <span className="text-xs mr-1" style={{ color: '#64748b' }}>{l.batter.slot}.</span> : null}{l.text}
+                {l.batter?.slot ? <span className="text-xs mr-1" style={{ color: '#64748b' }}>{l.batter.slot}.</span> : null}{l.text}<SpotMark entry={l} data={data} />
               </span>
               {['plate_appearance', 'runner'].includes(l.type) && ev && <GhostButton style={{ padding: '2px 10px', fontSize: 12 }} onClick={() => setEditing({ event: ev, payload: { ...ev.payload }, note: '' })}>Correct</GhostButton>}
               {['plate_appearance', 'runner'].includes(l.type) && <GhostButton style={{ padding: '2px 10px', fontSize: 12 }} onClick={() => setInserting(inserting === l.id ? null : l.id)} data-testid={`insert-before-${l.id}`}>Insert before</GhostButton>}
