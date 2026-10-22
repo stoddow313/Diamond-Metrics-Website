@@ -25,7 +25,7 @@ export function EventsListPage() {
   const [data, setData] = useState(null);
   const [error, setError] = useState('');
   const [creating, setCreating] = useState(false);
-  const [form, setForm] = useState({ name: '', day1: '', day2: '', price: '75' });
+  const [form, setForm] = useState({ name: '', day1: '', day2: '', price: '75', teamPrice: '' });
   const [archived, setArchived] = useState(false);
 
   useEffect(() => { api.deskEvents(archived).then(setData).catch(err => setError(err.message)); }, [archived]);
@@ -35,7 +35,10 @@ export function EventsListPage() {
     setError('');
     const days = [form.day1, form.day2].filter(Boolean).map(date => ({ date }));
     try {
-      const { event } = await api.commandCreateEvent({ name: form.name, days, price_cents: Math.round(Number(form.price) * 100), event_type: 'pro_day' });
+      const { event } = await api.commandCreateEvent({
+        name: form.name, days, price_cents: Math.round(Number(form.price) * 100), event_type: 'pro_day',
+        ...(form.teamPrice ? { team_price_cents: Math.round(Number(form.teamPrice) * 100) } : {}),
+      });
       navigate(`/command/events/${event.id}?tab=setup`);
     } catch (err) { setError(err.message); }
   }
@@ -51,12 +54,13 @@ export function EventsListPage() {
       </div>
       <ErrorNote>{error}</ErrorNote>
       {creating && (
-        <form onSubmit={create} className="rounded-2xl border p-5 mb-4 grid grid-cols-1 sm:grid-cols-4 gap-3 items-end" style={cardStyle} data-testid="new-event-form">
+        <form onSubmit={create} className="rounded-2xl border p-5 mb-4 grid grid-cols-1 sm:grid-cols-5 gap-3 items-end" style={cardStyle} data-testid="new-event-form">
           <Field label="Event name"><TextInput value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="Gobbler Pro Day" required /></Field>
           <Field label="Day"><TextInput type="date" value={form.day1} onChange={e => setForm(f => ({ ...f, day1: e.target.value }))} required /></Field>
           <Field label="Second day (optional)"><TextInput type="date" value={form.day2} onChange={e => setForm(f => ({ ...f, day2: e.target.value }))} /></Field>
-          <Field label="Price ($)"><TextInput type="number" min="1" step="1" value={form.price} onChange={e => setForm(f => ({ ...f, price: e.target.value }))} required /></Field>
-          <div className="sm:col-span-4 flex gap-2"><PrimaryButton type="submit">Create draft</PrimaryButton><GhostButton type="button" onClick={() => setCreating(false)}>Cancel</GhostButton></div>
+          <Field label="Price ($ per player)"><TextInput type="number" min="1" step="1" value={form.price} onChange={e => setForm(f => ({ ...f, price: e.target.value }))} required /></Field>
+          <Field label="Team price ($, optional)"><TextInput type="number" min="1" step="1" value={form.teamPrice} onChange={e => setForm(f => ({ ...f, teamPrice: e.target.value }))} placeholder="900" data-testid="new-event-team-price" /></Field>
+          <div className="sm:col-span-5 flex gap-2"><PrimaryButton type="submit">Create draft</PrimaryButton><GhostButton type="button" onClick={() => setCreating(false)}>Cancel</GhostButton></div>
         </form>
       )}
       <section className="rounded-2xl border overflow-hidden" style={cardStyle}>
@@ -135,6 +139,7 @@ function EventSetup({ eventId, onSaved }) {
       days: (e.days_raw || e.days).map(x => ({ date: x.date, label: x.label || '', capacity: x.capacity ?? '' })),
       allow_either: !!e.allow_either, price: String(e.price_cents / 100), opens_on: e.opens_on || '', closes_on: e.closes_on || '',
       tournament_id: e.tournament_id ? String(e.tournament_id) : '', consent_text: e.consent_text, slug: e.slug, listed: !!e.listed,
+      team_price: e.team_price_cents != null ? String(e.team_price_cents / 100) : '', team_divisions: e.team_divisions || '', team_consent_text: e.team_consent_text || '',
     });
   };
   useEffect(() => { api.commandEventSetup(eventId).then(fill).catch(err => setError(err.message)); }, [eventId]);
@@ -150,9 +155,10 @@ function EventSetup({ eventId, onSaved }) {
   }
   function saveDetails(e) {
     e.preventDefault();
-    const { price, days, tournament_id, slug, listed: _listed, ...rest } = f;
+    const { price, team_price, days, tournament_id, slug, listed: _listed, ...rest } = f;
     patch({
       ...rest, price_cents: Math.round(Number(price) * 100), tournament_id: tournament_id || null,
+      team_price_cents: team_price === '' ? null : Math.round(Number(team_price) * 100),
       days: days.filter(d => d.date).map(d => ({ date: d.date, label: d.label, capacity: d.capacity === '' ? null : Number(d.capacity) })),
       ...(slug !== data.event.slug ? { slug } : {}),
     }, 'Saved');
@@ -215,6 +221,14 @@ function EventSetup({ eventId, onSaved }) {
           <Field label="Kind"><Select value={f.event_type} onChange={setK('event_type')}>{Object.entries(data.event_types).map(([k, label]) => <option key={k} value={k}>{label}</option>)}</Select></Field>
           <Field label="Location"><TextInput value={f.location} onChange={setK('location')} placeholder="Nebo View Baseball Complex · Field 4, 940 North 400 East, Nephi, Utah" /></Field>
           <Field label="Price ($ per player)"><TextInput type="number" min="1" step="0.01" value={f.price} onChange={setK('price')} required data-testid="event-price" /></Field>
+          <Field label="Team price ($ per team, optional)" hint="Set it to let a coach register a whole team; blank: players only.">
+            <TextInput type="number" min="1" step="0.01" value={f.team_price} onChange={setK('team_price')} placeholder="900" data-testid="event-team-price" />
+          </Field>
+          {f.team_price !== '' && (
+            <Field label="Divisions (optional)" hint="Comma-separated. Teams pick one; blank lets them type theirs.">
+              <TextInput value={f.team_divisions} onChange={setK('team_divisions')} placeholder="8U, 9U, 10U, 11U, 12U, 13U, 14U" data-testid="event-team-divisions" />
+            </Field>
+          )}
           <Field label="Registration opens (optional)"><TextInput type="date" value={f.opens_on} onChange={setK('opens_on')} /></Field>
           <Field label="Registration closes (optional)"><TextInput type="date" value={f.closes_on} onChange={setK('closes_on')} /></Field>
           <Field label="Tournament (optional)" hint="Listed events show a sign-up button on that tournament's page.">
@@ -244,6 +258,11 @@ function EventSetup({ eventId, onSaved }) {
         <Field label="Consent statement" hint="Parents tick this to register; each registration keeps the version it agreed to.">
           <textarea value={f.consent_text} onChange={setK('consent_text')} rows={3} required className="w-full rounded-lg border px-3 py-2 text-sm text-white" style={{ backgroundColor: 'rgba(30, 41, 59, 0.95)', borderColor: '#334155' }} />
         </Field>
+        {f.team_price !== '' && (
+          <Field label="Team consent statement" hint="The coach or manager ticks this to register a team. Blank: the standard wording.">
+            <textarea value={f.team_consent_text} onChange={setK('team_consent_text')} rows={3} className="w-full rounded-lg border px-3 py-2 text-sm text-white" style={{ backgroundColor: 'rgba(30, 41, 59, 0.95)', borderColor: '#334155' }} data-testid="event-team-consent" />
+          </Field>
+        )}
       </form>
 
       <AccessPanel kind="command/events" id={eventId} title="Booth logins" subtitle="Helpers who check players in at the booth. Each gets an invite link to set a password, and sees only this event's check-in list." onError={onError} />

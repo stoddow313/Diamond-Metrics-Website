@@ -1114,6 +1114,22 @@ Stripe setting is needed. A day's limit counts paid registrations (two parents
 can overshoot it by one at the same moment). "Either day" stays open while any
 day has room.
 
+**Team registration:** set a **Team price** (Setup, or on **+ New event**) and
+the form gets a **A player / A team** switch; `?as=team` on the link opens the
+team side, for a link sent to coaches. A coach or manager gives their name,
+email and phone, the team name, the number of players and the division or age
+group, then pays the team price on Stripe. Stripe's line names the team, its
+size and division. **Divisions** (comma-separated, e.g. `8U, 10U, 12U, 14U`)
+make the division a pick list; blank lets the coach type it. The coach accepts
+the **Team consent statement**, which by default says each player's parent or
+guardian has agreed. A team's players count toward the day's limit, and a team
+that doesn't fit the day's remaining room is refused. Every registration keeps
+the price it was quoted, so a later price change never changes what a pending
+one pays. Clearing the team price turns the team option off; teams already
+registered stay. On the desk a team is one row marked **Team** (its size and
+division, the coach as contact) with a **Teams** count, and **+ Walk-up** takes
+a team too. The CSV has Type, Players and Division columns.
+
 **The desk** (Check-in tab; booth logins at `/staff/events/{id}`):
 - **The list:** refreshes every 5 seconds, with search, filters (not checked
   in, checked in, unpaid), a day filter, and counts.

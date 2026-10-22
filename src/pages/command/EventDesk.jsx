@@ -12,6 +12,10 @@ const POLL_MS = 5000;
 const dollars = cents => `$${(cents / 100).toFixed(cents % 100 ? 2 : 0)}`;
 const time = ts => (ts ? new Date(`${ts.replace(' ', 'T')}Z`).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : '');
 const chip = active => (active ? { backgroundColor: '#38bdf8', color: '#06122b' } : { backgroundColor: 'rgba(30, 41, 59, 0.9)', color: '#94a3b8' });
+// A registration's price: what it was quoted (older rows: the event's).
+const priceOf = (event, r) => r?.price_cents ?? (r?.kind === 'team' ? event.team_price_cents : event.price_cents);
+const nameOf = r => (r.kind === 'team' ? r.player_team : r.player_name);
+const divisionsOf = event => String(event.team_divisions || '').split(',').map(d => d.trim()).filter(Boolean);
 
 // Taps waiting to reach the server: { [registration_id]: true | false }.
 const queueKey = id => `dm-desk-queue-${id}`;
@@ -111,7 +115,7 @@ export default function EventDesk({ eventId }) {
     if (!data) return [];
     const needle = q.trim().toLowerCase();
     return data.registrations.map(r => ({ ...r, rid: r.registration_id, checked: r.registration_id in queue ? queue[r.registration_id] : !!r.checked_in_at, queued: r.registration_id in queue }))
-      .filter(r => !needle || [r.player_name, r.guardian_name, r.player_team, r.registration_id, r.email].some(v => String(v || '').toLowerCase().includes(needle)))
+      .filter(r => !needle || [r.player_name, r.guardian_name, r.player_team, r.division, r.registration_id, r.email].some(v => String(v || '').toLowerCase().includes(needle)))
       .filter(r => day === 'all' || r.preferred_day === day)
       .filter(r => (filter === 'all' ? true : filter === 'unpaid' ? r.status !== 'paid' : filter === 'in' ? r.checked : r.status === 'paid' && !r.checked));
   }, [data, q, filter, day, queue]);
@@ -120,13 +124,15 @@ export default function EventDesk({ eventId }) {
   if (!data) return <p style={{ color: '#94a3b8' }}>Loading…</p>;
   const { event, counts, actor } = data;
   const canAct = actor.can_act;
-  const qrPaid = qr && data.registrations.find(r => r.registration_id === qr.rid)?.status === 'paid';
+  const qrReg = qr && data.registrations.find(r => r.registration_id === qr.rid);
+  const qrPaid = qrReg?.status === 'paid';
+  const teams = event.team_price_cents != null || counts.teams > 0;
   const queued = Object.keys(queue).length;
 
   return (
     <div data-testid="event-desk">
       <div className="flex flex-wrap items-center gap-3 mb-4 print:hidden">
-        {[['Registered', counts.registered], ['Paid', counts.paid], ['Checked in', counts.checked_in], ['Walk-ups', counts.walk_ups]].map(([label, n]) => (
+        {[['Registered', counts.registered], ['Paid', counts.paid], ['Checked in', counts.checked_in], ['Walk-ups', counts.walk_ups], ...(teams ? [['Teams', counts.teams]] : [])].map(([label, n]) => (
           <div key={label} className="rounded-xl border px-4 py-2 text-center min-w-[96px]" style={cardStyle}>
             <p className="text-2xl font-extrabold text-white leading-none tabular-nums" data-testid={`count-${label.toLowerCase().replace(' ', '-')}`}>{n}</p>
             <p className="text-[10px] font-bold uppercase tracking-wider mt-1" style={{ color: '#64748b' }}>{label}</p>
@@ -146,7 +152,7 @@ export default function EventDesk({ eventId }) {
       {walkUp && <WalkUpForm data={data} onDone={(msg, created) => { setWalkUp(false); if (msg) setNotice(msg); if (created?.url) setQr({ url: created.url, rid: created.registration.registration_id }); load(); }} />}
 
       <div className="flex flex-wrap items-center gap-2 mb-3 print:hidden">
-        <TextInput value={q} onChange={e => setQ(e.target.value)} placeholder="Search player, parent, team or number" aria-label="Search" style={{ minWidth: 260, flex: '1 1 260px' }} data-testid="desk-search" />
+        <TextInput value={q} onChange={e => setQ(e.target.value)} placeholder={teams ? 'Search player, team, parent, coach or number' : 'Search player, parent, team or number'} aria-label="Search" style={{ minWidth: 260, flex: '1 1 260px' }} data-testid="desk-search" />
         {[['all', 'All'], ['not_in', 'Not checked in'], ['in', 'Checked in'], ['unpaid', 'Unpaid']].map(([k, label]) => (
           <button key={k} type="button" onClick={() => setFilter(k)} aria-pressed={filter === k} className="px-3 py-1.5 rounded-lg text-xs font-bold cursor-pointer" style={chip(filter === k)}>{label}</button>
         ))}
@@ -169,8 +175,12 @@ export default function EventDesk({ eventId }) {
               {r.checked ? `✓ ${r.queued ? 'Saved' : time(r.checked_in_at)}` : 'Check in'}
             </button>
             <div className="min-w-[180px] flex-1">
-              <p className="font-bold text-white">{r.player_name} <span className="font-normal text-xs" style={{ color: '#94a3b8' }}>{r.player_age ? `${r.player_age} · ` : ''}{r.player_team}</span></p>
-              <p className="text-xs" style={{ color: '#64748b' }}>{r.guardian_name}{r.phone ? ` · ${r.phone}` : ''} · {r.registration_id}{r.walk_up ? ' · walk-up' : ''}</p>
+              {r.kind === 'team' ? (
+                <p className="font-bold text-white">{r.player_team} <span className="ml-1 px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider align-middle" style={{ backgroundColor: 'rgba(245, 184, 61, 0.16)', color: '#f5b83d' }}>Team</span> <span className="font-normal text-xs" style={{ color: '#94a3b8' }}>{r.team_size} players{r.division ? ` · ${r.division}` : ''}</span></p>
+              ) : (
+                <p className="font-bold text-white">{r.player_name} <span className="font-normal text-xs" style={{ color: '#94a3b8' }}>{r.player_age ? `${r.player_age} · ` : ''}{r.player_team}</span></p>
+              )}
+              <p className="text-xs" style={{ color: '#64748b' }}>{r.kind === 'team' ? 'Coach ' : ''}{r.guardian_name}{r.phone ? ` · ${r.phone}` : ''} · {r.registration_id}{r.walk_up ? ' · walk-up' : ''}</p>
             </div>
             <span className="text-xs font-bold w-[96px]" style={{ color: '#cfe8ff' }}>{r.day_label}</span>
             {r.status === 'paid' ? (
@@ -193,8 +203,8 @@ export default function EventDesk({ eventId }) {
         <p style={{ fontSize: 11 }}>{event.days.map(d => d.label).join(' · ')} · printed {new Date().toLocaleString()}</p>
         <table style={{ width: '100%', fontSize: 11, borderCollapse: 'collapse', marginTop: 8 }}>
           <thead><tr>{['In', 'Player', 'Age', 'Team', 'Day', 'Parent / phone', 'Paid', 'No.'].map(hd => <th key={hd} style={{ textAlign: 'left', borderBottom: '1px solid #000', padding: '4px 6px' }}>{hd}</th>)}</tr></thead>
-          <tbody>{[...data.registrations].sort((a, b) => a.player_name.localeCompare(b.player_name)).map(r => (
-            <tr key={r.id}><td style={{ padding: '4px 6px', borderBottom: '1px solid #ccc' }}>{r.checked_in_at ? '✓' : '☐'}</td><td style={{ padding: '4px 6px', borderBottom: '1px solid #ccc' }}>{r.player_name}</td><td style={{ padding: '4px 6px', borderBottom: '1px solid #ccc' }}>{r.player_age}</td><td style={{ padding: '4px 6px', borderBottom: '1px solid #ccc' }}>{r.player_team}</td><td style={{ padding: '4px 6px', borderBottom: '1px solid #ccc' }}>{r.day_label}</td><td style={{ padding: '4px 6px', borderBottom: '1px solid #ccc' }}>{r.guardian_name}{r.phone ? ` · ${r.phone}` : ''}</td><td style={{ padding: '4px 6px', borderBottom: '1px solid #ccc' }}>{r.status === 'paid' ? r.payment_label : 'UNPAID'}</td><td style={{ padding: '4px 6px', borderBottom: '1px solid #ccc' }}>{r.registration_id}</td></tr>
+          <tbody>{[...data.registrations].sort((a, b) => nameOf(a).localeCompare(nameOf(b))).map(r => (
+            <tr key={r.id}><td style={{ padding: '4px 6px', borderBottom: '1px solid #ccc' }}>{r.checked_in_at ? '✓' : '☐'}</td><td style={{ padding: '4px 6px', borderBottom: '1px solid #ccc' }}>{r.kind === 'team' ? `TEAM · ${r.team_size} players` : r.player_name}</td><td style={{ padding: '4px 6px', borderBottom: '1px solid #ccc' }}>{r.kind === 'team' ? r.division : r.player_age}</td><td style={{ padding: '4px 6px', borderBottom: '1px solid #ccc' }}>{r.player_team}</td><td style={{ padding: '4px 6px', borderBottom: '1px solid #ccc' }}>{r.day_label}</td><td style={{ padding: '4px 6px', borderBottom: '1px solid #ccc' }}>{r.guardian_name}{r.phone ? ` · ${r.phone}` : ''}</td><td style={{ padding: '4px 6px', borderBottom: '1px solid #ccc' }}>{r.status === 'paid' ? r.payment_label : 'UNPAID'}</td><td style={{ padding: '4px 6px', borderBottom: '1px solid #ccc' }}>{r.registration_id}</td></tr>
           ))}</tbody>
         </table>
       </div>
@@ -203,7 +213,7 @@ export default function EventDesk({ eventId }) {
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 print:hidden" style={{ backgroundColor: 'rgba(2, 6, 23, 0.8)' }} role="dialog" aria-label="Pay by QR" data-testid="pay-qr-dialog">
           <div className="rounded-2xl border p-6 flex flex-col items-center gap-3 text-center" style={{ ...cardStyle, backgroundColor: '#0b1528' }}>
             {qrPaid ? <p className="text-2xl font-extrabold" style={{ color: '#4ade80' }} data-testid="pay-qr-paid">Paid ✓</p> : <QrImage url={qr.url} />}
-            <p className="text-sm text-white font-bold">{qrPaid ? 'Payment confirmed — check them in.' : `Scan to pay ${dollars(event.price_cents)} on your phone`}</p>
+            <p className="text-sm text-white font-bold">{qrPaid ? 'Payment confirmed — check them in.' : `Scan to pay ${dollars(priceOf(event, qrReg))} on your phone`}</p>
             {!qrPaid && <p className="text-xs" style={{ color: '#94a3b8' }}>This turns to Paid by itself once Stripe confirms.</p>}
             <GhostButton type="button" onClick={() => setQr(null)}>Close</GhostButton>
           </div>
@@ -232,7 +242,7 @@ function BoothPayment({ data, rid, onDone }) {
   );
 }
 
-const emptyWalkUp = { guardianName: '', email: '', phone: '', playerName: '', playerAge: '', playerTeam: '', preferredDay: '', consent: false, payment: 'qr', note: '' };
+const emptyWalkUp = { kind: 'player', guardianName: '', email: '', phone: '', playerName: '', playerAge: '', playerTeam: '', coachName: '', teamName: '', teamSize: '', division: '', preferredDay: '', consent: false, payment: 'qr', note: '' };
 
 function WalkUpForm({ data, onDone }) {
   const { event, availability } = data;
@@ -245,20 +255,48 @@ function WalkUpForm({ data, onDone }) {
     setError(''); setBusy(true);
     try {
       const d = await api.deskWalkUp(event.id, f);
-      onDone(d.url ? `${f.playerName} added — waiting for payment.` : `${f.playerName} added and marked paid.`, d);
+      const who = f.kind === 'team' ? f.teamName : f.playerName;
+      onDone(d.url ? `${who} added — waiting for payment.` : `${who} added and marked paid.`, d);
     } catch (err) { setError(err.message); } finally { setBusy(false); }
   }
   const days = availability.days;
+  const teamOn = event.team_price_cents != null;
+  const team = teamOn && f.kind === 'team';
+  const divisions = divisionsOf(event);
+  const price = dollars(team ? event.team_price_cents : event.price_cents);
   return (
     <form onSubmit={save} className="rounded-2xl border p-4 mb-4 flex flex-col gap-3 print:hidden" style={{ ...cardStyle, borderColor: '#38bdf8' }} data-testid="walk-up-form">
-      <p className="text-sm font-bold text-white">Walk-up registration</p>
+      <div className="flex flex-wrap items-center gap-2">
+        <p className="text-sm font-bold text-white mr-2">Walk-up registration</p>
+        {teamOn && [['player', 'Player'], ['team', 'Team']].map(([k, label]) => (
+          <button key={k} type="button" onClick={() => setF(x => ({ ...x, kind: k, consent: false }))} aria-pressed={f.kind === k}
+            className="px-3 py-1 rounded-lg text-xs font-bold cursor-pointer" style={chip(f.kind === k)} data-testid={`walk-up-as-${k}`}>{label}</button>
+        ))}
+      </div>
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-        <Field label="Parent or guardian"><TextInput value={f.guardianName} onChange={set('guardianName')} required /></Field>
-        <Field label="Email (for the receipt)"><TextInput type="email" value={f.email} onChange={set('email')} required /></Field>
-        <Field label="Phone (optional)"><TextInput type="tel" value={f.phone} onChange={set('phone')} /></Field>
-        <Field label="Player"><TextInput value={f.playerName} onChange={set('playerName')} required /></Field>
-        <Field label="Age"><TextInput type="number" min="4" max="25" value={f.playerAge} onChange={set('playerAge')} required /></Field>
-        <Field label="Team"><TextInput value={f.playerTeam} onChange={set('playerTeam')} required /></Field>
+        {team ? (
+          <>
+            <Field label="Coach or manager"><TextInput value={f.coachName} onChange={set('coachName')} required /></Field>
+            <Field label="Email (for the receipt)"><TextInput type="email" value={f.email} onChange={set('email')} required /></Field>
+            <Field label="Phone (optional)"><TextInput type="tel" value={f.phone} onChange={set('phone')} /></Field>
+            <Field label="Team name"><TextInput value={f.teamName} onChange={set('teamName')} required /></Field>
+            <Field label="Players"><TextInput type="number" min="1" max="60" value={f.teamSize} onChange={set('teamSize')} required /></Field>
+            <Field label="Division / age group">
+              {divisions.length
+                ? <Select value={f.division} onChange={set('division')} required><option value="">—</option>{divisions.map(d => <option key={d} value={d}>{d}</option>)}</Select>
+                : <TextInput value={f.division} onChange={set('division')} placeholder="12U" required />}
+            </Field>
+          </>
+        ) : (
+          <>
+            <Field label="Parent or guardian"><TextInput value={f.guardianName} onChange={set('guardianName')} required /></Field>
+            <Field label="Email (for the receipt)"><TextInput type="email" value={f.email} onChange={set('email')} required /></Field>
+            <Field label="Phone (optional)"><TextInput type="tel" value={f.phone} onChange={set('phone')} /></Field>
+            <Field label="Player"><TextInput value={f.playerName} onChange={set('playerName')} required /></Field>
+            <Field label="Age"><TextInput type="number" min="4" max="25" value={f.playerAge} onChange={set('playerAge')} required /></Field>
+            <Field label="Team"><TextInput value={f.playerTeam} onChange={set('playerTeam')} required /></Field>
+          </>
+        )}
         {days.length > 1 && (
           <Field label="Day">
             <Select value={f.preferredDay} onChange={set('preferredDay')} required>
@@ -270,15 +308,15 @@ function WalkUpForm({ data, onDone }) {
         )}
         <Field label="Payment">
           <Select value={f.payment} onChange={set('payment')} data-testid="walk-up-payment">
-            <option value="qr">Pay by QR on their phone ({dollars(event.price_cents)})</option>
+            <option value="qr">Pay by QR on their phone ({price})</option>
             {data.booth_methods.map(m => <option key={m.key} value={m.key}>{m.label} at the booth</option>)}
           </Select>
         </Field>
-        {f.payment !== 'qr' && <Field label="Note (optional)"><TextInput value={f.note} onChange={set('note')} placeholder="$75 cash" /></Field>}
+        {f.payment !== 'qr' && <Field label="Note (optional)"><TextInput value={f.note} onChange={set('note')} placeholder={`${price} cash`} /></Field>}
       </div>
       <label className="flex items-start gap-2 text-xs" style={{ color: '#cfe8ff' }}>
         <input type="checkbox" checked={f.consent} onChange={set('consent')} className="mt-0.5" data-testid="walk-up-consent" />
-        <span><b>The parent or guardian agreed:</b> {event.consent_text}</span>
+        <span><b>{team ? 'The coach or manager agreed:' : 'The parent or guardian agreed:'}</b> {team ? event.team_consent_text : event.consent_text}</span>
       </label>
       {error && <ErrorNote>{error}</ErrorNote>}
       <div className="flex gap-2">

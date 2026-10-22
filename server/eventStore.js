@@ -41,7 +41,8 @@ export function changeEventSlug(db, event, slug) {
 export const eventAliases = (db, eventId) =>
   db.prepare('SELECT slug, created_at FROM signup_event_aliases WHERE event_id = ? ORDER BY created_at DESC').all(eventId);
 
-const EVENT_COLUMNS = ['name', 'event_type', 'location', 'description', 'what_to_bring', 'days', 'allow_either', 'price_cents', 'status', 'listed', 'opens_on', 'closes_on', 'tournament_id', 'consent_text', 'consent_version'];
+const EVENT_COLUMNS = ['name', 'event_type', 'location', 'description', 'what_to_bring', 'days', 'allow_either', 'price_cents', 'status', 'listed', 'opens_on', 'closes_on', 'tournament_id', 'consent_text', 'consent_version',
+  'team_price_cents', 'team_divisions', 'team_consent_text', 'team_consent_version'];
 
 export function createEvent(db, fields, actorId) {
   const slug = fields.slug || freeEventSlug(db, fields.name);
@@ -65,10 +66,11 @@ export function updateEvent(db, event, fields) {
   })();
 }
 
-// Paid registrations per chosen day — what a day's limit counts.
+// Paid players per chosen day — what a day's limit counts (a team counts each of its players).
 export function paidByDay(db, eventId) {
   return Object.fromEntries(db.prepare(
-    "SELECT preferred_day AS day, COUNT(*) AS n FROM event_registrations WHERE event_id = ? AND status = 'paid' GROUP BY preferred_day"
+    `SELECT preferred_day AS day, SUM(CASE WHEN kind = 'team' THEN COALESCE(team_size, 1) ELSE 1 END) AS n
+       FROM event_registrations WHERE event_id = ? AND status = 'paid' GROUP BY preferred_day`
   ).all(eventId).map(r => [r.day, r.n]));
 }
 
@@ -82,7 +84,8 @@ export function eventCounts(db, eventId) {
     `SELECT COUNT(*) AS registered,
             COALESCE(SUM(r.status = 'paid'), 0) AS paid,
             COALESCE(SUM(r.status = 'paid' AND r.checked_in_at IS NOT NULL), 0) AS checked_in,
-            COALESCE(SUM(r.walk_up = 1), 0) AS walk_ups
+            COALESCE(SUM(r.walk_up = 1), 0) AS walk_ups,
+            COALESCE(SUM(r.kind = 'team'), 0) AS teams
        FROM event_registrations r WHERE r.event_id = ? AND ${ON_DESK}`
   ).get(eventId);
 }
@@ -110,7 +113,9 @@ export function getRegistrationBySession(db, sessionId) {
   return db.prepare('SELECT r.* FROM event_registration_sessions s JOIN event_registrations r ON r.id = s.registration_id WHERE s.session_id = ?').get(String(sessionId)) || null;
 }
 
-// Saved before Stripe hears about it (the parent's form, or the booth's walk-up form).
+// Saved before Stripe hears about it (the parent's or coach's form, or the
+// booth's walk-up form), at the price it is quoted now and with the consent
+// wording it accepted.
 export function createRegistration(db, event, v, { actorKind = 'parent', actorId = null, walkUp = false } = {}) {
   return db.transaction(() => {
     let rid;
@@ -118,13 +123,16 @@ export function createRegistration(db, event, v, { actorKind = 'parent', actorId
       rid = newRegistrationId();
       if (!getRegistrationById(db, rid)) break;
     }
+    const team = v.kind === 'team';
+    const consent = team ? event.team_consent_version : event.consent_version;
     const pk = db.prepare(
-      `INSERT INTO event_registrations (registration_id, event_id, guardian_name, email, phone, player_name, player_age, player_team,
-         preferred_day, consent_version, consent_at, source, walk_up, created_by_kind, created_by_id)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), ?, ?, ?, ?)`
-    ).run(rid, event.id, v.guardianName, v.email, v.phone || '', v.playerName, v.playerAge, v.playerTeam, v.preferredDay,
-      event.consent_version, v.source || (walkUp ? 'booth' : ''), walkUp ? 1 : 0, actorKind, actorId).lastInsertRowid;
-    addHistory(db, pk, walkUp ? 'walk_up_created' : 'created', actorKind, { registration_id: rid, event_id: event.id, day: v.preferredDay, consent_version: event.consent_version }, actorId);
+      `INSERT INTO event_registrations (registration_id, event_id, kind, guardian_name, email, phone, player_name, player_age, player_team, team_size, division,
+         preferred_day, price_cents, consent_version, consent_at, source, walk_up, created_by_kind, created_by_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'), ?, ?, ?, ?)`
+    ).run(rid, event.id, team ? 'team' : 'player', v.guardianName, v.email, v.phone || '', v.playerName, v.playerAge, v.playerTeam,
+      team ? v.teamSize : null, team ? v.division : '', v.preferredDay, team ? event.team_price_cents : event.price_cents,
+      consent, v.source || (walkUp ? 'booth' : ''), walkUp ? 1 : 0, actorKind, actorId).lastInsertRowid;
+    addHistory(db, pk, walkUp ? 'walk_up_created' : 'created', actorKind, { registration_id: rid, event_id: event.id, kind: team ? 'team' : 'player', day: v.preferredDay, consent_version: consent }, actorId);
     return getRegistration(db, pk);
   })();
 }
@@ -193,12 +201,13 @@ export function setCheckedIn(db, reg, checkedIn, actor) {
   })();
 }
 
-// The desk's list: every registration for the event (paid and unpaid), player A–Z.
+// The desk's list: every registration for the event (paid and unpaid), A–Z by player, or team for a team.
 export function listRegistrations(db, eventId) {
   return db.prepare(
-    `SELECT r.id, r.registration_id, r.status, r.guardian_name, r.email, r.phone, r.player_name, r.player_age, r.player_team, r.preferred_day, r.source, r.walk_up,
-            r.payment_method, r.amount_total, r.paid_at, r.paid_note, r.paid_by_name, r.checked_in_at, r.checked_in_by_name, r.created_at
-       FROM event_registrations r WHERE r.event_id = ? AND ${ON_DESK} ORDER BY r.player_name COLLATE NOCASE, r.id`
+    `SELECT r.id, r.registration_id, r.kind, r.status, r.guardian_name, r.email, r.phone, r.player_name, r.player_age, r.player_team, r.team_size, r.division,
+            r.preferred_day, r.price_cents, r.source, r.walk_up, r.payment_method, r.amount_total, r.paid_at, r.paid_note, r.paid_by_name,
+            r.checked_in_at, r.checked_in_by_name, r.created_at
+       FROM event_registrations r WHERE r.event_id = ? AND ${ON_DESK} ORDER BY COALESCE(NULLIF(r.player_name, ''), r.player_team) COLLATE NOCASE, r.id`
   ).all(eventId);
 }
 

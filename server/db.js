@@ -1408,6 +1408,20 @@ db.exec(`
 // A Stripe event this server acted on can be a registration's, not only a tournament order's.
 addColumnIfMissing('stripe_events', 'registration_id', 'registration_id INTEGER REFERENCES event_registrations(id)');
 
+// Team registration (2026-10): an event may also sell a team spot at its own
+// price. A team registration's contact is its coach or manager (guardian_name),
+// its name is player_team, and team_size players count toward a day's limit.
+// price_cents is what the registration was quoted, so a later price change
+// never changes what a pending one is charged.
+addColumnIfMissing('signup_events', 'team_price_cents', 'team_price_cents INTEGER');   // NULL: no team option
+addColumnIfMissing('signup_events', 'team_divisions', "team_divisions TEXT NOT NULL DEFAULT ''");   // "8U, 10U, 12U"; blank: typed in
+addColumnIfMissing('signup_events', 'team_consent_text', "team_consent_text TEXT NOT NULL DEFAULT ''");
+addColumnIfMissing('signup_events', 'team_consent_version', "team_consent_version TEXT NOT NULL DEFAULT ''");
+addColumnIfMissing('event_registrations', 'kind', "kind TEXT NOT NULL DEFAULT 'player'");   // player | team
+addColumnIfMissing('event_registrations', 'team_size', 'team_size INTEGER');
+addColumnIfMissing('event_registrations', 'division', "division TEXT NOT NULL DEFAULT ''");
+addColumnIfMissing('event_registrations', 'price_cents', 'price_cents INTEGER');
+
 // The profile's spray chart: where each of a player's batted balls landed, as
 // placed in the Command scorebook, published with the game record (server/gameRecord.js)
 // and rewritten on every release. x, y: home plate (0,0), center field up y, 1 = the fence.
