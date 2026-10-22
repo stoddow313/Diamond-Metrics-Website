@@ -16,7 +16,7 @@ process.env.DM_RATE_LIMITS = '0';
 const SECRET = 'whsec_test_event_registration_secret';
 const { startIntakeApp } = await import('./intakeTestHarness.js');
 const { setStripeClientForTests, stripeWebhooks } = await import('./stripeConfig.js');
-const { consentVersion, DEFAULT_CONSENT, rosterCsv } = await import('./eventLogic.js');
+const { consentVersion, DEFAULT_CONSENT, DEFAULT_TEAM_CONSENT, rosterCsv } = await import('./eventLogic.js');
 
 let h, db, fulfil, analyst;
 const sessions = [];
@@ -198,8 +198,69 @@ test('a renamed link still opens the page; a closed page takes walk-ups but not 
   const csv = await fetch(`${h.base}/api/desk/events/${ev.id}/roster.csv`, { headers: { Authorization: `Bearer ${fulfil.token}` } });
   assert.equal(csv.status, 200);
   const body = await csv.text();
-  assert.match(body, /^Registration,Player,Age,Team,Day/);
+  assert.match(body, /^Registration,Type,Player,Age,Team,Players,Division,Day/);
   assert.ok(body.includes(`"'=HYPERLINK(""x"")"`), 'a formula-looking name is defused');
   assert.equal(rosterCsv({ days: '[]' }, []).trim(), body.split('\r\n')[0]);
   assert.equal((await fetch(`${h.base}/api/desk/events/${ev.id}/roster.csv`)).status, 401);
+});
+
+const teamForm = (over = {}) => ({ kind: 'team', coachName: 'Casey Coach', email: 'coach@example.com', phone: '', teamName: 'Huskers 12U', teamSize: '12', division: '12U', preferredDay: '2099-11-06', consent: true, ...over });
+
+test('team pricing: a coach registers a team at the team price; its players count toward the day’s limit', async () => {
+  const plain = await newEvent();
+  await put(plain.id, { status: 'open' });
+  assert.equal((await h.call('GET', `/api/public/events/${plain.slug}`)).body.event.team, null, 'no team price, no team option');
+  assert.match((await register(plain.slug, teamForm())).body.error, /doesn’t take team registrations/);
+
+  const ev = await newEvent({ team_price_cents: 90000, team_divisions: '10U, 12U,14U, 12U', days: [{ date: '2099-11-06', capacity: 15 }, { date: '2099-11-07' }] });
+  assert.deepEqual([ev.team_price_cents, ev.team_divisions, ev.team_consent_text], [90000, '10U, 12U, 14U', DEFAULT_TEAM_CONSENT]);
+  assert.match((await put(ev.id, { team_price_cents: 50 })).body.error, /team price is between/);
+  await put(ev.id, { status: 'open' });
+  const pub = (await h.call('GET', `/api/public/events/${ev.slug}`)).body.event;
+  assert.deepEqual([pub.team.price_cents, pub.team.divisions, pub.team.consent_text], [90000, ['10U', '12U', '14U'], DEFAULT_TEAM_CONSENT]);
+
+  for (const [over, message] of [
+    [{ teamName: '' }, /team name/], [{ coachName: '' }, /coach or manager name/], [{ teamSize: '0' }, /number of players/], [{ teamSize: '' }, /number of players/],
+    [{ division: '9U' }, /listed divisions/], [{ division: '' }, /division or age group/], [{ consent: false }, /coach or manager must agree/],
+  ]) assert.match((await register(ev.slug, teamForm(over))).body.error, message);
+
+  const r = await register(ev.slug, teamForm({ price_cents: 1 }));
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  const item = sessions.at(-1).line_items[0].price_data;
+  assert.equal(item.unit_amount, 90000, 'the team price, never the browser’s');
+  assert.deepEqual([item.product_data.name, item.product_data.description], [`${ev.name} — team registration`, 'Huskers 12U · 12 players · 12U']);
+  const row = reg(r.body.registrationId);
+  assert.deepEqual([row.kind, row.guardian_name, row.player_team, row.team_size, row.division, row.price_cents, row.consent_version],
+    ['team', 'Casey Coach', 'Huskers 12U', 12, '12U', 90000, consentVersion(DEFAULT_TEAM_CONSENT)]);
+  await deliver(completed(lastSession, r.body.registrationId, { amountTotal: 90000 }));
+  assert.deepEqual([reg(r.body.registrationId).status, reg(r.body.registrationId).amount_total], ['paid', 90000]);
+  const conf = await h.call('GET', `/api/public/event-registrations/session/${lastSession}`);
+  assert.deepEqual([conf.body.registration.kind, conf.body.registration.team_name, conf.body.registration.team_size], ['team', 'Huskers 12U', 12]);
+
+  // 12 of Nov 6's 15 spots are taken: another team of 5 doesn't fit, a player does.
+  assert.match((await register(ev.slug, teamForm({ teamName: 'Vice 12U', teamSize: '5' }))).body.error, /room for 3 more players, fewer than your 5/);
+  assert.equal((await register(ev.slug, teamForm({ teamName: 'Vice 12U', teamSize: '5', preferredDay: '2099-11-07' }))).status, 200);
+  assert.equal((await register(ev.slug, form())).status, 200);
+
+  // A pending team keeps the price it was quoted; the booth takes it at that price too.
+  const pending = (await register(ev.slug, teamForm({ teamName: 'Storm 10U', teamSize: '9', division: '10U', preferredDay: '2099-11-07' }))).body.registrationId;
+  await put(ev.id, { team_price_cents: 95000 });
+  await h.call('POST', `/api/desk/registrations/${pending}/pay-link`, { token: fulfil.token });
+  assert.equal(sessions.at(-1).line_items[0].price_data.unit_amount, 90000);
+  const cash = await h.call('PUT', `/api/desk/registrations/${pending}/booth-payment`, { token: fulfil.token, body: { method: 'cash' } });
+  assert.equal(cash.body.registration.amount_total, 90000);
+
+  // A team walk-up at the booth; the desk and the CSV show teams as teams.
+  const walk = await h.call('POST', `/api/desk/events/${ev.id}/walk-ups`, { token: fulfil.token, body: { ...teamForm({ teamName: 'Rattlers 14U', teamSize: '11', division: '14U', preferredDay: '2099-11-07' }), payment: 'cash' } });
+  assert.deepEqual([walk.status, walk.body.registration.kind, walk.body.registration.amount_total], [201, 'team', 95000]);
+  const desk = (await h.call('GET', `/api/desk/events/${ev.id}`, { token: fulfil.token })).body;
+  assert.equal(desk.counts.teams, 4);
+  assert.ok(desk.registrations.some(x => x.kind === 'team' && x.player_team === 'Huskers 12U' && x.team_size === 12));
+  const csv = await (await fetch(`${h.base}/api/desk/events/${ev.id}/roster.csv`, { headers: { Authorization: `Bearer ${fulfil.token}` } })).text();
+  assert.ok(csv.split('\r\n').some(l => l.startsWith(`${r.body.registrationId},Team,,,Huskers 12U,12,12U,`)));
+
+  // Turning the team price off closes the team option; registrations stay.
+  await put(ev.id, { team_price_cents: '' });
+  assert.equal((await h.call('GET', `/api/public/events/${ev.slug}`)).body.event.team, null);
+  assert.equal(reg(r.body.registrationId).kind, 'team');
 });

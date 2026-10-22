@@ -3,7 +3,7 @@
 // Public — the sign-up page and its form; nothing here marks a registration paid:
 //   GET  /api/public/events                         listed events taking registrations
 //   GET  /api/public/events/:slug                   one event (an old slug still answers; a draft only for staff)
-//   POST /api/public/events/:slug/register          save the registration, start its Stripe Checkout
+//   POST /api/public/events/:slug/register          save the registration (a player, or a team at the team price), start its Stripe Checkout
 //   GET  /api/public/event-registrations/session/:sessionId   the confirmation page's registration
 //
 // Desk — the live list, for any internal role (acting: admin or fulfillment)
@@ -25,7 +25,7 @@ import { bearerToken } from './principals.js';
 import { captureError, log } from './observability.js';
 import { makeLimiter, rateLimit, clientIp } from './rateLimit.js';
 import {
-  EVENT_TYPES, PAYMENT_METHODS, BOOTH_METHODS, availability, validateRegistration, publicEvent, readEventPatch, parseDays, choiceLabel, rosterCsv,
+  EVENT_TYPES, PAYMENT_METHODS, BOOTH_METHODS, availability, validateRegistration, publicEvent, readEventPatch, parseDays, choiceLabel, rosterCsv, registrationPrice,
 } from './eventLogic.js';
 import {
   getEvent, resolveEventSlug, createEvent, updateEvent, eventAliases, paidByDay, eventCounts, listEvents,
@@ -59,8 +59,9 @@ export function mountEventRoutes(app, { db, principals }) {
   const { internalFromToken, staffFromToken, requireInternalRole } = principals;
   const canManage = requireInternalRole('admin', 'fulfillment');
 
-  // Stripe Checkout for one registration, at the event's price. Stripe gets
-  // ids and the email for the receipt — no player name.
+  // Stripe Checkout for one registration, at the price it was quoted. Stripe
+  // gets ids and the email for the receipt — no player name; a team's line
+  // names the team, its size and division so the coach sees what they buy.
   async function startCheckout(req, event, reg) {
     const config = readStripeConfig();
     const stripe = config.mode ? stripeClient(config) : null;
@@ -70,7 +71,9 @@ export function mountEventRoutes(app, { db, principals }) {
     try {
       return await stripe.checkout.sessions.create({
         mode: 'payment',
-        line_items: [{ quantity: 1, price_data: { currency: 'usd', unit_amount: event.price_cents, product_data: { name: `${event.name} — registration` } } }],
+        line_items: [{ quantity: 1, price_data: { currency: 'usd', unit_amount: registrationPrice(event, reg), product_data: reg.kind === 'team'
+          ? { name: `${event.name} — team registration`, description: `${reg.player_team} · ${reg.team_size} players · ${reg.division}` }
+          : { name: `${event.name} — registration` } } }],
         customer_email: reg.email,
         client_reference_id: reg.registration_id,
         metadata: ids,
@@ -132,7 +135,8 @@ export function mountEventRoutes(app, { db, principals }) {
     const event = getEvent(db, reg.event_id);
     res.json({
       registration: {
-        registration_id: reg.registration_id, paid: reg.status === 'paid', player_first_name: reg.player_name.split(/\s+/)[0],
+        registration_id: reg.registration_id, paid: reg.status === 'paid', kind: reg.kind, player_first_name: reg.player_name.split(/\s+/)[0],
+        ...(reg.kind === 'team' ? { team_name: reg.player_team, team_size: reg.team_size, division: reg.division } : {}),
         day: reg.preferred_day, day_label: choiceLabel(event, reg.preferred_day),
       },
       event: { name: event.name, slug: event.slug, location: event.location, what_to_bring: event.what_to_bring, days: parseDays(event.days) },
@@ -211,7 +215,7 @@ export function mountEventRoutes(app, { db, principals }) {
     if (!ctx) return;
     const method = req.body?.method;
     if (!BOOTH_METHODS.includes(method)) return res.status(400).json({ error: 'Choose cash, Venmo, other or comped.' });
-    const reg = markPaidAtBooth(db, ctx.reg, { method, note: req.body?.note, amountCents: ctx.event.price_cents, actor: ctx.actor });
+    const reg = markPaidAtBooth(db, ctx.reg, { method, note: req.body?.note, amountCents: registrationPrice(ctx.event, ctx.reg), actor: ctx.actor });
     log('info', 'event_registration_paid_at_booth', { registration_id: reg.registration_id, method });
     res.json({ registration: deskRow(ctx.event, reg), counts: eventCounts(db, ctx.event.id) });
   }));
@@ -247,7 +251,7 @@ export function mountEventRoutes(app, { db, principals }) {
       recordSession(db, reg.id, session.id, actor.kind, actor.id);
       url = session.url;
     } else {
-      reg = markPaidAtBooth(db, reg, { method: payment, note: req.body?.note, amountCents: event.price_cents, actor });
+      reg = markPaidAtBooth(db, reg, { method: payment, note: req.body?.note, amountCents: registrationPrice(event, reg), actor });
     }
     res.status(201).json({ registration: deskRow(event, reg), url, counts: eventCounts(db, event.id) });
   }));
