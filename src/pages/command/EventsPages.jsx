@@ -213,7 +213,7 @@ function EventSetup({ eventId, onSaved }) {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
           <Field label="Name"><TextInput value={f.name} onChange={setK('name')} required /></Field>
           <Field label="Kind"><Select value={f.event_type} onChange={setK('event_type')}>{Object.entries(data.event_types).map(([k, label]) => <option key={k} value={k}>{label}</option>)}</Select></Field>
-          <Field label="Location"><TextInput value={f.location} onChange={setK('location')} placeholder="Field 3, Gobbler complex" /></Field>
+          <Field label="Location"><TextInput value={f.location} onChange={setK('location')} placeholder="Nebo View Baseball Complex · Field 4, 940 North 400 East, Nephi, Utah" /></Field>
           <Field label="Price ($ per player)"><TextInput type="number" min="1" step="0.01" value={f.price} onChange={setK('price')} required data-testid="event-price" /></Field>
           <Field label="Registration opens (optional)"><TextInput type="date" value={f.opens_on} onChange={setK('opens_on')} /></Field>
           <Field label="Registration closes (optional)"><TextInput type="date" value={f.closes_on} onChange={setK('closes_on')} /></Field>

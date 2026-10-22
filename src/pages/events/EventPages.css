@@ -1,8 +1,99 @@
-/* Event registration pages: the Find Your Player look (FindYourPlayerPage.css) plus the parts it lacks. */
-.event-facts { display: grid; gap: 10px; margin: 24px 0 0; padding: 18px 20px; border: 1px solid rgba(125, 211, 252, .22); border-radius: 14px; background: rgba(11, 60, 96, .22); }
-.event-facts div { display: grid; grid-template-columns: 64px 1fr; gap: 12px; }
-.event-facts dt { color: #7dd3fc; font-size: 12px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; padding-top: 2px; }
-.event-facts dd { margin: 0; color: #e5f2fa; line-height: 1.45; }
+/* Event registration pages. The sign-up page takes the Pro Day page's look
+   (Will's ProDayPage.css, 2026-10) under an ep- prefix; its form fields keep
+   the Find Your Player styles (FindYourPlayerPage.css). */
+.ep-page { --ep-navy: #06122b; --ep-blue: #38bdf8; --ep-gold: #f5b83d; --ep-ink: #0e243e; --ep-muted: #53687e; color: #fff; }
+.ep-page section { scroll-margin-top: 100px; }
+.ep-eyebrow { margin: 0 0 10px; color: var(--ep-blue); font-size: 12px; font-weight: 850; letter-spacing: .12em; text-transform: uppercase; }
+.ep-hero { display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(320px, .95fr); align-items: center; gap: clamp(28px, 5vw, 70px); padding: 24px 0 35px; }
+.ep-hero-copy { min-width: 0; }
+.ep-hero h1 { margin: 0; color: #fff; font-size: clamp(64px, 8vw, 104px); font-weight: 950; line-height: .88; letter-spacing: -.065em; text-transform: uppercase; overflow-wrap: anywhere; }
+.ep-hero h1.is-long { font-size: clamp(44px, 5.6vw, 76px); line-height: .92; letter-spacing: -.05em; }
+.ep-presented { margin: 13px 0 21px; color: #7dd3fc; font-size: 16px; font-weight: 750; }
+.ep-tagline { max-width: 570px; margin: 0 0 25px; color: #fff; font-size: clamp(23px, 2.8vw, 34px); font-weight: 850; line-height: 1.13; letter-spacing: -.035em; }
+.ep-details { display: grid; gap: 15px; margin-bottom: 25px; }
+.ep-details div { display: grid; gap: 3px; }
+.ep-detail-label { color: var(--ep-blue); font-size: 10px; font-weight: 850; letter-spacing: .11em; text-transform: uppercase; }
+.ep-details strong { color: #fff; font-size: 14px; }
+.ep-details div > span:not(.ep-detail-label) { color: #c7dcf2; font-size: 13px; }
+.ep-button, .ep-submit { display: inline-flex; min-height: 48px; align-items: center; justify-content: center; gap: 22px; padding: 0 18px; border: 0; border-radius: 8px; background: var(--ep-gold); color: var(--ep-navy); font: inherit; font-size: 12px; font-weight: 900; letter-spacing: .06em; text-decoration: none; text-transform: uppercase; cursor: pointer; transition: transform .18s, background .18s; }
+.ep-button:hover, .ep-submit:hover:not(:disabled) { transform: translateY(-2px); background: #ffd36b; }
+.ep-button span, .ep-submit span { font-size: 18px; }
+.ep-submit { width: 100%; min-height: 51px; margin-top: 23px; }
+.ep-submit:disabled { cursor: not-allowed; opacity: .64; }
+.ep-closed-chip { display: inline-block; margin: 0; padding: 10px 16px; border: 1px solid rgba(245, 184, 61, .6); border-radius: 8px; color: #fff0bf; font-size: 12px; font-weight: 900; letter-spacing: .06em; text-transform: uppercase; }
+.ep-hero-figure { position: relative; margin: 0; overflow: hidden; border: 1px solid rgba(125, 211, 252, .28); border-radius: 22px; background: #0b1d39; box-shadow: 0 22px 46px rgba(0, 0, 0, .32); }
+.ep-hero-figure::after { position: absolute; inset: 0; background: linear-gradient(0deg, rgba(3, 9, 20, .75), transparent 48%); content: ''; pointer-events: none; }
+.ep-hero-figure img { display: block; width: 100%; height: clamp(300px, 37vw, 465px); object-fit: cover; object-position: center; }
+.ep-hero-figure figcaption { position: absolute; z-index: 1; right: 0; bottom: 0; left: 0; padding: 17px 20px; color: #fff; font-size: 11px; font-weight: 850; letter-spacing: .15em; text-transform: uppercase; }
+.ep-intro { max-width: 900px; margin: 0 auto; padding: 25px 0 10px; }
+.ep-intro p { margin: 0; color: #c7dcf2; font-size: 16px; line-height: 1.75; white-space: pre-line; }
+.ep-metrics { padding-top: 35px; }
+.ep-section-heading { max-width: 700px; margin: 0 auto 24px; text-align: center; }
+.ep-section-heading h2 { margin: 0 0 9px; color: #fff; font-size: clamp(34px, 4.2vw, 52px); font-weight: 950; line-height: .98; letter-spacing: -.045em; text-transform: uppercase; }
+.ep-section-heading > p:last-child { margin: 0; color: #c7dcf2; font-size: 15px; line-height: 1.55; }
+.ep-metrics-box { padding: clamp(18px, 3vw, 30px); border: 1px solid rgba(56, 189, 248, .32); border-radius: 20px; background: linear-gradient(145deg, rgba(15, 42, 77, .9), rgba(6, 18, 43, .94)); box-shadow: 0 20px 46px rgba(0, 0, 0, .25), inset 0 1px rgba(255, 255, 255, .04); }
+.ep-tools-grid { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 14px; }
+.ep-tool-card { position: relative; grid-column: span 2; min-height: 208px; padding: 22px 20px 19px; border: 1px solid rgba(125, 211, 252, .18); border-top: 3px solid var(--ep-blue); border-radius: 13px; background: rgba(3, 9, 20, .43); }
+.ep-tool-card:nth-child(4) { grid-column: 2 / span 2; }
+.ep-tool-card:last-child { border-top-color: var(--ep-gold); }
+.ep-tool-number { position: absolute; top: 15px; right: 17px; color: #6f8da9; font-size: 11px; font-weight: 900; letter-spacing: .08em; }
+.ep-tool-card h3 { margin: 0 30px 8px 0; color: #fff; font-size: 21px; font-weight: 900; line-height: 1; letter-spacing: -.025em; text-transform: uppercase; }
+.ep-tool-card > p { min-height: 40px; margin: 0 0 12px; color: #c7dcf2; font-size: 12px; line-height: 1.55; }
+.ep-tool-card ul { margin: 0; padding: 10px 0 0; border-top: 1px solid rgba(196, 221, 240, .16); list-style: none; }
+.ep-tool-card li { position: relative; margin: 4px 0; padding-left: 13px; color: #e4eff8; font-size: 11px; line-height: 1.45; }
+.ep-tool-card li::before { position: absolute; top: 5px; left: 0; width: 5px; height: 5px; border-radius: 50%; background: var(--ep-gold); content: ''; }
+.ep-metrics-note { margin: 16px 0 0; color: #9cc8e5; font-size: 11px; text-align: center; }
+.ep-profile-band { display: grid; grid-template-columns: 82px 1fr 1fr; align-items: center; gap: 24px; margin-top: 38px; padding: 27px; border: 1px solid rgba(56, 189, 248, .2); border-radius: 18px; background: linear-gradient(115deg, rgba(11, 53, 86, .78), rgba(6, 18, 43, .55)); }
+.ep-profile-mark { display: grid; width: 72px; height: 82px; place-items: center; border: 2px solid var(--ep-gold); border-radius: 14px; color: var(--ep-gold); font-size: 26px; font-weight: 950; letter-spacing: -.08em; }
+.ep-profile-band h2 { margin: 0; color: #fff; font-size: clamp(28px, 3vw, 39px); font-weight: 950; line-height: .98; letter-spacing: -.04em; text-transform: uppercase; }
+.ep-profile-band > p:last-child { margin: 0; color: #c7dcf2; font-size: 14px; line-height: 1.65; }
+.ep-signup { display: grid; grid-template-columns: minmax(260px, .78fr) minmax(0, 1.22fr); align-items: start; gap: clamp(24px, 5vw, 58px); padding: 48px 0 18px; }
+.ep-signup-copy { padding-top: 20px; }
+.ep-signup-copy h2 { margin: 0 0 18px; color: #fff; font-size: clamp(38px, 5vw, 58px); font-weight: 950; line-height: .94; letter-spacing: -.055em; text-transform: uppercase; }
+.ep-signup-copy h2 span { color: var(--ep-blue); }
+.ep-signup-copy > p:not(.ep-eyebrow) { max-width: 400px; margin: 0; color: #c7dcf2; font-size: 14px; line-height: 1.65; }
+.ep-prices { margin: 24px 0 19px; padding: 17px 19px; border: 1px solid rgba(125, 211, 252, .22); border-left: 4px solid var(--ep-gold); border-radius: 12px; background: rgba(6, 18, 43, .76); }
+.ep-prices > p { margin: 0 0 9px; color: #7dd3fc; font-size: 10px; font-weight: 900; letter-spacing: .13em; text-transform: uppercase; }
+.ep-prices div { display: flex; justify-content: space-between; gap: 14px; padding: 10px 0; border-top: 1px solid rgba(196, 221, 240, .13); color: #c7dcf2; font-size: 12px; }
+.ep-prices strong { color: var(--ep-gold); font-size: 11px; text-align: right; text-transform: uppercase; }
+.ep-signup-copy > p.ep-address { margin-top: 10px; color: #c7dcf2; font-size: 12px; line-height: 1.65; }
+.ep-address strong { color: #fff; }
+.ep-form-card { min-width: 0; padding: clamp(20px, 3vw, 32px); border: 1px solid rgba(125, 211, 252, .24); border-radius: 18px; background: #fff; color: var(--ep-ink); box-shadow: 0 20px 48px rgba(0, 0, 0, .26); }
+.ep-form-card .ep-eyebrow { margin-bottom: 8px; color: #0284c7; }
+.ep-form-card h3 { margin: 0; color: var(--ep-ink); font-size: 32px; font-weight: 950; line-height: 1; letter-spacing: -.04em; text-transform: uppercase; }
+.ep-form-card .player-finder-fields .ep-label { font-weight: 800; }
+.ep-form-card .player-finder-fields .ep-label small { color: var(--ep-muted); font-size: 12px; font-weight: 400; }
+.ep-form-copy { margin: 9px 0 20px; color: var(--ep-muted); font-size: 13px; line-height: 1.5; }
+
+@media (max-width: 850px) {
+  .ep-hero { grid-template-columns: 1fr; gap: 25px; }
+  .ep-hero-figure img { height: 340px; }
+  .ep-tools-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .ep-tool-card, .ep-tool-card:nth-child(4) { grid-column: auto; }
+  .ep-tool-card:last-child { grid-column: 1 / -1; }
+  .ep-profile-band { grid-template-columns: 72px 1fr; }
+  .ep-profile-band > p:last-child { grid-column: 2; }
+  .ep-signup { grid-template-columns: 1fr; }
+  .ep-signup-copy { padding-top: 0; }
+}
+
+@media (max-width: 540px) {
+  .ep-hero { padding-top: 8px; }
+  .ep-hero h1 { font-size: 68px; }
+  .ep-hero h1.is-long { font-size: 44px; }
+  .ep-hero-figure img { height: 255px; }
+  .ep-tagline { font-size: 24px; }
+  .ep-intro p { font-size: 14px; }
+  .ep-tools-grid { grid-template-columns: 1fr; }
+  .ep-tool-card, .ep-tool-card:last-child { grid-column: auto; min-height: auto; }
+  .ep-tool-card > p { min-height: 0; }
+  .ep-profile-band { grid-template-columns: 56px 1fr; gap: 14px; padding: 19px; }
+  .ep-profile-mark { width: 53px; height: 64px; font-size: 21px; }
+  .ep-profile-band h2 { font-size: 29px; }
+  .ep-profile-band > p:last-child { grid-column: 1 / -1; }
+  .ep-signup { padding-top: 34px; }
+  .ep-form-card { padding: 19px 14px; }
+}
 
 .event-days { border: 0; margin: 0; padding: 0; min-width: 0; }
 .event-days legend { margin-bottom: 6px; padding: 0; color: #31465c; font-size: 13px; font-weight: 800; }

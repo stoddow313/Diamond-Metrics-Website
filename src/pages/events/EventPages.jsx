@@ -6,7 +6,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import MarketingLayout from '../../components/MarketingLayout';
 import { api } from '../../lib/api';
-import heroImage from '../../assets/find-your-player-hero.jpeg';
+import heroImage from '../../assets/pro-day-hero.jpg';
 import '../FindYourPlayerPage.css';
 import './EventPages.css';
 
@@ -19,6 +19,37 @@ const CLOSED_COPY = {
   full: 'This event is full.',
 };
 const dollars = cents => `$${(cents / 100).toFixed(cents % 100 ? 2 : 0)}`;
+
+// The Pro Day page's own copy (Will's Pro Day page, 2026-10): shown on every
+// Pro Day event, beside what the event's setup says (name, dates, place, price).
+const PRO_DAY = {
+  tagline: 'Get real MLB-level metrics. See where your game stands.',
+  tools: [
+    { number: '01', name: 'Hitting', summary: 'See how your contact, power, and batted-ball direction come together.', metrics: ['Maximum and average exit velocity', 'Hard-hit rate', 'Spray chart', 'Launch angle'] },
+    { number: '02', name: 'Running', summary: 'Measure your speed over short and longer distances.', metrics: ['Home-to-first splits', '60-yard dash'] },
+    { number: '03', name: 'Pitching', summary: 'Get a snapshot of velocity, strike throwing, and command.', metrics: ['Maximum and average velocity', 'Strike percentage', 'Command and accuracy'] },
+    { number: '04', name: 'Fielding', summary: 'Measure throwing strength and how cleanly you field the ball.', metrics: ['Arm strength: shortstop to first and/or right field to third', 'Fielding percentage'] },
+    { number: '05', name: 'Catchers', summary: 'Measure quickness behind the plate and throwing strength.', metrics: ['Pop time', 'Catcher arm strength'] },
+  ],
+};
+
+// "November 6–7, 2026" for back-to-back days in one month; otherwise each day.
+const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+function dateRange(days) {
+  const parts = days.map(d => d.date.split('-').map(Number));
+  if (!parts.length) return '';
+  const [y, m, d0] = parts[0];
+  const sameMonth = parts.every(([yy, mm]) => yy === y && mm === m);
+  const consecutive = parts.every(([, , dd], i) => dd === d0 + i);
+  if (parts.length === 1) return `${MONTHS[m - 1]} ${d0}, ${y}`;
+  if (sameMonth && consecutive) return `${MONTHS[m - 1]} ${d0}–${parts.at(-1)[2]}, ${y}`;
+  return days.map(d => d.label).join(' · ');
+}
+// "Nebo View Baseball Complex · Field 4, 940 North 400 East, Nephi, Utah" → the venue, then the address.
+function splitLocation(location = '') {
+  const i = location.indexOf(',');
+  return i < 0 ? [location.trim(), ''] : [location.slice(0, i).trim(), location.slice(i + 1).trim()];
+}
 const emptyForm = { guardianName: '', email: '', phone: '', playerName: '', playerAge: '', playerTeam: '', preferredDay: '', consent: false };
 
 // The form survives a canceled checkout in the same tab (never the browser's other tabs).
@@ -62,8 +93,9 @@ export function EventSignupPage() {
       // A renamed event's old link (a printed QR code) shows its current address.
       if (d.event.slug !== slug) window.history.replaceState(null, '', `/events/${d.event.slug}${window.location.search}`);
       if (d.event.days.length === 1) setForm(f => ({ ...f, preferredDay: d.event.days[0].date }));
+      if (cancelled) requestAnimationFrame(() => document.getElementById('event-signup')?.scrollIntoView());
     }).catch(err => setLoadError(err.status === 404 ? 'We couldn’t find that event.' : 'We couldn’t load this event. Please try again.'));
-  }, [slug]);
+  }, [slug, cancelled]);
 
   const set = e => {
     const { name, value, type, checked } = e.target;
@@ -93,28 +125,92 @@ export function EventSignupPage() {
 
   const price = dollars(event.price_cents);
   const choices = [...event.days.map(d => ({ value: d.date, label: d.label, full: d.full })), ...(event.either ? [{ value: 'either', label: 'Either day', full: false }] : [])];
+  const proDay = event.event_type === 'pro_day';
+  const dates = dateRange(event.days);
+  const [venue, address] = splitLocation(event.location);
+  // "Gobbler Last Chance Tournament · Field 4": the tournament, then the venue's last part ("… · Field 4").
+  const field = venue.includes(' · ') ? venue.split(' · ').at(-1) : '';
+  const eyebrow = [event.tournament_name || event.type_label, field].filter(Boolean).join(' · ');
   return (
     <MarketingLayout contact={false}>
-      <section className="player-finder" aria-labelledby="event-title">
+      <div className="ep-page">
         {event.preview && <div className="player-finder-alert" role="status" data-testid="event-preview">Preview — this event is a draft. Only staff signed in to Command can see this page.</div>}
         {cancelled && <div className="player-finder-alert" role="status">Checkout was canceled. Your details are still here — agree to the consent statement and try again whenever you’re ready.</div>}
-        <div className="player-finder-grid">
-          <div className="player-finder-story">
-            <div className="player-finder-image-wrap"><img src={heroImage} alt="Aerial view of a baseball diamond" className="player-finder-image" /><p className="player-finder-tag">{event.type_label}{event.tournament_name ? ` · ${event.tournament_name}` : ''}</p></div>
-            <p className="player-finder-eyebrow">{event.type_label} registration</p>
-            <h1 id="event-title">{event.name}</h1>
-            {event.description && <p className="player-finder-intro">{event.description}</p>}
-            <dl className="event-facts">
-              <div><dt>When</dt><dd>{event.days.map(d => d.label).join(' · ')}</dd></div>
-              {event.location && <div><dt>Where</dt><dd>{event.location}</dd></div>}
-              <div><dt>Price</dt><dd>{price} per player</dd></div>
-              {event.what_to_bring && <div><dt>Bring</dt><dd>{event.what_to_bring}</dd></div>}
-            </dl>
+        <section className="ep-hero" aria-labelledby="event-title">
+          <div className="ep-hero-copy">
+            <p className="ep-eyebrow">{eyebrow}</p>
+            <h1 id="event-title" className={event.name.length > 14 ? 'is-long' : ''}>{event.name}</h1>
+            <p className="ep-presented">Presented by Diamond Metrics</p>
+            {proDay && <p className="ep-tagline">{PRO_DAY.tagline}</p>}
+            <div className="ep-details">
+              {event.location && <div><span className="ep-detail-label">Location</span><strong>{venue}</strong>{address && <span>{address}</span>}</div>}
+              <div><span className="ep-detail-label">{event.days.length > 1 ? 'Event dates' : 'Event date'}</span><strong>{dates}</strong>{event.tournament_name && <span>During the {event.tournament_name}</span>}</div>
+              <div><span className="ep-detail-label">Price</span><strong>{price} per player</strong><span>Paid securely at checkout</span></div>
+            </div>
+            {event.accepting
+              ? <a className="ep-button" href="#event-signup">Sign up today <span aria-hidden="true">→</span></a>
+              : <p className="ep-closed-chip">{event.reason === 'full' ? 'Full' : 'Registration closed'}</p>}
           </div>
+          <figure className="ep-hero-figure">
+            <img src={heroImage} alt="Youth baseball player waiting for a pitch" />
+            <figcaption>Your game, measured.</figcaption>
+          </figure>
+        </section>
+
+        {event.description && <section className="ep-intro" aria-label={`About ${event.name}`}><p>{event.description}</p></section>}
+
+        {proDay && (
+          <section className="ep-metrics" aria-labelledby="event-metrics-title">
+            <div className="ep-section-heading">
+              <p className="ep-eyebrow">Five tools of baseball</p>
+              <h2 id="event-metrics-title">What you’ll measure</h2>
+              <p>See the metrics and player insights available across the Pro Day stations.</p>
+            </div>
+            <div className="ep-metrics-box">
+              <div className="ep-tools-grid">
+                {PRO_DAY.tools.map(tool => (
+                  <article className="ep-tool-card" key={tool.number}>
+                    <span className="ep-tool-number">{tool.number}</span>
+                    <h3>{tool.name}</h3>
+                    <p>{tool.summary}</p>
+                    <ul>{tool.metrics.map(m => <li key={m}>{m}</li>)}</ul>
+                  </article>
+                ))}
+              </div>
+              <p className="ep-metrics-note">Metrics received may vary by player position and station.</p>
+            </div>
+          </section>
+        )}
+
+        {proDay && (
+          <section className="ep-profile-band" aria-label="Diamond Metrics player profile">
+            <div className="ep-profile-mark" aria-hidden="true">DM</div>
+            <div>
+              <p className="ep-eyebrow">Your results, all in one place</p>
+              <h2>A player profile<br />you can share.</h2>
+            </div>
+            <p>Each athlete receives a personalized online baseball card with a data-backed snapshot of their performance.</p>
+          </section>
+        )}
+
+        <section className="ep-signup" id="event-signup" aria-labelledby="event-signup-title">
+          <div className="ep-signup-copy">
+            <p className="ep-eyebrow">{eyebrow}</p>
+            <h2 id="event-signup-title">Take the field.<br /><span>Know your game.</span></h2>
+            <p>Register in advance for {event.name} on {event.days.map(d => d.label).join(' or ')}.</p>
+            <div className="ep-prices" aria-label="Pricing">
+              <p>{event.type_label} pricing</p>
+              <div><span>Per player</span><strong>{price}</strong></div>
+            </div>
+            {event.location && <p className="ep-address"><strong>{venue}</strong>{address && <><br />{address}</>}</p>}
+            {event.what_to_bring && <p className="ep-address"><strong>Bring:</strong> {event.what_to_bring}</p>}
+          </div>
+
           {event.accepting ? (
-            <form className="player-finder-card" onSubmit={submit} noValidate data-testid="event-form">
-              <p className="player-finder-eyebrow">Reserve a spot</p><h2>Register</h2>
-              <p className="player-finder-card-copy">One form per player. You’ll pay {price} on the next screen.</p>
+            <form className="ep-form-card" onSubmit={submit} noValidate data-testid="event-form">
+              <p className="ep-eyebrow">Player registration</p>
+              <h3>Sign up today</h3>
+              <p className="ep-form-copy">Parent or guardian: one form per player. You’ll pay {price} on the next screen.</p>
               <div className="player-finder-fields">
                 <Field label="Parent or Guardian Name" name="guardianName" value={form.guardianName} onChange={set} error={errors.guardianName} autoComplete="name" />
                 <Field label="Email" name="email" type="email" value={form.email} onChange={set} error={errors.email} autoComplete="email" />
@@ -142,24 +238,24 @@ export function EventSignupPage() {
                 </label>
               </div>
               {submitError && <p className="player-finder-checkout-error" role="alert">{submitError}</p>}
-              <button className="player-finder-primary" type="submit" disabled={busy}>{busy ? 'Starting secure checkout…' : `Register & pay ${price}`}</button>
+              <button className="ep-submit" type="submit" disabled={busy}>{busy ? 'Starting secure checkout…' : <>Register &amp; pay {price} <span aria-hidden="true">→</span></>}</button>
               <p className="player-finder-note">Payment is handled by Stripe. Your details are used to run the event and deliver your player’s results. <a href="/privacy">Privacy Policy</a></p>
             </form>
           ) : (
-            <div className="player-finder-card" data-testid="event-closed">
-              <p className="player-finder-eyebrow">Registration</p><h2>{event.reason === 'full' ? 'Full' : 'Closed'}</h2>
-              <p className="player-finder-card-copy">{CLOSED_COPY[event.reason] || CLOSED_COPY.closed}{event.reason === 'closed' ? ' Walk-ups may still be welcome at the booth on the day.' : ''}</p>
+            <div className="ep-form-card" data-testid="event-closed">
+              <p className="ep-eyebrow">Registration</p><h3>{event.reason === 'full' ? 'Full' : 'Closed'}</h3>
+              <p className="ep-form-copy">{CLOSED_COPY[event.reason] || CLOSED_COPY.closed}{event.reason === 'closed' ? ' Walk-ups may still be welcome at the booth on the day.' : ''}</p>
             </div>
           )}
-        </div>
-      </section>
+        </section>
+      </div>
     </MarketingLayout>
   );
 }
 
 function Field({ label, optional, error, ...props }) {
   const errorId = `${props.name}-error`;
-  return <label>{label} {optional && <span>(optional)</span>}<input {...props} aria-invalid={Boolean(error)} aria-describedby={error ? errorId : undefined} />{error && <span className="player-finder-field-error" id={errorId}>{error}</span>}</label>;
+  return <label><span className="ep-label">{label}{optional && <small> (optional)</small>}</span><input {...props} aria-invalid={Boolean(error)} aria-describedby={error ? errorId : undefined} />{error && <span className="player-finder-field-error" id={errorId}>{error}</span>}</label>;
 }
 
 // An all-day calendar entry for the chosen day (or the first day, for "Either").
