@@ -2,7 +2,7 @@
 // Home-to-First, Steal Time, 90-Foot Speed. The analyst marks frames; the
 // system computes, stores evidence, and maintains draft metric results.
 export const MEASURE_VERSION = 'CMD_MEASURE_V1';
-export const ATTEMPT_TYPES = ['home_to_first', 'steal'];
+export const ATTEMPT_TYPES = ['home_to_first', 'steal', 'time_to_home'];
 export const UNAVAILABLE_REASONS = [
   'base_not_visible', 'runner_or_ball_obscured', 'camera_stopped',
   'insufficient_frame_rate', 'no_valid_attempt', 'insufficient_capture_quality', 'other_with_note',
@@ -28,7 +28,8 @@ export function ninetyFtSpeedMph(seconds) {
   return (90 / seconds) * 0.681818;
 }
 
-export const METRIC_BY_ATTEMPT = { home_to_first: 'home_to_first', steal: 'steal_time' };
+// time_to_home: the pitcher's first movement to the pitch reaching the catcher (the player is the pitcher).
+export const METRIC_BY_ATTEMPT = { home_to_first: 'home_to_first', steal: 'steal_time', time_to_home: 'time_to_home' };
 
 export function requirementEnabled(db, jobId, metricCode) {
   return !!db.prepare(
@@ -38,7 +39,7 @@ export function requirementEnabled(db, jobId, metricCode) {
 }
 
 export function createAttempt(db, jobId, { attempt_type, player_id, feed_id, base_path = '', outcome = '', timecode_s = null }, actorId) {
-  if (!ATTEMPT_TYPES.includes(attempt_type)) throw err(`attempt_type must be ${ATTEMPT_TYPES.join(' or ')}`);
+  if (!ATTEMPT_TYPES.includes(attempt_type)) throw err(`attempt_type must be ${ATTEMPT_TYPES.join(', ')}`);
   if (!db.prepare('SELECT 1 FROM players WHERE id = ?').get(player_id)) throw err('Unknown player');
   const ids = footageJobIds(db, jobId);
   const feed = feed_id ? db.prepare(`SELECT * FROM cmd_video_feeds WHERE id = ? AND job_id IN (${ids.map(() => '?').join(',')})`).get(feed_id, ...ids) : null;

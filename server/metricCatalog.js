@@ -25,9 +25,11 @@ export const METRICS = [
   { key: 'contact_pct',    label: 'Contact %',             unit: '%',    category: 'hitting',  aggregate: 'avg',    decimals: 0, zeroMeansUnmeasured: true },
   { key: 'launch_angle',   label: 'Launch Angle (Avg)',    unit: '°',    category: 'hitting',  aggregate: 'avg',    decimals: 1 },
   { key: 'quality_la_pct', label: 'Quality Launch Angle %', unit: '%',   category: 'hitting',  aggregate: 'avg',    decimals: 0, zeroMeansUnmeasured: true },
-  { key: 'pull_pct',       label: 'Pull %',                unit: '%',    category: 'hitting',  aggregate: 'avg',    decimals: 0 },
-  { key: 'middle_pct',     label: 'Middle %',              unit: '%',    category: 'hitting',  aggregate: 'avg',    decimals: 0 },
-  { key: 'oppo_pct',       label: 'Opposite Field %',      unit: '%',    category: 'hitting',  aggregate: 'avg',    decimals: 0 },
+  // Spray: per game from the scorebook's landing spots; the season is pooled by batted balls (weightBy).
+  { key: 'pull_pct',       label: 'Pull %',                unit: '%',    category: 'hitting',  aggregate: 'avg',    decimals: 0, weightBy: 'spray_balls' },
+  { key: 'middle_pct',     label: 'Middle %',              unit: '%',    category: 'hitting',  aggregate: 'avg',    decimals: 0, weightBy: 'spray_balls' },
+  { key: 'oppo_pct',       label: 'Opposite Field %',      unit: '%',    category: 'hitting',  aggregate: 'avg',    decimals: 0, weightBy: 'spray_balls' },
+  { key: 'spray_balls',    label: 'Batted Balls Charted',  unit: '',     category: 'hitting',  aggregate: 'sum',    decimals: 0 },
   { key: 'batting_avg',    label: 'Batting Average',       unit: '',     category: 'hitting',  aggregate: 'avg',    decimals: 3 },
   { key: 'obp',            label: 'OBP',                   unit: '',     category: 'hitting',  aggregate: 'avg',    decimals: 3 },
   { key: 'slg',            label: 'SLG',                   unit: '',     category: 'hitting',  aggregate: 'avg',    decimals: 3 },
@@ -36,6 +38,7 @@ export const METRICS = [
   // ── Pitching ─────────────────────────────────────────────────────────
   { key: 'max_velo',       label: 'Max Velocity',          unit: 'mph',  category: 'pitching', aggregate: 'max',    decimals: 1, zeroMeansUnmeasured: true },
   { key: 'avg_velo',       label: 'Average Velocity',      unit: 'mph',  category: 'pitching', aggregate: 'avg',    decimals: 1, zeroMeansUnmeasured: true },
+  { key: 'time_to_home',   label: 'Time to Home',          unit: 's',    category: 'pitching', aggregate: 'avg',    decimals: 2, lowerIsBetter: true, zeroMeansUnmeasured: true },   // the game's average delivery
   { key: 'strike_pct',     label: 'Strike %',              unit: '%',    category: 'pitching', aggregate: 'avg',    decimals: 0, zeroMeansUnmeasured: true },
   { key: 'whiff_pct',      label: 'Whiff %',               unit: '%',    category: 'pitching', aggregate: 'avg',    decimals: 0, zeroMeansUnmeasured: true },
   { key: 'command_score',  label: 'Command Score',         unit: '',     category: 'pitching', aggregate: 'avg',    decimals: 0, zeroMeansUnmeasured: true },

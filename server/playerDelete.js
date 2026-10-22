@@ -11,6 +11,7 @@ export function deletePlayers(db, ids) {
     let deleted = 0;
     for (const id of list) {
       db.prepare('DELETE FROM stat_entries WHERE game_id IN (SELECT id FROM games WHERE player_id = ?)').run(id);
+      db.prepare('DELETE FROM published_batted_balls WHERE player_id = ?').run(id);
       db.prepare('DELETE FROM games WHERE player_id = ?').run(id);
       db.prepare('DELETE FROM player_game_appearances WHERE player_id = ?').run(id);
       db.prepare('DELETE FROM event_rosters WHERE player_id = ?').run(id);

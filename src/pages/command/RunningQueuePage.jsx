@@ -4,15 +4,23 @@ import { api } from '../../lib/api';
 import FeedPlayer from './FeedPlayer';
 import { Field, TextInput, Select, PrimaryButton, GhostButton, ErrorNote } from '../../components/admin/ui';
 import { cardStyle } from '../../components/admin/theme';
+import { InfoTip } from '../../components/Tooltip';
 
 // Running queue + measurement drawer (Command M4). The analyst creates a
-// home-to-first or steal attempt, marks start/end frames on the frame-
+// home-to-first, steal or pitcher time-to-home attempt, marks start/end frames on the frame-
 // accurate player, and the system computes elapsed time from the proxy's
 // effective FPS — frames, FPS, feed, and version stored as evidence. A
 // clean candidate should take 10–15 seconds (PRD Phase 4 gate). Unavailable
 // always requires a controlled reason.
 
 const VALIDITY_COLORS = { valid: '#4ade80', unavailable: '#fbbf24' };
+// What each attempt times. Time to home is the pitcher's: from the first move
+// after the set (docs/V2_AUTOMATION_PLAN.md marker definitions) to the catch.
+const ATTEMPT_COPY = {
+  time_to_home: { who: 'Pitcher', start: 'First move', end: 'Catcher receives',
+    tip: 'Start on the first frame of continuous motion toward the plate after the set: the lead foot or knee lifting, or the hands breaking. End when the ball reaches the catcher’s glove. A pickoff or step-off is not an attempt.' },
+};
+const copyOf = type => ATTEMPT_COPY[type] || { who: 'Runner', start: 'Mark start', end: 'Mark end' };
 
 // Two feeds on one job usually share a label ("Behind Home"), which makes
 // the selector ambiguous — and picking the wrong one means measuring the
@@ -76,6 +84,8 @@ export default function RunningQueuePage() {
   useEffect(() => {
     api.commandAttempts(jobId).then(d => {
       setData(d);
+      // Start on a timing this order includes (a pitcher-only order has no home-to-first).
+      if (d.attempt_types?.length) setSticky(st => (d.attempt_types.includes(st.attempt_type) ? st : { ...st, attempt_type: d.attempt_types[0] }));
       const ready = d.feeds.find(f => f.status === 'ready');
       if (ready) setSelectedFeedId(ready.id);
     }).catch(err => setError(err.message));
@@ -191,7 +201,7 @@ export default function RunningQueuePage() {
             <section className="rounded-2xl border p-4" style={cardStyle}>
               <p className="text-[11px] font-bold uppercase tracking-widest mb-3" style={{ color: '#94a3b8' }}>New attempt</p>
               <div className="flex flex-col gap-3">
-                <Field label="Runner (carries forward)">
+                <Field label={`${copyOf(sticky.attempt_type).who} (carries forward)`}>
                   <Select value={sticky.player_id} onChange={e => setSticky(s => ({ ...s, player_id: e.target.value }))}>
                     <option value="">—</option>
                     {data.roster.map(p => <option key={p.id} value={p.id}>{rosterLabel(p)}</option>)}
@@ -233,7 +243,7 @@ export default function RunningQueuePage() {
                   {activeAttempt.first_name} {activeAttempt.last_name} · {activeAttempt.payload.attempt_type.replace(/_/g, ' ')}
                 </p>
                 <div className="flex items-center gap-2 mb-3">
-                  <span className="text-[11px]" style={{ color: '#64748b' }}>Reassign runner</span>
+                  <span className="text-[11px]" style={{ color: '#64748b' }}>Reassign {copyOf(activeAttempt.payload.attempt_type).who.toLowerCase()}</span>
                   <Select value="" onChange={e => reassign(activeAttempt.id, e.target.value)} data-testid="reassign-runner">
                     <option value="">— pick —</option>
                     {data.roster.filter(p => p.id !== activeAttempt.player_id).map(p => <option key={p.id} value={p.id}>{rosterLabel(p)}</option>)}
@@ -241,12 +251,15 @@ export default function RunningQueuePage() {
                 </div>
                 <div className="grid grid-cols-2 gap-2 mb-3">
                   <GhostButton onClick={() => setMarks(m => ({ ...m, start: currentFrame }))}>
-                    Mark start{marks.start != null ? `: ${marks.start}` : ''}
+                    {copyOf(activeAttempt.payload.attempt_type).start}{marks.start != null ? `: ${marks.start}` : ''}
                   </GhostButton>
                   <GhostButton onClick={() => setMarks(m => ({ ...m, end: currentFrame }))}>
-                    Mark end{marks.end != null ? `: ${marks.end}` : ''}
+                    {copyOf(activeAttempt.payload.attempt_type).end}{marks.end != null ? `: ${marks.end}` : ''}
                   </GhostButton>
                 </div>
+                {copyOf(activeAttempt.payload.attempt_type).tip && (
+                  <div className="flex justify-end -mt-2 mb-2"><InfoTip label="How to mark this attempt">{copyOf(activeAttempt.payload.attempt_type).tip}</InfoTip></div>
+                )}
                 <p className="text-center text-2xl font-black mb-3 tabular-nums" style={{ color: elapsedPreview ? '#4ade80' : '#334155' }}>
                   {elapsedPreview ? `${elapsedPreview}s` : '—'}
                 </p>

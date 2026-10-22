@@ -12,6 +12,8 @@ import { loadEvents } from './scorebook.js';
 const httpError = (message, status = 400) => Object.assign(new Error(message), { status });
 // Derived metrics ride their parent: no data, QA flag or undelivered notice of their own.
 const DERIVED = new Map([['ninety_ft_speed', 'home_to_first']]);
+// Ordered metrics that publish with the game record (from the scorebook), not as metric results.
+const GAME_RECORD_METRICS = new Set(['spray_direction']);
 
 // Results that still count: never superseded, never withdrawn.
 const ACTIVE_RESULTS = `
@@ -114,7 +116,7 @@ export function computeQaFlags(db, jobId) {
   }
 
   for (const m of metrics) {
-    if (DERIVED.has(m.metric_code)) continue;
+    if (DERIVED.has(m.metric_code) || GAME_RECORD_METRICS.has(m.metric_code)) continue;
     if (!results.some(r => r.metric_code === m.metric_code)) {
       flags.push({ code: 'metric_no_data', level: 'warning', label: `${m.label}: no results recorded`, detail: 'This ordered metric will release as unavailable and the customer will be notified.' });
     }

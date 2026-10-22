@@ -17,14 +17,14 @@ test('registry seed: unique codes, valid tiers/methods, publish keys exist in pu
       assert.ok(VALID_METRIC_KEYS.has(key), `${r.metric_code} publishes to unknown public key ${key}`);
     }
   }
-  // Phase 1 activates exactly the Rookie core.
+  // Active modules are exactly the Rookie package (expanded 2026-10: time to home, spray chart).
   const active = REGISTRY_SEED.filter(r => r.active).map(r => r.metric_code).sort();
-  assert.deepEqual(active, ['home_to_first', 'ninety_ft_speed', 'pitch_velocity_radar', 'steal_time']);
+  assert.deepEqual(active, ['home_to_first', 'ninety_ft_speed', 'pitch_velocity_radar', 'spray_direction', 'steal_time', 'time_to_home']);
 });
 
 test('rookie order activates the Rookie requirements, prioritized', () => {
   const reqs = buildRequirements({ packageKey: 'rookie', registry: REGISTRY_SEED });
-  assert.deepEqual(reqs.map(r => r.metric_code).sort(), ['home_to_first', 'ninety_ft_speed', 'pitch_velocity_radar', 'steal_time']);
+  assert.deepEqual(reqs.map(r => r.metric_code).sort(), ['home_to_first', 'ninety_ft_speed', 'pitch_velocity_radar', 'spray_direction', 'steal_time', 'time_to_home']);
   assert.ok(reqs.every(r => r.enabled === 1 && r.priority === 10));
 });
 

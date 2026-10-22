@@ -56,6 +56,22 @@ export function timingRollup(results, { key, decimals = 2 }) {
   };
 }
 
+// Pitcher time to home: the game's average delivery publishes (a pitcher is
+// judged on how quick they usually are); the quickest and the count ride along.
+export function averageTimingRollup(results, { key, decimals = 2 }) {
+  const values = validValues(results);
+  const unavailable = results.filter(r => r.status === 'unavailable');
+  if (values.length === 0) {
+    return { entries: [], sample: { attempts: 0, unavailable: unavailable.length }, released: false };
+  }
+  const average = values.reduce((a, b) => a + b, 0) / values.length;
+  return {
+    entries: [{ metric_key: key, value: round(average, decimals) }],
+    sample: { attempts: values.length, best: round(Math.min(...values), decimals), average: round(average, decimals), unavailable: unavailable.length },
+    released: true,
+  };
+}
+
 // Derived speed (90-ft speed from home-to-first): the best (fastest) publishes;
 // average and attempt count ride as sample metadata.
 export function speedRollup(results, { key, decimals = 1 }) {
@@ -89,6 +105,8 @@ export function rollupForMetricCode(metricCode, results) {
       return timingRollup(results, { key: 'steal_time' });
     case 'ninety_ft_speed':
       return speedRollup(results, { key: 'ninety_ft_speed' });
+    case 'time_to_home':
+      return averageTimingRollup(results, { key: 'time_to_home' });
     default:
       return null;   // metric has no Phase 1 rollup mapping
   }

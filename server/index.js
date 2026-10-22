@@ -353,8 +353,12 @@ function buildProfilePayload(player) {
     const series = byMetric[def.key];
     if (!series || series.length === 0) continue;
     const values = series.map(s => s.value);
+    // Shares weighted by their game's sample (spray %: by batted balls), so the season is pooled, not an average of games.
+    const weights = def.weightBy ? new Map((byMetric[def.weightBy] || []).map(s => [s.gameId, s.value])) : null;
+    const weighted = weights && series.every(s => weights.get(s.gameId) > 0);
     let headline;
-    if (def.aggregate === 'max') headline = def.lowerIsBetter ? Math.min(...values) : Math.max(...values);
+    if (weighted) headline = series.reduce((a, s) => a + s.value * weights.get(s.gameId), 0) / series.reduce((a, s) => a + weights.get(s.gameId), 0);
+    else if (def.aggregate === 'max') headline = def.lowerIsBetter ? Math.min(...values) : Math.max(...values);
     else if (def.aggregate === 'latest') headline = values[values.length - 1];
     else if (def.aggregate === 'sum') headline = values.reduce((a, b) => a + b, 0);
     else headline = values.reduce((a, b) => a + b, 0) / values.length;
@@ -400,6 +404,11 @@ function buildProfilePayload(player) {
     catalog: { metrics: METRICS, categories: CATEGORIES },
     teams,
     tournaments: tournamentsPlayed,
+    // The spray chart's dots: where each charted batted ball landed (Command scorebook → game record).
+    batted_balls: db.prepare(
+      `SELECT b.game_id, b.x, b.y, b.zone, b.bats, b.result FROM published_batted_balls b JOIN games g ON g.id = b.game_id
+        WHERE g.player_id = ? AND b.player_id = ? ORDER BY g.game_date, b.id`
+    ).all(player.id, player.id),
     // Engine-calculated skills/overall (null when no Pro Day data exists;
     // clients fall back to the legacy stored ratings in that case).
     ratings: ratePlayer(player),

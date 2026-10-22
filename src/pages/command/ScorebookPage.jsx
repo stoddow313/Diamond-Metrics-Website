@@ -6,7 +6,9 @@ import { formatTimecode } from '../../lib/timecode';
 import { Field, TextInput, Select, PrimaryButton, GhostButton, ErrorNote } from '../../components/admin/ui';
 import { cardStyle } from '../../components/admin/theme';
 import { LABELS, POSITIONS, refName } from './scorebookVocab';
-import { InningNav, InningReview, CorrectionEditor, VoidedPlays, LineupEditor } from './ScorebookReview';
+import { InningNav, InningReview, CorrectionEditor, VoidedPlays, LineupEditor, SpotMark } from './ScorebookReview';
+import { FieldSpot, FieldSvg, SpotDot } from '../../components/FieldDiagram';
+import { rosterSide, ZONES, ZONE_COLOR, ZONE_LABEL } from '../../lib/spray';
 
 // Scorebook (Phase 2). Keyboard-first contextual scorekeeping: the count
 // builds from pitch keys, four balls / three strikes resolve the plate
@@ -65,7 +67,7 @@ export default function ScorebookPage() {
   const [tab, setTab] = useState('score');   // score | box | log
   // at-bat working state
   const [pitches, setPitches] = useState([]);           // [{ result }]
-  const [resultPanel, setResultPanel] = useState(null); // { result, rbi, batted_ball, direction, error_label, error_player_id, advances }
+  const [resultPanel, setResultPanel] = useState(null); // { result, rbi, batted_ball, direction, spray, error_label, error_player_id, advances }
   const [batterOverride, setBatterOverride] = useState('');
   // lineup setup
   const [setup, setSetup] = useState(null);
@@ -124,6 +126,14 @@ export default function ScorebookPage() {
     const lu = state.lineups[battingSide];
     return lu ? lu.slots.map(s => ({ slot: s.slot, ...s.current })) : [];
   }, [data, state, battingSide]);
+  // The side the batter at the plate hits from, for the field widget's pull / oppo (the server decides on save).
+  const upSide = useMemo(() => {
+    if (!data || !state || !battingSide) return 'R';
+    const ref = batterOverride ? battingRoster.find(p => String(p.player_id || p.label) === batterOverride) : state.expected_batter;
+    const hands = id => (id ? [...(data.roster || []), ...(data.partner_roster || [])].find(p => p.id === id) : null);
+    return rosterSide(hands(ref?.player_id)?.bats, hands(state.pitcher?.[battingSide === 'us' ? 'them' : 'us']?.player_id)?.throws);
+  }, [data, state, battingSide, batterOverride, battingRoster]);
+  const inPlay = useMemo(() => new Set(data?.vocab?.in_play_results || []), [data]);
 
   async function run(fn, okMessage) {
     setError(''); setNotice(''); setBusy(true);
@@ -153,7 +163,7 @@ export default function ScorebookPage() {
   }
 
   function openResult(result, pitchList = pitches) {
-    setResultPanel({ result, rbi: null, batted_ball: '', direction: '', fielders: '', error_position: '', error_label: '', error_player_id: '', time_home_to_first: false, advances: result ? defaultAdvances(result, state.bases) : {}, pitchList });
+    setResultPanel({ result, rbi: null, batted_ball: '', direction: '', spray: null, fielders: '', error_position: '', error_label: '', error_player_id: '', time_home_to_first: false, advances: result ? defaultAdvances(result, state.bases) : {}, pitchList });
   }
   function chooseResult(result) {
     setResultPanel(rp => ({ ...rp, result, advances: defaultAdvances(result, state.bases) }));
@@ -190,7 +200,9 @@ export default function ScorebookPage() {
     const adv = {};
     for (const [from, a] of Object.entries(rp.advances)) adv[from] = { ...a, from: Number(from) };
     submitPA({
-      result: rp.result, rbi: rp.rbi == null || rp.rbi === '' ? undefined : Number(rp.rbi), batted_ball: rp.batted_ball || undefined, direction: rp.direction || undefined,
+      result: rp.result, rbi: rp.rbi == null || rp.rbi === '' ? undefined : Number(rp.rbi), batted_ball: rp.batted_ball || undefined,
+      // With the spray chart ordered the landing spot is the record; the direction pick is the fallback otherwise.
+      ...(data.modules?.spray ? { spray: rp.spray && inPlay.has(rp.result) ? rp.spray : undefined } : { direction: rp.direction || undefined }),
       fielders: FIELDED_RESULTS.has(rp.result) && rp.fielders ? rp.fielders : undefined,
       error_position: rp.result === 'reach_on_error' && rp.error_position ? Number(rp.error_position) : undefined,
       error_label: rp.error_label || undefined, error_player_id: rp.error_player_id || undefined,
@@ -739,11 +751,13 @@ export default function ScorebookPage() {
                             <option value="">—</option>{data.vocab.batted_balls.map(b => <option key={b} value={b}>{b.replace(/_/g, ' ')}</option>)}
                           </Select>
                         </Field>
-                        <Field label="Direction">
-                          <Select value={resultPanel.direction} onChange={e => setResultPanel(rp => ({ ...rp, direction: e.target.value }))}>
-                            <option value="">—</option>{data.vocab.directions.map(d => <option key={d} value={d}>{d}</option>)}
-                          </Select>
-                        </Field>
+                        {!data.modules?.spray && (
+                          <Field label="Direction">
+                            <Select value={resultPanel.direction} onChange={e => setResultPanel(rp => ({ ...rp, direction: e.target.value }))}>
+                              <option value="">—</option>{data.vocab.directions.map(d => <option key={d} value={d}>{d}</option>)}
+                            </Select>
+                          </Field>
+                        )}
                         {FIELDED_RESULTS.has(resultPanel.result) && (
                           <Field label={resultPanel.result === 'reach_on_error' ? 'Fielders on the play (optional)' : 'Fielders, e.g. 6-3'}>
                             <TextInput value={resultPanel.fielders} onChange={e => setResultPanel(rp => ({ ...rp, fielders: e.target.value }))} placeholder={resultPanel.result === 'double_play' ? '6-4-3' : resultPanel.result === 'flyout' ? '8' : '6-3'} />
@@ -765,6 +779,11 @@ export default function ScorebookPage() {
                               </Field>
                             : <Field label="Error by (their label)"><TextInput value={resultPanel.error_label} onChange={e => setResultPanel(rp => ({ ...rp, error_label: e.target.value }))} placeholder="#6" /></Field>
                         )}
+                      </div>
+                    )}
+                    {resultPanel.result && data.modules?.spray && inPlay.has(resultPanel.result) && (
+                      <div className="mb-3">
+                        <FieldSpot value={resultPanel.spray} onChange={spray => setResultPanel(rp => ({ ...rp, spray }))} rosterSide={upSide} />
                       </div>
                     )}
                     {resultPanel.result && videoOn && data.modules?.home_to_first && battingSide === 'us' && !['walk', 'intentional_walk', 'hit_by_pitch', 'catcher_interference', 'strikeout', 'strikeout_looking'].includes(resultPanel.result) && (
@@ -943,7 +962,7 @@ export default function ScorebookPage() {
                         <button onClick={() => { if (l.feed_id && l.feed_id !== activeFeedId) setVideoFeedId(l.feed_id); setShowVideo(true); setPendingSeek({ seconds: l.timecode_s, nonce: Date.now() }); }}
                           className="mr-2 text-xs tabular-nums cursor-pointer hover:underline" style={{ color: '#38bdf8' }} title="Jump to this moment in the footage" data-testid={`jump-${l.id}`}>▶ {formatTimecode(l.timecode_s)}</button>
                       )}
-                      {l.text}{disputed ? <span className="ml-2 text-xs font-bold" style={{ color: '#fbbf24' }}>under review</span> : null}
+                      {l.text}<SpotMark entry={l} data={data} />{disputed ? <span className="ml-2 text-xs font-bold" style={{ color: '#fbbf24' }}>under review</span> : null}
                       {l.pitches?.some(x => x.velocity != null || x.pitch_type) && (
                         <span className="ml-2 inline-flex gap-1 flex-wrap align-middle">
                           {l.pitches.map((x, i) => <span key={i} className="px-1.5 py-0.5 rounded text-[10px]" style={{ backgroundColor: 'rgba(30, 41, 59, 0.9)', color: x.velocity != null ? '#cfe8ff' : '#64748b' }} title={x.result.replace(/_/g, ' ')}>{x.velocity != null ? `${x.velocity} ` : ''}{x.pitch_type ? x.pitch_type.slice(0, 2).toUpperCase() : x.result === 'ball' ? 'B' : 'S'}</span>)}
@@ -1076,8 +1095,52 @@ function BoxScore({ data }) {
       <StatTable rows={theirs.filter(t => t.stats.bs_bf > 0 || t.outs_pitched > 0)} keys={pit} rates={pitRates} title="Their pitching" />
       <StatTable rows={theirs.filter(fielded)} keys={fld} rates={fldRates} title="Their fielding" />
       <PositionsPlayed positions={data.state.positions} opponent={data.partner?.team_name || data.job.opponent_label || 'Them'} />
+      <SprayBox data={data} />
       {data.tallies.length === 0 && <p className="text-sm" style={{ color: '#64748b' }}>No plays yet.</p>}
     </section>
+  );
+}
+
+// The spray chart as it will publish: our batters' landing spots and shares,
+// and how many balls in play still have no spot (Correct the play to place one).
+function SprayBox({ data }) {
+  if (!data.modules?.spray) return null;
+  const inPlay = new Set(data.vocab.in_play_results || []);
+  const ours = data.log.filter(l => l.type === 'plate_appearance' && l.batting === 'us' && !l.disputed && inPlay.has(l.result));
+  const placed = ours.filter(l => l.spray);
+  if (!ours.length) return null;
+  const rows = data.tallies.filter(t => t.side === 'us' && t.spray);
+  const pct = (sp, z) => { const n = sp.pull + sp.middle + sp.oppo; return n ? `${Math.round(100 * sp[z] / n)}%` : '—'; };
+  return (
+    <div className="mt-4" data-testid="spray-box">
+      <p className="text-[11px] font-bold uppercase tracking-widest mb-2" style={{ color: '#94a3b8' }}>Our spray chart
+        <span className="normal-case tracking-normal font-normal ml-1" style={{ color: placed.length < ours.length ? '#fbbf24' : '#64748b' }}>· {placed.length} of {ours.length} balls in play placed</span>
+      </p>
+      <div className="flex flex-wrap gap-5 items-start">
+        <div className="w-full max-w-[280px]">
+          <FieldSvg>{placed.map(l => <SpotDot key={l.id} spot={l.spray} zone={l.spray.zone} />)}</FieldSvg>
+        </div>
+        {rows.length > 0 && (
+          <table className="text-sm">
+            <thead>
+              <tr className="text-[10px] uppercase tracking-wider" style={{ color: '#64748b' }}>
+                <th className="text-left pr-4 pb-1 font-bold">Batter</th><th className="text-right pr-3 pb-1 font-bold">BIP</th>
+                {ZONES.map(z => <th key={z} className="text-right pr-3 pb-1 font-bold" style={{ color: ZONE_COLOR[z] }}>{ZONE_LABEL[z]}</th>)}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map(t => (
+                <tr key={t.key}>
+                  <td className="pr-4 py-0.5 font-bold text-white whitespace-nowrap">{t.name || t.label}</td>
+                  <td className="pr-3 py-0.5 text-right tabular-nums" style={{ color: '#cfe8ff' }}>{t.spray.pull + t.spray.middle + t.spray.oppo}</td>
+                  {ZONES.map(z => <td key={z} className="pr-3 py-0.5 text-right tabular-nums" style={{ color: '#cfe8ff' }}>{pct(t.spray, z)}</td>)}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </div>
   );
 }
 

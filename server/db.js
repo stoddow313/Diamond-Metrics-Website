@@ -1408,6 +1408,25 @@ db.exec(`
 // A Stripe event this server acted on can be a registration's, not only a tournament order's.
 addColumnIfMissing('stripe_events', 'registration_id', 'registration_id INTEGER REFERENCES event_registrations(id)');
 
+// The profile's spray chart: where each of a player's batted balls landed, as
+// placed in the Command scorebook, published with the game record (server/gameRecord.js)
+// and rewritten on every release. x, y: home plate (0,0), center field up y, 1 = the fence.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS published_batted_balls (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    game_id    INTEGER NOT NULL REFERENCES games(id) ON DELETE CASCADE,
+    player_id  INTEGER NOT NULL REFERENCES players(id),
+    event_id   INTEGER,                                  -- the scorebook plate appearance
+    x          REAL NOT NULL,
+    y          REAL NOT NULL,
+    zone       TEXT NOT NULL,                            -- pull | middle | oppo
+    bats       TEXT NOT NULL DEFAULT 'R',                -- the side they hit from
+    result     TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+  CREATE INDEX IF NOT EXISTS idx_published_batted_balls_game ON published_batted_balls(game_id);
+`);
+
 // Paired game jobs (server/gamePairing.js): the two teams of one game get a
 // job each — own order, customer and release — but one set of footage and one
 // scorebook. The second team's job (the guest) points at the first (the host):
@@ -1472,12 +1491,17 @@ db.exec(`
        (metric_code, label, category, availability_tier, recipe_version, unit, decimals, method, publishes_to, capture_requirements, dependencies, sellable, active)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1, ?)`
   );
-  const setActive = db.prepare('UPDATE cmd_metric_registry SET active = ?, recipe_version = ?, publishes_to = ? WHERE metric_code = ?');
+  // The registry is code-owned: activation, the profile keys a metric publishes
+  // to, and its description follow REGISTRY_SEED on every boot.
+  const setActive = db.prepare(
+    `UPDATE cmd_metric_registry SET active = ?, recipe_version = ?, publishes_to = ?, label = ?, category = ?, availability_tier = ?,
+            unit = ?, decimals = ?, method = ?, capture_requirements = ?, dependencies = ? WHERE metric_code = ?`
+  );
   for (const r of REGISTRY_SEED) {
     insMetric.run(r.metric_code, r.label, r.category, r.availability_tier, r.recipe_version, r.unit, r.decimals,
       r.method, JSON.stringify(r.publishes_to || []), r.capture_requirements || '', JSON.stringify(r.dependencies || []), r.active);
-    // Phase activation and the profile keys a metric publishes to are code-driven.
-    setActive.run(r.active, r.recipe_version, JSON.stringify(r.publishes_to || []), r.metric_code);
+    setActive.run(r.active, r.recipe_version, JSON.stringify(r.publishes_to || []), r.label, r.category, r.availability_tier,
+      r.unit, r.decimals, r.method, r.capture_requirements || '', JSON.stringify(r.dependencies || []), r.metric_code);
   }
   const insProfile = db.prepare('INSERT OR IGNORE INTO cmd_capture_profiles (key, label, expected_metrics, notes) VALUES (?, ?, ?, ?)');
   for (const cp of CAPTURE_PROFILE_SEED) insProfile.run(cp.key, cp.label, JSON.stringify(cp.expected_metrics), cp.notes);

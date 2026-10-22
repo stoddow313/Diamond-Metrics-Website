@@ -1,7 +1,7 @@
 // Diamond Metrics Command — M1 routes (jobs, orders, queue). Mounted from
 // index.js with shared db + auth middleware. Every state change writes a
 // cmd_review_actions row; creation flows are transactional.
-import { PACKAGES, buildRequirements, canTransition, roleCanTransition, METRIC_RELEASE_STATES, GAME_RECORD_STATES, orderablePackages, SHARING_SCOPES_V1, assertRequirementToggle } from './commandLogic.js';
+import { PACKAGES, buildRequirements, canTransition, roleCanTransition, METRIC_RELEASE_STATES, GAME_RECORD_STATES, orderablePackages, SHARING_SCOPES_V1, assertRequirementToggle, addableMetrics, requirementFor } from './commandLogic.js';
 import { addJobGuest } from './commandRoster.js';
 import { validateGameRecordSource, releaseGameRecord, gameRecordPlan } from './gameRecord.js';
 import { emitJobEvent } from './notifications.js';
@@ -114,7 +114,9 @@ export function mountCommandRoutes(app, { db, requireInternal }) {
       return { ...rest, report, has_content: g.source_kind === 'live_internal' || !!(g.raw_import && String(g.raw_import).trim()) };   // the live scorebook's content is the event log
     });
     const gameResult = db.prepare('SELECT * FROM cmd_game_results WHERE job_id = ?').get(id) || null;
-    return { ...job, requirements, audit: auditTrail, notifications, game_record_sources: gameRecordSources, game_result: gameResult ? { ...gameResult, line_score: JSON.parse(gameResult.line_score || '{}'), team: JSON.parse(gameResult.team || '{}') } : null };
+    const addable = addableMetrics(job.package_key, requirements.map(r => r.metric_code), registryRows())
+      .map(m => ({ metric_code: m.metric_code, label: m.label, method: m.method, capture_requirements: m.capture_requirements }));
+    return { ...job, requirements, addable_metrics: addable, audit: auditTrail, notifications, game_record_sources: gameRecordSources, game_result: gameResult ? { ...gameResult, line_score: JSON.parse(gameResult.line_score || '{}'), team: JSON.parse(gameResult.team || '{}') } : null };
   }
 
   app.get('/api/command/jobs/:id', requireInternal, (req, res) => {
@@ -397,6 +399,20 @@ export function mountCommandRoutes(app, { db, requireInternal }) {
       sources: plan.sources.map(s => ({ id: s.id, source_kind: s.source_kind, label: s.label, validation_status: s.validation_status, validated_at: s.validated_at })),
       players: plan.players.map(p => ({ ...p, name: names.get(p.player_id) || `player ${p.player_id}` })),
     });
+  });
+
+  // Add a metric the job's package now includes to an order made before it did.
+  app.post('/api/command/jobs/:id/requirements', requireInternal, (req, res) => {
+    const job = db.prepare('SELECT j.id, j.order_id, o.package_key FROM cmd_jobs j JOIN cmd_orders o ON o.id = j.order_id WHERE j.id = ?').get(req.params.id);
+    if (!job) return res.status(404).json({ error: 'Job not found' });
+    const code = String(req.body?.metric_code || '');
+    const have = db.prepare('SELECT metric_code FROM cmd_metric_requirements WHERE order_id = ?').all(job.order_id).map(r => r.metric_code);
+    const row = addableMetrics(job.package_key, have, registryRows()).find(m => m.metric_code === code);
+    if (!row) return res.status(400).json({ error: have.includes(code) ? 'This job already has that metric — enable it instead' : `${code || 'That metric'} is not part of this job's package` });
+    const r = requirementFor(row);
+    db.prepare('INSERT INTO cmd_metric_requirements (order_id, metric_code, priority, capture_requirement, enabled) VALUES (?, ?, ?, ?, 1)').run(job.order_id, code, r.priority, r.capture_requirement || '');
+    audit('cmd_jobs', job.id, req.internal.id, 'requirement_added', { note: code });
+    res.status(201).json({ job: jobDetail(job.id) });
   });
 
   app.put('/api/command/requirements/:id', requireInternal, (req, res) => {
