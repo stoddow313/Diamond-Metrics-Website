@@ -1168,8 +1168,11 @@ each batter's shares and how many balls in play are placed.
 
 Release publishes, per player and game, Pull %, Middle %, Opposite Field %
 and Batted Balls Charted, and the dots. The profile's spray chart (Overview
-and Hitting) plots the dots for all games or one game, with the shares and
-n. Spray data from before landing spots shades the three zones instead. In a
+and Hitting) plots the dots for all games or one game, with a bar, the
+percentage and the ball count for each zone. The field names LF / CF / RF and
+PULL / MIDDLE / OPPO for the side the batter hit from (the scorebook's field
+swaps them with L / R). Spray data from before landing spots shades the three
+zones instead, with percentages but no counts. In a
 paired game either team's order opens the field, and each job publishes its
 own players. Code: `server/scorebook.js` (`sprayZone`, `battingSide`),
 `server/gameRecord.js`, `src/components/FieldDiagram.jsx`.

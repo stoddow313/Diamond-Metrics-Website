@@ -175,23 +175,34 @@ export function SprayChart({ balls = [], pullPct, middlePct, oppoPct, count, bat
   const pct = placed ? shares.pct : { pull: pullPct || 0, middle: middlePct || 0, oppo: oppoPct || 0 };
   const n = placed ? shares.n : count;
   if (!placed && !(pct.pull + pct.middle + pct.oppo)) return null;
-  // A switch hitter's dots each carry their own side; shading follows the roster's.
-  const side = String(bats || 'R').toUpperCase() === 'L' ? 'L' : 'R';
+  // Shading follows the roster's side. The field's PULL / OPPO words follow
+  // the side the dots were hit from, and drop out when a switch hitter's
+  // dots mix both sides.
+  const rosterBats = String(bats || '').toUpperCase();
+  const side = rosterBats === 'L' ? 'L' : 'R';
+  const sides = new Set(balls.map(b => b.bats));
+  const labelSide = placed ? (sides.size === 1 ? [...sides][0] : null) : (['L', 'R'].includes(rosterBats) ? rosterBats : null);
   return (
     <div className="w-full">
-      <FieldSvg style={{ maxHeight: 170 }} className="mx-auto" guides={placed}>
+      <FieldSvg style={{ maxHeight: 170 }} className="mx-auto" guides={placed} side={labelSide}>
         {placed
           ? balls.map((b, i) => <SpotDot key={i} spot={b} zone={b.zone} r={3.4} opacity={0.9} />)
           : <ZoneWedges pct={pct} side={side} />}
       </FieldSvg>
-      <div className="flex justify-center flex-wrap gap-x-4 gap-y-1 mt-2">
+      {/* Each zone: its share as a bar, the percentage and (from landing spots) the ball count. */}
+      <div className="w-full mt-3 flex flex-col gap-1.5" data-testid="spray-zones">
         {ZONES.map(z => (
-          <span key={z} className="flex items-center gap-1.5 text-[10px] font-bold uppercase" style={{ color: MUTED }}>
-            <span className="w-2 h-2 rounded-full" style={{ backgroundColor: ZONE_COLOR[z] }} />
-            {ZONE_LABEL[z]} {Math.round(pct[z])}%
-          </span>
+          <div key={z} className="flex items-center gap-2 text-[11px] font-bold">
+            <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: ZONE_COLOR[z] }} />
+            <span className="w-12 shrink-0" style={{ color: MUTED }}>{ZONE_LABEL[z]}</span>
+            <span className="flex-1 h-1.5 rounded-full overflow-hidden" style={{ backgroundColor: GRID }}>
+              <span className="block h-full rounded-full" style={{ width: `${Math.max(0, Math.min(100, pct[z]))}%`, backgroundColor: ZONE_COLOR[z] }} />
+            </span>
+            <span className="w-9 text-right tabular-nums text-white">{Math.round(pct[z])}%</span>
+            {placed && <span className="w-12 text-right tabular-nums" style={{ color: '#64748b' }}>{shares.counts[z]} {shares.counts[z] === 1 ? 'ball' : 'balls'}</span>}
+          </div>
         ))}
-        {n > 0 && <span className="text-[10px] font-bold uppercase" style={{ color: '#64748b' }} title="Batted balls charted">n = {n}</span>}
+        {n > 0 && <p className="text-[10px] font-bold uppercase tracking-wider text-right mt-0.5" style={{ color: '#64748b' }}>{n} charted</p>}
       </div>
     </div>
   );

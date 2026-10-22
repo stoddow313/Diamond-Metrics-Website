@@ -10,7 +10,26 @@ const p = ([x, y]) => `${x.toFixed(1)} ${y.toFixed(1)}`;
 const VIEW = { x: -112, y: -110, w: 224, h: 126 };
 const sector = (from, to, r = 1) => `M 0 0 L ${p(at(from, r))} A ${r * S} ${r * S} 0 0 1 ${p(at(to, r))} Z`;
 
-export function FieldBackdrop({ guides = true, children }) {
+// Faint field and zone names under the dots. PULL and OPPO follow the side
+// the batter hit from (a righty pulls to left); with no single side — a
+// team's dots, a switch hitter's season — only the fields are named.
+function FieldLabels({ side }) {
+  const word = (deg, r, text, size, opacity) => {
+    const [x, y] = at(deg, r);
+    return <text key={text} x={x} y={y} textAnchor="middle" dominantBaseline="middle" fontSize={size} fontWeight="800" letterSpacing="0.6" fill="#e2e8f0" fillOpacity={opacity}>{text}</text>;
+  };
+  const zones = side === 'L' || side === 'R'
+    ? [[-32, side === 'L' ? 'OPPO' : 'PULL'], [0, 'MIDDLE'], [32, side === 'L' ? 'PULL' : 'OPPO']]
+    : [];
+  return (
+    <g pointerEvents="none" aria-hidden="true">
+      {[[-30, 'LF'], [0, 'CF'], [30, 'RF']].map(([d, t]) => word(d, 0.88, t, 6, 0.3))}
+      {zones.map(([d, t]) => word(d, d ? 0.62 : 0.68, t, 7, 0.42))}
+    </g>
+  );
+}
+
+export function FieldBackdrop({ guides = true, side = null, children }) {
   const base = 0.27;
   const bases = [at(45, base), at(0, base * Math.SQRT2), at(-45, base)];
   return (
@@ -28,15 +47,16 @@ export function FieldBackdrop({ guides = true, children }) {
       {[-45, 45].map(d => { const [x, y] = at(d, 1.04); return <line key={d} x1="0" y1="0" x2={x} y2={y} stroke="#e2e8f0" strokeOpacity="0.75" strokeWidth="0.9" />; })}
       {bases.map(([x, y], i) => <rect key={i} x={x - 2.2} y={y - 2.2} width="4.4" height="4.4" fill="#f8fafc" transform={`rotate(45 ${x} ${y})`} />)}
       <path d="M -2.6 -1 L 2.6 -1 L 2.6 1.2 L 0 3 L -2.6 1.2 Z" fill="#f8fafc" />
+      <FieldLabels side={side} />
       {children}
     </>
   );
 }
 
-export function FieldSvg({ children, className = '', style, guides, ...rest }) {
+export function FieldSvg({ children, className = '', style, guides, side, ...rest }) {
   return (
     <svg viewBox={`${VIEW.x} ${VIEW.y} ${VIEW.w} ${VIEW.h}`} className={`block w-full ${className}`} style={style} {...rest}>
-      <FieldBackdrop guides={guides}>{children}</FieldBackdrop>
+      <FieldBackdrop guides={guides} side={side}>{children}</FieldBackdrop>
     </svg>
   );
 }
@@ -48,15 +68,9 @@ export function SpotDot({ spot, zone, r = 3.6, opacity = 0.95 }) {
 // Legacy shares (no landing spots on record): the three zones shaded by share, no dots.
 export function ZoneWedges({ pct, side = 'R' }) {
   const left = side === 'L' ? 'oppo' : 'pull', right = side === 'L' ? 'pull' : 'oppo';
-  return [[left, -45, -15], ['middle', -15, 15], [right, 15, 45]].map(([z, from, to]) => {
-    const [tx, ty] = at((from + to) / 2, 0.72);
-    return (
-      <g key={z}>
-        <path d={sector(from, to)} fill={ZONE_COLOR[z]} fillOpacity={0.12 + 0.5 * (pct[z] || 0) / 100} />
-        <text x={tx} y={ty} textAnchor="middle" dominantBaseline="middle" fontSize="13" fontWeight="800" fill="#f8fafc">{Math.round(pct[z] || 0)}%</text>
-      </g>
-    );
-  });
+  return [[left, -45, -15], ['middle', -15, 15], [right, 15, 45]].map(([z, from, to]) => (
+    <path key={z} d={sector(from, to)} fill={ZONE_COLOR[z]} fillOpacity={0.12 + 0.5 * (pct[z] || 0) / 100} />
+  ));
 }
 
 // The scorebook's landing-spot picker: tap where the ball landed. `side` is
@@ -87,7 +101,7 @@ export function FieldSpot({ value, onChange, rosterSide = 'R', testId = 'field-s
     <div className="w-full max-w-[300px]" data-testid={testId}>
       <svg ref={svgRef} viewBox={`${VIEW.x} ${VIEW.y} ${VIEW.w} ${VIEW.h}`} className="block w-full cursor-crosshair touch-none select-none rounded-lg"
         onPointerDown={place} role="img" aria-label={zone ? `Landing spot: ${ZONE_LABEL[zone]}` : 'Tap where the ball landed'}>
-        <FieldBackdrop>{value && <SpotDot spot={value} zone={zone} r={4.2} />}</FieldBackdrop>
+        <FieldBackdrop side={side}>{value && <SpotDot spot={value} zone={zone} r={4.2} />}</FieldBackdrop>
       </svg>
       <div className="flex items-center gap-2 mt-1.5 text-[11px] font-bold">
         {zone
