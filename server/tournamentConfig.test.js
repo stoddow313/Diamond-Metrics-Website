@@ -16,10 +16,15 @@ after(() => fs.rmSync(TMP, { recursive: true, force: true }));
 
 const { readStripeConfig, priceForPackage } = await import('./stripeConfig.js');
 
-const TEST_MAP = JSON.stringify({ individual_basic: 'price_A1', individual_pro: 'price_B2', tournament_basic: 'price_C3', tournament_pro: 'price_D4' });
+const TEST_MAP = JSON.stringify({
+  individual_basic: 'price_A1', individual_pro: 'price_B2', tournament_basic: 'price_C3', tournament_pro: 'price_D4',
+  team_single_basic: 'price_E5', team_single_advanced: 'price_F6', team_tournament_basic: 'price_G7', team_tournament_advanced: 'price_H8',
+});
 const LIVE_ENV = {
   STRIPE_LIVE_PRICE_INDIVIDUAL_BASIC: 'price_L1', STRIPE_LIVE_PRICE_INDIVIDUAL_PRO: 'price_L2',
   STRIPE_LIVE_PRICE_TOURNAMENT_BASIC: 'price_L3', STRIPE_LIVE_PRICE_TOURNAMENT_PRO: 'price_L4',
+  STRIPE_LIVE_PRICE_TEAM_SINGLE_BASIC: 'price_L5', STRIPE_LIVE_PRICE_TEAM_SINGLE_ADVANCED: 'price_L6',
+  STRIPE_LIVE_PRICE_TEAM_TOURNAMENT_BASIC: 'price_L7', STRIPE_LIVE_PRICE_TEAM_TOURNAMENT_ADVANCED: 'price_L8',
 };
 const STRIPE_VARIABLES = ['STRIPE_SECRET_KEY', 'STRIPE_WEBHOOK_SECRET', 'STRIPE_TEST_PRICES', ...Object.keys(LIVE_ENV)];
 

@@ -1,6 +1,8 @@
 // Tournament orders (prd.md R4): every paid QR checkout, newest first, with
-// what Will needs to fulfil it — package and amount, player, the parent's
-// identification details or "Details missing", and the guardian's contact.
+// what Will needs to fulfil it — package and amount, player (or team), the
+// identification details or "Details missing", and the contact. A team order
+// (2026-10-22) waits as "Roster match needed" until it is matched to the
+// team's tournament entry, whose roster gets the included analytics.
 // One action (ship gate, 2026-10-06): admin and fulfillment mark an order
 // delivered once its analysis has gone to the parent, and "Hide delivered"
 // leaves the work still to do. Rows open nothing. An order appears only after
@@ -22,6 +24,16 @@ const jersey = value => (value ? `#${String(value).replace(/^#+/, '')}` : '');
 
 function Identification({ order: o }) {
   if (!o.details_received_at) return <span className="tournament-orders-chip">Details missing</span>;
+  if (o.order_kind === 'team') {
+    return (
+      <>
+        <span className="v">{o.team_division}</span>
+        {o.head_coach && <span className="l2">Coach {o.head_coach}</span>}
+        {o.game_context && <span className="sub">Games: {o.game_context}</span>}
+        {o.notes && <span className="sub">Note: {o.notes}</span>}
+      </>
+    );
+  }
   const line = [jersey(o.jersey_number), o.primary_position, o.bats_throws].filter(Boolean).join(' · ');
   return (
     <>
@@ -36,11 +48,12 @@ function Identification({ order: o }) {
 // Checked once the analysis has gone to the parent; analysts and reviewers
 // see the mark but cannot change it. When and who sit on the reference line.
 function Delivered({ order: o, canMark, saving, error, onMark }) {
+  const waiting = o.order_kind === 'team' && !o.entry_id;
   return (
     <>
-      <label className="tournament-orders-deliver">
-        <input type="checkbox" checked={Boolean(o.delivered_at)} disabled={!canMark || saving}
-          onChange={e => onMark(o, e.target.checked)} aria-label={`Delivered: ${o.player_name}, ${o.order_id}`} />
+      <label className="tournament-orders-deliver" title={waiting ? 'Match the team to its tournament roster first' : undefined}>
+        <input type="checkbox" checked={Boolean(o.delivered_at)} disabled={!canMark || saving || waiting}
+          onChange={e => onMark(o, e.target.checked)} aria-label={`Delivered: ${o.order_kind === 'team' ? o.team_name : o.player_name}, ${o.order_id}`} />
         <span className="deliver-text">Delivered</span>
       </label>
       {error && <span className="deliver-error" role="alert">{error}</span>}
@@ -48,13 +61,64 @@ function Delivered({ order: o, canMark, saving, error, onMark }) {
   );
 }
 
-function OrderRows({ order: o, deliver }) {
+// A team order's roster: "Roster match needed" with a picker of the
+// tournament's teams, or the matched team and its rostered players.
+function TeamRoster({ order: o, canMark, entries, loadEntries, onMatched }) {
+  const [picking, setPicking] = useState(false);
+  const [q, setQ] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  async function save(entryId) {
+    setBusy(true); setError('');
+    try { onMatched((await api.commandMatchTournamentTeam(o.order_id, entryId)).order); setPicking(false); }
+    catch (err) { setError(err.message); }
+    finally { setBusy(false); }
+  }
+  const needle = q.trim().toLowerCase();
+  const shown = (entries || []).filter(e => !needle || `${e.team_name} ${e.division} ${e.tournament_name}`.toLowerCase().includes(needle)).slice(0, 40);
+  return (
+    <div className="tournament-orders-roster" data-testid={`roster-${o.order_id}`}>
+      {o.entry_id ? (
+        <>
+          <span className="matched">Matched: <b>{o.matched_team}</b> · {o.matched_division} · {o.matched_tournament} · {o.roster.length} rostered</span>
+          {o.roster.length > 0 && (
+            <details><summary>Roster</summary><span className="names">{o.roster.map(p => `${p.jersey ? `#${p.jersey} ` : ''}${p.first_name} ${p.last_name}${p.is_guest ? ' (guest)' : ''}`).join(' · ')}</span></details>
+          )}
+          {canMark && !o.delivered_at && <button type="button" className="link" disabled={busy} onClick={() => save(null)}>Unmatch</button>}
+        </>
+      ) : (
+        <>
+          <span className="tournament-orders-chip">Roster match needed</span>
+          {canMark && !picking && <button type="button" className="link" onClick={() => { setPicking(true); loadEntries(); }} data-testid={`match-${o.order_id}`}>Match team</button>}
+        </>
+      )}
+      {picking && (
+        <div className="picker">
+          <input value={q} onChange={e => setQ(e.target.value)} placeholder={`Search teams (typed: ${o.team_name})`} aria-label="Search tournament teams" autoFocus />
+          {!entries ? <span className="sub">Loading…</span> : shown.length === 0 ? <span className="sub">No tournament team matches. Add the team to its tournament first.</span> : (
+            <ul>{shown.map(e => (
+              <li key={e.entry_id}><button type="button" disabled={busy} onClick={() => save(e.entry_id)}>{e.team_name} <span>{e.division} · {e.tournament_name} · {e.roster_count} rostered</span></button></li>
+            ))}</ul>
+          )}
+          <button type="button" className="link" onClick={() => setPicking(false)}>Cancel</button>
+        </div>
+      )}
+      {error && <span className="deliver-error" role="alert">{error}</span>}
+    </div>
+  );
+}
+
+function OrderRows({ order: o, deliver, team }) {
   return (
     <tbody data-testid={`order-${o.order_id}`} data-delivered={o.delivered_at ? 'yes' : 'no'}>
       <tr className="main">
         <td className="c-paid"><span className="v">{fmtDateTime(o.paid_at)}</span><span className="mono">{o.order_id}</span></td>
         <td className="c-pkg"><span className="v">{o.package_label}</span><span className="sub">{money(o.amount_total, o.currency)}</span></td>
-        <td className="c-player"><span className="v strong">{o.player_name}</span></td>
+        <td className="c-player">
+          {o.order_kind === 'team'
+            ? <><span className="v strong">{o.team_name} <span className="tournament-orders-team">Team</span></span>{o.player_name && <span className="sub">Player: {o.player_name}</span>}</>
+            : <><span className="v strong">{o.player_name}</span>{o.team_name && <span className="sub">{o.team_name}</span>}</>}
+        </td>
         <td className="c-id"><Identification order={o} /></td>
         <td className="c-guard">
           <span className="v">{o.guardian_name}</span>
@@ -65,6 +129,7 @@ function OrderRows({ order: o, deliver }) {
       <tr className="meta">
         <td />
         <td colSpan={5}>
+          {o.order_kind === 'team' && <TeamRoster order={o} {...team} />}
           <span>
             {o.tournament_label}{o.details_received_at && ` · Details received ${fmtDateTime(o.details_received_at)}`}
             {o.delivered_at && <> · <span className="delivered">Delivered {fmtDateTime(o.delivered_at)}{o.delivered_by && ` by ${o.delivered_by}`}</span></>}
@@ -88,6 +153,9 @@ export default function TournamentOrdersPage() {
   // A row marked delivered while "Hide delivered" is on stays in view until
   // the filter changes or the page reloads, so a slip can be taken back.
   const [kept, setKept] = useState(() => new Set());
+  const [entries, setEntries] = useState(null);   // tournament teams, loaded when a team order is first matched
+  const loadEntries = () => { if (!entries) api.commandTournamentTeamEntries().then(r => setEntries(r.entries)).catch(err => setError(err.message)); };
+  const replace = order => setOrders(list => list.map(o => (o.order_id === order.order_id ? order : o)));
 
   useEffect(() => {
     let live = true;
@@ -117,6 +185,7 @@ export default function TournamentOrdersPage() {
   }
 
   const missing = orders ? orders.filter(o => !o.details_received_at).length : 0;
+  const unmatched = orders ? orders.filter(o => o.order_kind === 'team' && !o.entry_id).length : 0;
   const delivered = orders ? orders.filter(o => o.delivered_at).length : 0;
   const shown = !orders ? [] : hideDelivered ? orders.filter(o => !o.delivered_at || kept.has(o.order_id)) : orders;
 
@@ -125,7 +194,7 @@ export default function TournamentOrdersPage() {
       <div className="flex items-center gap-2">
         <h1 className="text-2xl font-bold text-white">Tournament orders</h1>
         <InfoTip label="About tournament orders" size={16}>
-          An order appears here only after Stripe confirms payment. Unpaid or abandoned checkouts never do. Refunds are handled in Stripe and do not show here. Admin and fulfillment mark an order delivered once its analysis has gone to the parent.
+          An order appears here only after Stripe confirms payment. Unpaid or abandoned checkouts never do. Refunds are handled in Stripe and do not show here. Admin and fulfillment mark an order delivered once its analysis has gone to the parent. A team order is matched to its tournament team first; that team's roster gets the analytics.
         </InfoTip>
       </div>
       <p className="text-sm mt-1" style={{ color: '#94a3b8' }}>Paid QR checkouts, newest first.</p>
@@ -143,6 +212,7 @@ export default function TournamentOrdersPage() {
               <p className="tournament-orders-count" data-testid="tournament-orders-count">
                 <b>{orders.length}</b> paid order{orders.length === 1 ? '' : 's'}
                 {missing > 0 && <> · <span className="amber"><b>{missing}</b> with details missing</span></>}
+                {unmatched > 0 && <> · <span className="amber"><b>{unmatched}</b> team{unmatched === 1 ? '' : 's'} to match</span></>}
                 {delivered > 0 && <> · <b>{delivered}</b> delivered</>}
               </p>
               <label className="tournament-orders-filter">
@@ -160,12 +230,12 @@ export default function TournamentOrdersPage() {
                 <table className="tournament-orders-table">
                   <colgroup><col className="w-paid" /><col className="w-pkg" /><col className="w-player" /><col className="w-id" /><col className="w-guard" /><col className="w-deliv" /></colgroup>
                   <thead>
-                    <tr><th scope="col">Paid</th><th scope="col">Package</th><th scope="col">Player</th><th scope="col">Identification</th><th scope="col">Guardian</th><th scope="col">Delivered</th></tr>
+                    <tr><th scope="col">Paid</th><th scope="col">Package</th><th scope="col">Player / team</th><th scope="col">Identification</th><th scope="col">Contact</th><th scope="col">Delivered</th></tr>
                   </thead>
                   {shown.map(o => (
                     <OrderRows key={o.order_id} order={o} deliver={{
                       canMark, saving: saving === o.order_id, error: markError.orderId === o.order_id ? markError.text : '', onMark: mark,
-                    }} />
+                    }} team={{ canMark, entries, loadEntries, onMatched: replace }} />
                   ))}
                 </table>
               </div>

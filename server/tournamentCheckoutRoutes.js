@@ -87,7 +87,8 @@ async function startCheckout(db, req, res) {
       // receipt does not hang on a dashboard switch (ship gate, 2026-10-06).
       // It is the email Stripe already holds for the checkout.
       payment_intent_data: { metadata: ids, receipt_email: input.email },
-      success_url: `${base}/find-your-player/complete?session_id={CHECKOUT_SESSION_ID}`,
+      // A team order's step asks about the team (the server checks the order's kind, not this).
+      success_url: `${base}/find-your-player/complete?session_id={CHECKOUT_SESSION_ID}${input.kind === 'team' ? '&type=team' : ''}`,
       cancel_url: `${base}/find-your-player?checkout=cancelled`,
     });
   } catch (err) {

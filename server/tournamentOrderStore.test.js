@@ -121,15 +121,16 @@ test('staff see paid orders only, newest paid first, with labels', () => {
   const mine = list.filter(o => [older.order_id, newer.order_id].includes(o.order_id));
   assert.deepEqual(mine.map(o => o.order_id), [newer.order_id, older.order_id]);
   assert.deepEqual(Object.keys(mine[0]).sort(), [
-    'amount_total', 'bats_throws', 'currency', 'delivered_at', 'delivered_by', 'details_received_at', 'email', 'game_context',
-    'guardian_name', 'jersey_number', 'notes', 'order_id', 'package_key', 'package_label', 'paid_at', 'phone', 'player_name',
-    'primary_position', 'stripe_payment_intent_id', 'stripe_session_id', 'team_club', 'tournament_id', 'tournament_label',
+    'amount_total', 'bats_throws', 'currency', 'delivered_at', 'delivered_by', 'details_received_at', 'email', 'entry_id', 'game_context',
+    'guardian_name', 'head_coach', 'jersey_number', 'matched_division', 'matched_team', 'matched_tournament', 'notes', 'order_id', 'order_kind',
+    'package_key', 'package_label', 'paid_at', 'phone', 'player_name', 'primary_position', 'stripe_payment_intent_id', 'stripe_session_id',
+    'team_club', 'team_division', 'team_matched_at', 'team_matched_by', 'team_name', 'tournament_id', 'tournament_label',
   ]);
   assert.equal(mine[0].delivered_at, null, 'nothing is delivered until staff say so');
-  assert.equal(mine[0].package_label, 'Single Tournament — Pro');
-  assert.equal(mine[0].tournament_label, 'Better Baseball — Nephi, Utah · October 9–10, 2026');
+  assert.equal(mine[0].package_label, 'Individual Player Advanced — Whole Tournament');
+  assert.equal(mine[0].tournament_label, 'Better Baseball Field of Screams — Nephi, Utah · October 9–10, 2026');
   assert.equal(mine[0].team_club, 'Example Hawks 14U');
-  assert.equal(mine[1].package_label, 'Individual Game — Basic');
+  assert.equal(mine[1].package_label, 'Individual Player Basic — Single Game');
   assert.equal(mine[1].details_received_at, null, 'no details yet: "Details missing"');
 });
 

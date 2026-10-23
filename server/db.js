@@ -1408,6 +1408,20 @@ db.exec(`
 // A Stripe event this server acted on can be a registration's, not only a tournament order's.
 addColumnIfMissing('stripe_events', 'registration_id', 'registration_id INTEGER REFERENCES event_registrations(id)');
 
+// Team packages (2026-10-22): a team order covers a roster, not one player.
+// team_name is what the buyer typed; the order waits as "roster match needed"
+// until staff link it to the team's tournament entry (entry_id, team_id),
+// whose event roster is who gets the included analytics. player_name stays
+// '' unless the buyer named one.
+addColumnIfMissing('tournament_orders', 'order_kind', "order_kind TEXT NOT NULL DEFAULT 'player'");   // player | team
+addColumnIfMissing('tournament_orders', 'team_name', "team_name TEXT NOT NULL DEFAULT ''");
+addColumnIfMissing('tournament_orders', 'team_division', "team_division TEXT NOT NULL DEFAULT ''");   // the team's post-purchase step
+addColumnIfMissing('tournament_orders', 'head_coach', "head_coach TEXT NOT NULL DEFAULT ''");
+addColumnIfMissing('tournament_orders', 'entry_id', 'entry_id INTEGER REFERENCES tournament_entries(id)');
+addColumnIfMissing('tournament_orders', 'team_id', 'team_id INTEGER REFERENCES teams(id)');
+addColumnIfMissing('tournament_orders', 'team_matched_at', 'team_matched_at TEXT');
+addColumnIfMissing('tournament_orders', 'team_matched_by', 'team_matched_by INTEGER REFERENCES admins(id)');
+
 // Team registration (2026-10): an event may also sell a team spot at its own
 // price. A team registration's contact is its coach or manager (guardian_name),
 // its name is player_team, and team_size players count toward a day's limit.

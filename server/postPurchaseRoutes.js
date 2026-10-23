@@ -6,7 +6,7 @@
 // never echo what was saved: a verified reply carries only the order number,
 // which "Order received" shows the parent to keep (ship gate, 2026-10-06). It
 // is random and holds no personal data.
-import { validateDetails } from './tournamentOrderLogic.js';
+import { validateDetails, detailFieldsFor } from './tournamentOrderLogic.js';
 import { getOrderBySessionId, saveDetails } from './tournamentOrderStore.js';
 import { readStripeConfig, stripeClient } from './stripeConfig.js';
 import { captureError, log } from './observability.js';
@@ -33,12 +33,14 @@ export function mountPostPurchaseRoutes(app, { db }) {
 }
 
 async function savePlayerDetails(db, req, res) {
-  const checked = validateDetails(req.body);
-  if (checked.error) return res.status(400).json({ error: checked.error });
-
   // Only a session id this server stored is ever looked up, here or at Stripe.
+  // A team order's step has team fields, not a player's; an unknown link is
+  // checked as a player's, so the reply never says whether an order exists.
   const sessionId = typeof req.body?.sessionId === 'string' ? req.body.sessionId.trim() : '';
   const order = getOrderBySessionId(db, sessionId);
+  const fields = detailFieldsFor(order);
+  const checked = validateDetails(req.body, fields);
+  if (checked.error) return res.status(400).json({ error: checked.error });
   if (!order) {
     log('info', 'post_purchase_refused', { reason: 'unknown_session' });
     return res.status(402).json({ error: NOT_CONFIRMED });
@@ -53,7 +55,7 @@ async function savePlayerDetails(db, req, res) {
     }
     verifiedBy = 'stripe';   // saved now; the order turns paid when the webhook lands
   }
-  const how = saveDetails(db, order.id, checked.value);
+  const how = saveDetails(db, order.id, checked.value, fields);
   log('info', `tournament_details_${how}`, { order_id: order.order_id, verified_by: verifiedBy });
   return res.json({ ok: true, orderId: order.order_id });
 }

@@ -10,6 +10,10 @@
 //   STRIPE_LIVE_PRICE_INDIVIDUAL_PRO
 //   STRIPE_LIVE_PRICE_TOURNAMENT_BASIC
 //   STRIPE_LIVE_PRICE_TOURNAMENT_PRO
+//   STRIPE_LIVE_PRICE_TEAM_SINGLE_BASIC
+//   STRIPE_LIVE_PRICE_TEAM_SINGLE_ADVANCED
+//   STRIPE_LIVE_PRICE_TEAM_TOURNAMENT_BASIC
+//   STRIPE_LIVE_PRICE_TEAM_TOURNAMENT_ADVANCED
 //   STRIPE_TEST_PRICES                   test keys only: {"individual_basic":"price_…", …}
 //
 // The key decides the mode, and the other mode's Prices beside it refuse

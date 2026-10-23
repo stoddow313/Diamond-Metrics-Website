@@ -27,14 +27,23 @@ const { startIntakeApp } = await import('./intakeTestHarness.js');
 const { setStripeClientForTests, stripeWebhooks } = await import('./stripeConfig.js');
 
 const SECRET = 'whsec_acceptance_secret';
-const TEST_PRICES = { individual_basic: 'price_AccBasic', individual_pro: 'price_AccPro', tournament_basic: 'price_AccTBasic', tournament_pro: 'price_AccTPro' };
-const LIVE_PRICES = { individual_basic: 'price_LiveAccBasic', individual_pro: 'price_LiveAccPro', tournament_basic: 'price_LiveAccTBasic', tournament_pro: 'price_LiveAccTPro' };
-// What each Price charges, as the team set them up in Stripe.
-const CHARGES = {
-  price_AccBasic: 5000, price_AccPro: 7500, price_AccTBasic: 12500, price_AccTPro: 15000,
-  [LIVE_PRICES.individual_basic]: 5000, [LIVE_PRICES.individual_pro]: 7500, [LIVE_PRICES.tournament_basic]: 12500, [LIVE_PRICES.tournament_pro]: 15000,
+const TEST_PRICES = {
+  individual_basic: 'price_AccBasic', individual_pro: 'price_AccPro', tournament_basic: 'price_AccTBasic', tournament_pro: 'price_AccTPro',
+  team_single_basic: 'price_AccTeamSB', team_single_advanced: 'price_AccTeamSA', team_tournament_basic: 'price_AccTeamTB', team_tournament_advanced: 'price_AccTeamTA',
 };
-const LABELS = { individual_basic: 'Individual Game — Basic', individual_pro: 'Individual Game — Pro', tournament_basic: 'Single Tournament — Basic', tournament_pro: 'Single Tournament — Pro' };
+const LIVE_PRICES = Object.fromEntries(Object.entries(TEST_PRICES).map(([k, id]) => [k, id.replace('price_Acc', 'price_LiveAcc')]));
+// What each package's card says, and so what its Price charges, as the team set them up in Stripe.
+const CARD = {
+  individual_basic: 5000, individual_pro: 7500, tournament_basic: 12500, tournament_pro: 15000,
+  team_single_basic: 15000, team_single_advanced: 30000, team_tournament_basic: 45000, team_tournament_advanced: 90000,
+};
+const CHARGES = Object.fromEntries(Object.keys(CARD).flatMap(k => [[TEST_PRICES[k], CARD[k]], [LIVE_PRICES[k], CARD[k]]]));
+const LABELS = {
+  individual_basic: 'Individual Player Basic — Single Game', individual_pro: 'Individual Player Advanced — Single Game',
+  tournament_basic: 'Individual Player Basic — Whole Tournament', tournament_pro: 'Individual Player Advanced — Whole Tournament',
+  team_single_basic: 'Team Basic — Single Game', team_single_advanced: 'Team Advanced — Single Game',
+  team_tournament_basic: 'Team Basic — Whole Tournament', team_tournament_advanced: 'Team Advanced — Whole Tournament',
+};
 
 // Stripe, as far as the checkout needs it: each Price as the team set it up
 // (one-time, dollars); a session priced from the Price the server chose; a
@@ -119,9 +128,8 @@ const paidList = async () => (await h.call('GET', '/api/command/tournament-order
 const orderBySession = id => db.prepare('SELECT * FROM tournament_orders WHERE stripe_session_id = ?').get(id);
 
 test('§7 each package: one line item, quantity 1, the typed email, and exactly the package’s price', async () => {
-  const expected = { individual_basic: 5000, individual_pro: 7500, tournament_basic: 12500, tournament_pro: 15000 };
-  for (const [packageId, cents] of Object.entries(expected)) {
-    const body = details({ packageId });
+  for (const [packageId, cents] of Object.entries(CARD)) {
+    const body = details({ packageId, ...(packageId.startsWith('team_') ? { teamName: 'Example Hawks 12U', playerName: '' } : {}) });
     const r = await startCheckout(body);
     assert.equal(r.status, 200, packageId);
     const s = sessions.get(r.sessionId);
@@ -133,7 +141,28 @@ test('§7 each package: one line item, quantity 1, the typed email, and exactly 
     const listed = (await paidList()).find(o => o.order_id === r.body.orderId);
     assert.equal(listed.amount_total, cents);
     assert.equal(listed.package_label, LABELS[packageId]);
+    assert.equal(listed.order_kind, packageId.startsWith('team_') ? 'team' : 'player');
   }
+});
+
+test('a team package: the team name is kept, the details step asks about the team, and it waits for a roster match', async () => {
+  const body = details({ packageId: 'team_tournament_advanced', playerName: '', teamName: ' Example Hawks 12U ' });
+  const r = await startCheckout(body);
+  assert.equal(r.status, 200, JSON.stringify(r.body));
+  assert.match(sessions.get(r.sessionId).success_url, /\/find-your-player\/complete\?session_id=\{CHECKOUT_SESSION_ID\}&type=team$/);
+  assert.equal((await startCheckout(details({ packageId: 'team_single_basic', teamName: '' }))).body.error, 'Enter the team name for this team purchase.');
+  await deliver(pay(r.sessionId));
+  const row = orderBySession(r.sessionId);
+  assert.deepEqual([row.order_kind, row.team_name, row.player_name, row.status, row.amount_total], ['team', 'Example Hawks 12U', '', 'paid', 90000]);
+
+  // The team's step: no jersey or position, the division instead.
+  assert.equal((await sendDetails(r.sessionId)).body.error, 'Enter the division or age group.', 'player fields don’t stand in for the team’s');
+  const saved = await post('/api/post-purchase-intake', { sessionId: r.sessionId, division: '12U', headCoach: 'Casey Coach', gameContext: 'Pool games Fri' });
+  assert.deepEqual([saved.status, saved.body.orderId], [200, row.order_id]);
+  const listed = (await paidList()).find(o => o.order_id === row.order_id);
+  assert.deepEqual([listed.team_division, listed.head_coach, listed.game_context, listed.entry_id, listed.roster], ['12U', 'Casey Coach', 'Pool games Fri', null, []]);
+  const early = await h.call('PUT', `/api/command/tournament-orders/${row.order_id}/delivered`, { token: admin.token, body: { delivered: true } });
+  assert.deepEqual([early.status, early.body.error], [409, 'Match the team to its tournament roster first.']);
 });
 
 test('§7 a canceled checkout: the order stays pending and unlisted, and the parent can start again', async () => {
@@ -248,7 +277,7 @@ test('prices follow the key: test prices with a test key, a missing one refused,
   for (const [name, id] of live) process.env[name] = id;
   try {
     for (const [packageId, priceId] of Object.entries(LIVE_PRICES)) {
-      const r = await startCheckout(details({ packageId }));
+      const r = await startCheckout(details({ packageId, teamName: 'Example Hawks 12U' }));
       assert.deepEqual(sessions.get(r.sessionId).line_items, [{ price: priceId, quantity: 1 }]);
     }
   } finally {
