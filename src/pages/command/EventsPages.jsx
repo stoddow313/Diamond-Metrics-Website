@@ -59,7 +59,7 @@ export function EventsListPage() {
           <Field label="Day"><TextInput type="date" value={form.day1} onChange={e => setForm(f => ({ ...f, day1: e.target.value }))} required /></Field>
           <Field label="Second day (optional)"><TextInput type="date" value={form.day2} onChange={e => setForm(f => ({ ...f, day2: e.target.value }))} /></Field>
           <Field label="Price ($ per player)"><TextInput type="number" min="1" step="1" value={form.price} onChange={e => setForm(f => ({ ...f, price: e.target.value }))} required /></Field>
-          <Field label="Team price ($, optional)"><TextInput type="number" min="1" step="1" value={form.teamPrice} onChange={e => setForm(f => ({ ...f, teamPrice: e.target.value }))} placeholder="900" data-testid="new-event-team-price" /></Field>
+          <Field label="Team price ($, optional)"><TextInput type="number" min="1" step="1" value={form.teamPrice} onChange={e => setForm(f => ({ ...f, teamPrice: e.target.value }))} placeholder="750" data-testid="new-event-team-price" /></Field>
           <div className="sm:col-span-5 flex gap-2"><PrimaryButton type="submit">Create draft</PrimaryButton><GhostButton type="button" onClick={() => setCreating(false)}>Cancel</GhostButton></div>
         </form>
       )}
@@ -222,7 +222,7 @@ function EventSetup({ eventId, onSaved }) {
           <Field label="Location"><TextInput value={f.location} onChange={setK('location')} placeholder="Nebo View Baseball Complex · Field 4, 940 North 400 East, Nephi, Utah" /></Field>
           <Field label="Price ($ per player)"><TextInput type="number" min="1" step="0.01" value={f.price} onChange={setK('price')} required data-testid="event-price" /></Field>
           <Field label="Team price ($ per team, optional)" hint="Set it to let a coach register a whole team; blank: players only.">
-            <TextInput type="number" min="1" step="0.01" value={f.team_price} onChange={setK('team_price')} placeholder="900" data-testid="event-team-price" />
+            <TextInput type="number" min="1" step="0.01" value={f.team_price} onChange={setK('team_price')} placeholder="750" data-testid="event-team-price" />
           </Field>
           {f.team_price !== '' && (
             <Field label="Divisions (optional)" hint="Comma-separated. Teams pick one; blank lets them type theirs.">
