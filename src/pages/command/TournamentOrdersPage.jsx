@@ -81,10 +81,10 @@ function TeamRoster({ order: o, canMark, entries, loadEntries, onMatched }) {
       {o.entry_id ? (
         <>
           <span className="matched">Matched: <b>{o.matched_team}</b> · {o.matched_division} · {o.matched_tournament} · {o.roster.length} rostered</span>
+          {canMark && !o.delivered_at && <button type="button" className="link" disabled={busy} onClick={() => save(null)}>Unmatch</button>}
           {o.roster.length > 0 && (
             <details><summary>Roster</summary><span className="names">{o.roster.map(p => `${p.jersey ? `#${p.jersey} ` : ''}${p.first_name} ${p.last_name}${p.is_guest ? ' (guest)' : ''}`).join(' · ')}</span></details>
           )}
-          {canMark && !o.delivered_at && <button type="button" className="link" disabled={busy} onClick={() => save(null)}>Unmatch</button>}
         </>
       ) : (
         <>
