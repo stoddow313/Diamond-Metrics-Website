@@ -78,7 +78,7 @@ const post = async (path, body, headers = {}) => {
 };
 
 test('golden path steps 1-7: one paid order at the server’s price, with the player’s details, delivered by Will', async () => {
-  // Steps 1-3: the details step and "Single Tournament — Pro"; the page sends exactly this.
+  // Steps 1-3: the details step and "Individual Player Advanced — Whole Tournament"; the page sends exactly this.
   const checkout = await post('/api/create-checkout-session', {
     guardianName: 'Casey Golden', playerName: 'Riley Golden', email: 'casey.golden@example.com', phone: '801-555-0142',
     tournamentId: 'better-baseball-nephi-2026', packageId: 'tournament_pro',
@@ -118,10 +118,10 @@ test('golden path steps 1-7: one paid order at the server’s price, with the pl
   const o = paid[0];
   assert.equal(o.order_id, checkout.body.orderId);
   assert.match(o.order_id, /^TO-[2-9A-HJKMNP-TV-Z]{4}-[2-9A-HJKMNP-TV-Z]{4}$/);
-  assert.equal(o.package_label, 'Single Tournament — Pro');
+  assert.equal(o.package_label, 'Individual Player Advanced — Whole Tournament');
   assert.equal(o.amount_total, 15000);
   assert.equal(o.currency, 'usd');
-  assert.equal(o.tournament_label, 'Better Baseball — Nephi, Utah · October 9–10, 2026');
+  assert.equal(o.tournament_label, 'Better Baseball Field of Screams — Nephi, Utah · October 9–10, 2026');
   assert.equal(o.player_name, 'Riley Golden');
   assert.deepEqual([o.guardian_name, o.email, o.phone], ['Casey Golden', 'casey.golden@example.com', '801-555-0142']);
   assert.deepEqual([o.team_club, o.jersey_number, o.primary_position, o.bats_throws, o.game_context, o.notes], ['Golden Path Test 14U', '12', 'Shortstop', 'R/R', '', '']);

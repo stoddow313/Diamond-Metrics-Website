@@ -773,14 +773,14 @@ no customer notifications. Test jobs keep the Synthetic badge.
 ### 3.18 Tournament checkout (QR "Find your player", TDR §9)
 
 A parent at a filmed tournament scans the QR code to `/find-your-player`,
-enters their details, picks one of four packages and pays on Stripe
-Checkout. Stripe's signed `checkout.session.completed` webhook marks the
+picks one of eight packages (four for one player, four that cover a team's
+roster), enters their details and pays on Stripe Checkout. Stripe's signed `checkout.session.completed` webhook marks the
 order paid; the success page then collects team or club, jersey and
 position, and shows the parent their order number. Stripe emails the parent a
 receipt for every payment. Will sees paid orders at **Command → Tournament
 orders**, right after Intake, and marks each one delivered once its analysis
 has gone out. The browser sends a package key only: the server picks the
-Price from the four `STRIPE_LIVE_PRICE_*` settings (live key) or
+Price from the eight `STRIPE_LIVE_PRICE_*` settings (live key) or
 `STRIPE_TEST_PRICES` (test key), refuses a Price that would not charge the
 card's amount, once, in US dollars, and nothing but Stripe's signed webhook
 marks an order paid.
@@ -831,10 +831,14 @@ one with no value; the values go only in the dashboard.
 | Setting | Value | Where it comes from |
 |---|---|---|
 | `STRIPE_SECRET_KEY` | the live secret key, `sk_live_…`, or a restricted `rk_live_…` allowed Checkout Sessions: Write, Prices: Read and Products: Read | Stripe, **live** mode → Developers → API keys |
-| `STRIPE_LIVE_PRICE_INDIVIDUAL_BASIC` | the `price_…` ID of Individual Game — Basic, $50 one-time | Stripe, **live** mode → Product catalog → the product → its Price → copy the Price ID (`price_…`, not the product's `prod_…`) |
-| `STRIPE_LIVE_PRICE_INDIVIDUAL_PRO` | the `price_…` ID of Individual Game — Pro, $75 one-time | the same |
-| `STRIPE_LIVE_PRICE_TOURNAMENT_BASIC` | the `price_…` ID of Single Tournament — Basic, $125 one-time | the same |
-| `STRIPE_LIVE_PRICE_TOURNAMENT_PRO` | the `price_…` ID of Single Tournament — Pro, $150 one-time | the same |
+| `STRIPE_LIVE_PRICE_INDIVIDUAL_BASIC` | the `price_…` ID of Individual Player Basic — Single Game, $50 one-time | Stripe, **live** mode → Product catalog → the product → its Price → copy the Price ID (`price_…`, not the product's `prod_…`) |
+| `STRIPE_LIVE_PRICE_INDIVIDUAL_PRO` | the `price_…` ID of Individual Player Advanced — Single Game, $75 one-time | the same |
+| `STRIPE_LIVE_PRICE_TOURNAMENT_BASIC` | the `price_…` ID of Individual Player Basic — Whole Tournament, $125 one-time | the same |
+| `STRIPE_LIVE_PRICE_TOURNAMENT_PRO` | the `price_…` ID of Individual Player Advanced — Whole Tournament, $150 one-time | the same |
+| `STRIPE_LIVE_PRICE_TEAM_SINGLE_BASIC` | the `price_…` ID of Team Basic — Single Game, $150 one-time | the same (Will sends the four team IDs) |
+| `STRIPE_LIVE_PRICE_TEAM_SINGLE_ADVANCED` | the `price_…` ID of Team Advanced — Single Game, $300 one-time | the same |
+| `STRIPE_LIVE_PRICE_TEAM_TOURNAMENT_BASIC` | the `price_…` ID of Team Basic — Whole Tournament, $450 one-time | the same |
+| `STRIPE_LIVE_PRICE_TEAM_TOURNAMENT_ADVANCED` | the `price_…` ID of Team Advanced — Whole Tournament, $900 one-time | the same |
 | `STRIPE_WEBHOOK_SECRET` | the live endpoint's signing secret, `whsec_…` | Stripe, **live** mode → Developers → Webhooks → the endpoint from step 4 → Signing secret |
 | `DM_PUBLIC_BASE_URL` | `https://diamondmetrics.ai` | — |
 
@@ -935,6 +939,24 @@ be unticked. Admin and fulfillment can tick or untick; analysts and
 reviewers see the mark only. Every tick and untick is a history row naming
 who made it (`tournament_order_events`). Refunds and disputes are handled in
 Stripe and do not change a row.
+
+**Team orders (2026-10-22).** A team package (Team Basic or Advanced, single
+game or whole tournament) names the team, not a player: the contact may be a
+parent, guardian or the coach, and a player name is optional. Stripe returns
+the buyer to `/find-your-player/complete?…&type=team`, which asks for the
+team's **division or age group** (required), head coach, game dates or
+opponents and a note; nothing about a jersey or position. In Tournament
+orders the row is marked **Team** and reads **Roster match needed** until
+staff **Match** it to the team's tournament entry (Command lists every team of
+a tournament not archived, with its division and roster size; a team that
+isn't there yet is added in the tournament's admin first). The match shows
+the entry's event roster: those players get the team's included analytics,
+and any of them can still buy an individual package as an upgrade. A team
+order can't be marked Delivered before it's matched; **Unmatch** (only while
+not delivered) takes it back. The whole-tournament team prices are the
+three-game minimum with the championship included. Extra non-championship
+games are billed by hand for now (a Stripe invoice to the contact), not at
+checkout: a fixed Price can't know how many games a team will play.
 
 **When something is wrong.**
 

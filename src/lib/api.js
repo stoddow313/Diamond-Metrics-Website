@@ -268,6 +268,9 @@ export const api = {
   commandUpdateEvent: (id, body) => request(`/api/command/events/${id}`, { method: 'PUT', body }),
   commandSetTournamentOrderDelivered: (orderId, delivered) =>
     request(`/api/command/tournament-orders/${encodeURIComponent(orderId)}/delivered`, { method: 'PUT', body: { delivered } }),
+  commandTournamentTeamEntries: () => request('/api/command/tournament-orders/team-entries'),
+  commandMatchTournamentTeam: (orderId, entryId) =>
+    request(`/api/command/tournament-orders/${encodeURIComponent(orderId)}/team-match`, { method: 'PUT', body: { entry_id: entryId } }),
 
   // Will's intake queue (Command)
   commandIntakeQueue: (params = {}) => request(`/api/command/intake${query(params)}`),

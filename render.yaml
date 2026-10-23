@@ -69,22 +69,30 @@ services:
       # Unset, checkout refuses and the webhook changes nothing. Values live
       # only in the dashboard: the repository is public.
       - key: STRIPE_SECRET_KEY
-        sync: false # the live secret key (sk_live_…); a live key charges only the four STRIPE_LIVE_PRICE_* below
+        sync: false # the live secret key (sk_live_…); a live key charges only the eight STRIPE_LIVE_PRICE_* below
       - key: STRIPE_WEBHOOK_SECRET
         sync: false # signing secret of the live endpoint at https://diamond-metrics-api.onrender.com/api/stripe/webhook
-      # The four live-mode Price IDs (price_…), one per package; no Price ID
+      # The eight live-mode Price IDs (price_…), one per package; no Price ID
       # lives in code. Changing one is this setting, not a deploy; then check
       # them at /command/ops → Stripe prices. A package without its setting is
       # refused. Never set STRIPE_TEST_PRICES here: beside the live key it
       # refuses every checkout (COMMAND_OPS §3.18).
       - key: STRIPE_LIVE_PRICE_INDIVIDUAL_BASIC
-        sync: false # Individual Game — Basic, $50
+        sync: false # Individual Player Basic — Single Game, $50
       - key: STRIPE_LIVE_PRICE_INDIVIDUAL_PRO
-        sync: false # Individual Game — Pro, $75
+        sync: false # Individual Player Advanced — Single Game, $75
       - key: STRIPE_LIVE_PRICE_TOURNAMENT_BASIC
-        sync: false # Single Tournament — Basic, $125
+        sync: false # Individual Player Basic — Whole Tournament, $125
       - key: STRIPE_LIVE_PRICE_TOURNAMENT_PRO
-        sync: false # Single Tournament — Pro, $150
+        sync: false # Individual Player Advanced — Whole Tournament, $150
+      - key: STRIPE_LIVE_PRICE_TEAM_SINGLE_BASIC
+        sync: false # Team Basic — Single Game, $150
+      - key: STRIPE_LIVE_PRICE_TEAM_SINGLE_ADVANCED
+        sync: false # Team Advanced — Single Game, $300
+      - key: STRIPE_LIVE_PRICE_TEAM_TOURNAMENT_BASIC
+        sync: false # Team Basic — Whole Tournament, $450 (three games, championship included)
+      - key: STRIPE_LIVE_PRICE_TEAM_TOURNAMENT_ADVANCED
+        sync: false # Team Advanced — Whole Tournament, $900 (three games, championship included)
 
       - key: DM_ENV
         value: production

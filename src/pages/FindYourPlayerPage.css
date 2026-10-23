@@ -51,3 +51,26 @@
 @media (max-width: 1080px) { .player-finder-package-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); max-width: 760px; margin: 0 auto; } .player-package { min-height: 410px; } .player-finder-intake { grid-template-columns: 1fr; max-width: 760px; } }
 @media (max-width: 780px) { .player-finder { padding-top: 8px; } .player-finder-hero { grid-template-columns: 1fr; gap: 29px; margin-bottom: 54px; } .player-finder-image { height: 295px; } .player-finder-story { text-align: center; } .player-finder-intro { margin: 0 auto; } .player-finder-intake-copy { text-align: center; } .player-finder-intake-selected { margin-top: 20px; } }
 @media (max-width: 540px) { .player-finder-image { height: 225px; border-radius: 17px; } .player-finder h1 { font-size: 42px; } .player-finder-intro { font-size: 16px; } .player-finder-package-grid { grid-template-columns: 1fr; max-width: 430px; } .player-package { min-height: auto; } .player-package-description { min-height: auto; } .player-finder-intake { padding: 22px 16px; border-radius: 17px; } .player-finder-card { padding: 22px 18px; } .player-finder-fields { grid-template-columns: 1fr; } .player-finder-fields .full { grid-column: auto; } }
+
+/* The pages beside Find Your Player that share this file: the post-checkout
+   step and "Order received" (PlayerIntakeCompletePage), Privacy, and the event
+   confirmation and list (pages/events). */
+.player-intake-page { width: min(640px, 100%); margin: 32px auto 0; color: #c7dcf2; }
+.player-intake-page h1 { margin: 0 0 16px; color: #fff; font-size: clamp(40px, 5vw, 58px); line-height: .96; letter-spacing: -.05em; text-transform: uppercase; }
+.player-intake-page>p { font-size: 18px; line-height: 1.55; }
+.player-intake-form { display: grid; gap: 16px; margin-top: 30px; }
+.player-intake-form label { display: flex; flex-direction: column; gap: 6px; color: #31465c; font-size: 13px; font-weight: 800; }
+.player-intake-form label span { font-weight: 400; }
+.player-intake-form input,.player-intake-form textarea { width: 100%; border: 1px solid #bccbd7; border-radius: 8px; padding: 12px; color: #0e243e; background: #fff; font: inherit; font-weight: 400; }
+.player-intake-form input { min-height: 47px; }
+.player-intake-form textarea { resize: vertical; }
+.player-intake-form input:focus,.player-intake-form textarea:focus { outline: 3px solid rgba(56, 189, 248, .32); border-color: #0284c7; }
+.player-intake-form .player-finder-primary { margin-top: 3px; }
+.player-intake-link { display: inline-block; margin-top: 10px; color: #7dd3fc; font-weight: 800; }
+.privacy-page h2 { margin: 32px 0 6px; color: #fff; font-size: 21px; }
+.privacy-page h2+p { margin-top: 0; }
+.privacy-page a { color: #7dd3fc; }
+.player-intake-order { margin-top: 26px; padding: 15px 20px 17px; border: 1px solid rgba(56, 189, 248, .35); border-radius: 12px; background: rgba(11, 60, 96, .30); }
+.player-intake-order .player-finder-eyebrow { margin: 0 0 6px; }
+.player-intake-order-id { margin: 0; color: #fff; font-size: 24px; font-weight: 800; letter-spacing: .06em; overflow-wrap: anywhere; }
+.player-intake-page>p.player-intake-next { margin-top: 18px; font-size: 16px; }

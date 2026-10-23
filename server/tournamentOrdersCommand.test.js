@@ -69,17 +69,18 @@ test('every internal role reads paid orders only, newest paid first, with every 
   const { body } = await call('GET', '/api/command/tournament-orders', { token: h.internal('fulfillment').token });
   const top = body.orders[0];
   assert.deepEqual(top, {
-    order_id: newer.order_id, paid_at: '2026-10-10 22:18:00', package_key: 'tournament_pro', amount_total: 15000, currency: 'usd',
+    order_id: newer.order_id, order_kind: 'player', paid_at: '2026-10-10 22:18:00', package_key: 'tournament_pro', amount_total: 15000, currency: 'usd',
     tournament_id: 'better-baseball-nephi-2026', guardian_name: newer.guardian_name, email: newer.email, phone: newer.phone,
-    player_name: newer.player_name, team_club: 'Example Hawks 14U', jersey_number: '4', primary_position: 'Catcher',
-    bats_throws: 'R/R', game_context: '', notes: '', details_received_at: top.details_received_at,
+    player_name: newer.player_name, team_name: '', team_club: 'Example Hawks 14U', jersey_number: '4', primary_position: 'Catcher',
+    bats_throws: 'R/R', game_context: '', notes: '', details_received_at: top.details_received_at, team_division: '', head_coach: '',
     stripe_session_id: newer.stripe_session_id, stripe_payment_intent_id: newer.stripe_payment_intent_id,
     delivered_at: null, delivered_by: null,
-    package_label: 'Single Tournament — Pro', tournament_label: 'Better Baseball — Nephi, Utah · October 9–10, 2026',
+    entry_id: null, team_matched_at: null, team_matched_by: null, matched_team: null, matched_division: null, matched_tournament: null,
+    package_label: 'Individual Player Advanced — Whole Tournament', tournament_label: 'Better Baseball Field of Screams — Nephi, Utah · October 9–10, 2026',
   });
   assert.ok(top.details_received_at);
   assert.equal(body.orders[1].details_received_at, null, 'no details yet: the screen says "Details missing"');
-  assert.equal(body.orders[1].package_label, 'Individual Game — Basic');
+  assert.equal(body.orders[1].package_label, 'Individual Player Basic — Single Game');
   assert.ok(!('price_id' in top) && !('status' in top) && !('id' in top), 'nothing beyond the list’s fields');
 });
 
@@ -168,4 +169,52 @@ test('only a paid order can be marked, and a malformed request changes nothing',
     assert.deepEqual(res.body, { error: 'delivered must be true or false.' });
   }
   assert.equal(getOrder(db, o.id).delivered_at, null);
+});
+
+test('a team order waits for a roster match: staff match it to a tournament team, whose roster it then covers', async () => {
+  const team = createPendingOrder(db, {
+    guardianName: 'Casey Coach', playerName: '', teamName: 'Example Hawks 12U', email: 'coach@example.com', tournamentId: 'better-baseball-nephi-2026',
+    packageKey: 'team_tournament_advanced', priceId: 'price_TestTeam', kind: 'team',
+  });
+  attachSession(db, team.id, 'cs_test_team1');
+  markPaid(db, team.id, { sessionId: 'cs_test_team1', paymentIntentId: 'pi_test_team1', amountTotal: 90000, currency: 'usd', paymentStatus: 'paid', eventId: 'evt_team1' });
+
+  // A tournament with the team entered and two rostered players.
+  const org = db.prepare("INSERT INTO organizations (name) VALUES ('Hawks')").run().lastInsertRowid;
+  const hawks = db.prepare("INSERT INTO teams (organization_id, name, slug) VALUES (?, 'Example Hawks', 'example-hawks-12u')").run(org).lastInsertRowid;
+  const tour = db.prepare("INSERT INTO tournaments (name, slug, start_date, end_date) VALUES ('Field of Screams', 'fos-2026', '2026-10-09', '2026-10-10')").run().lastInsertRowid;
+  const div = db.prepare("INSERT INTO divisions (tournament_id, name) VALUES (?, '12U')").run(tour).lastInsertRowid;
+  const entry = db.prepare('INSERT INTO tournament_entries (tournament_id, division_id, team_id) VALUES (?, ?, ?)').run(tour, div, hawks).lastInsertRowid;
+  for (const [first, jersey] of [['Ari', '3'], ['Blake', '11']]) {
+    const p = db.prepare("INSERT INTO players (first_name, last_name, slug) VALUES (?, 'Hawk', ?)").run(first, `${first.toLowerCase()}-hawk`).lastInsertRowid;
+    db.prepare('INSERT INTO event_rosters (entry_id, player_id, jersey) VALUES (?, ?, ?)').run(entry, p, jersey);
+  }
+
+  const will = h.internal('fulfillment', 'Will S');
+  const listed = (await call('GET', '/api/command/tournament-orders', { token: will.token })).body.orders.find(o => o.order_id === team.order_id);
+  assert.deepEqual([listed.order_kind, listed.team_name, listed.player_name, listed.entry_id, listed.roster], ['team', 'Example Hawks 12U', '', null, []]);
+  const early = await call('PUT', `/api/command/tournament-orders/${team.order_id}/delivered`, { token: will.token, body: { delivered: true } });
+  assert.deepEqual([early.status, early.body.error], [409, 'Match the team to its tournament roster first.']);
+
+  const entries = (await call('GET', '/api/command/tournament-orders/team-entries', { token: h.internal('analyst').token })).body.entries;
+  assert.deepEqual(entries.find(e => e.entry_id === entry), { entry_id: entry, team_name: 'Example Hawks', division: '12U', tournament_name: 'Field of Screams', start_date: '2026-10-09', roster_count: 2 });
+  assert.equal((await call('PUT', `/api/command/tournament-orders/${team.order_id}/team-match`, { token: h.internal('analyst').token, body: { entry_id: entry } })).status, 403, 'analysts look, they don’t match');
+  assert.equal((await call('PUT', `/api/command/tournament-orders/${team.order_id}/team-match`, { token: will.token, body: { entry_id: 99999 } })).status, 400);
+  const player = order();
+  assert.equal((await call('PUT', `/api/command/tournament-orders/${player.order_id}/team-match`, { token: will.token, body: { entry_id: entry } })).status, 404, 'a player order has no roster to match');
+
+  const matched = await call('PUT', `/api/command/tournament-orders/${team.order_id}/team-match`, { token: will.token, body: { entry_id: entry } });
+  assert.equal(matched.status, 200);
+  const m = matched.body.order;
+  assert.deepEqual([m.entry_id, m.matched_team, m.matched_division, m.matched_tournament, m.team_matched_by], [entry, 'Example Hawks', '12U', 'Field of Screams', 'Will S']);
+  assert.deepEqual(m.roster.map(p => [p.first_name, p.jersey]), [['Ari', '3'], ['Blake', '11']]);
+  assert.equal(getOrder(db, team.id).team_id, hawks);
+
+  assert.equal((await call('PUT', `/api/command/tournament-orders/${team.order_id}/delivered`, { token: will.token, body: { delivered: true } })).status, 200);
+  assert.deepEqual([(await call('PUT', `/api/command/tournament-orders/${team.order_id}/team-match`, { token: will.token, body: { entry_id: null } })).status], [409], 'undo Delivered before unmatching');
+  await call('PUT', `/api/command/tournament-orders/${team.order_id}/delivered`, { token: will.token, body: { delivered: false } });
+  const un = await call('PUT', `/api/command/tournament-orders/${team.order_id}/team-match`, { token: will.token, body: { entry_id: null } });
+  assert.deepEqual([un.status, un.body.order.entry_id, un.body.order.roster], [200, null, []]);
+  const history = db.prepare('SELECT event_type FROM tournament_order_events WHERE order_id = ? ORDER BY id').all(team.id).map(e => e.event_type);
+  assert.deepEqual(history, ['created', 'checkout_started', 'paid', 'team_matched', 'delivered', 'delivery_undone', 'team_unmatched']);
 });

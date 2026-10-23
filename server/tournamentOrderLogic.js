@@ -5,28 +5,37 @@
 // Price is charged is decided here and nowhere else (handoff §1).
 import { randomInt } from 'node:crypto';
 
-// Will's four packages. amount is the price on the package card, in cents.
+// Will's eight packages: four for one player, four that cover a team's whole
+// roster (2026-10-22). amount is the price on the package card, in cents.
 // Which Stripe Price charges a package comes from the environment, never from
 // code or the browser (choosePrice), and a Price that does not charge exactly
-// this amount, once, in US dollars is refused (priceProblem).
+// this amount, once, in US dollars is refused (priceProblem). The whole-
+// tournament team packages are the three-game minimum with the championship
+// included; further games are billed by hand for now (COMMAND_OPS §3.18).
 export const PACKAGES = {
-  individual_basic: { label: 'Individual Game — Basic', amount: 5000 },
-  individual_pro: { label: 'Individual Game — Pro', amount: 7500 },
-  tournament_basic: { label: 'Single Tournament — Basic', amount: 12500 },
-  tournament_pro: { label: 'Single Tournament — Pro', amount: 15000 },
+  individual_basic: { label: 'Individual Player Basic — Single Game', amount: 5000 },
+  individual_pro: { label: 'Individual Player Advanced — Single Game', amount: 7500 },
+  tournament_basic: { label: 'Individual Player Basic — Whole Tournament', amount: 12500 },
+  tournament_pro: { label: 'Individual Player Advanced — Whole Tournament', amount: 15000 },
+  team_single_basic: { label: 'Team Basic — Single Game', amount: 15000, team: true },
+  team_single_advanced: { label: 'Team Advanced — Single Game', amount: 30000, team: true },
+  team_tournament_basic: { label: 'Team Basic — Whole Tournament', amount: 45000, team: true },
+  team_tournament_advanced: { label: 'Team Advanced — Whole Tournament', amount: 90000, team: true },
 };
 export const PACKAGE_KEYS = Object.keys(PACKAGES);
+// A team package covers a roster rather than one named player.
+export const isTeamPackage = key => Object.hasOwn(PACKAGES, key) && PACKAGES[key].team === true;
 
 // Production's live Prices: one setting per package, each a live-mode
 // `price_…` ID set in Render beside the live key (ship gate, round 2,
 // 2026-10-06), so no live Price ID is ever in code, the repository or a
-// laptop: STRIPE_LIVE_PRICE_INDIVIDUAL_BASIC and so on.
+// laptop: STRIPE_LIVE_PRICE_INDIVIDUAL_BASIC … STRIPE_LIVE_PRICE_TEAM_TOURNAMENT_ADVANCED.
 export const LIVE_PRICE_VARIABLES = Object.fromEntries(PACKAGE_KEYS.map(key => [key, `STRIPE_LIVE_PRICE_${key.toUpperCase()}`]));
 
 // The events a parent can buy for. Adding the next tournament is a code change
 // and a deploy (A21); the id is stored as text, not a tournaments row.
 export const TOURNAMENTS = {
-  'better-baseball-nephi-2026': { label: 'Better Baseball — Nephi, Utah · October 9–10, 2026' },
+  'better-baseball-nephi-2026': { label: 'Better Baseball Field of Screams — Nephi, Utah · October 9–10, 2026' },
 };
 
 export const packageLabel = key => (Object.hasOwn(PACKAGES, key) ? PACKAGES[key].label : key);
@@ -57,20 +66,31 @@ function readFields(body, fields) {
   return { value };
 }
 
+// A player package names the player (the team is optional); a team package
+// names the team (a player is optional), and its contact may be the coach.
 const CONTACT_FIELDS = [
   { key: 'guardianName', label: 'the parent or guardian name', required: 'Enter the parent or guardian name.' },
   { key: 'playerName', label: 'the player name', required: 'Enter the player name.' },
+  { key: 'teamName', label: 'the team name' },
+  { key: 'email', label: 'the email', required: 'Enter an email address.' },
+];
+const TEAM_CONTACT_FIELDS = [
+  { key: 'guardianName', label: 'the team contact name', required: 'Enter the parent, guardian, or team contact name.' },
+  { key: 'playerName', label: 'the player name' },
+  { key: 'teamName', label: 'the team name', required: 'Enter the team name for this team purchase.' },
   { key: 'email', label: 'the email', required: 'Enter an email address.' },
 ];
 const PHONE_FIELD = [{ key: 'phone', label: 'the phone number' }];
 
-// POST /api/create-checkout-session. Only these six fields are read: amount,
-// price, priceId or anything else the browser adds never reaches a decision.
-// Checked in the order the parent filled them in.
+// POST /api/create-checkout-session. Only these seven fields are read:
+// amount, price, priceId or anything else the browser adds never reaches a
+// decision. Checked in the order the parent filled them in; which names are
+// required follows the package chosen.
 export function validateCheckout(body) {
-  const contact = readFields(body, CONTACT_FIELDS);
+  const team = isTeamPackage(text(body?.packageId));
+  const contact = readFields(body, team ? TEAM_CONTACT_FIELDS : CONTACT_FIELDS);
   if (contact.error) return contact;
-  const { guardianName, playerName, email } = contact.value;
+  const { guardianName, playerName, teamName, email } = contact.value;
   // The same shape Will's page checks before it lets the parent continue.
   if (!/^\S+@\S+\.\S+$/.test(email)) return { error: 'Enter a valid email address.' };
   const phoneField = readFields(body, PHONE_FIELD);
@@ -80,7 +100,7 @@ export function validateCheckout(body) {
   if (!Object.hasOwn(TOURNAMENTS, tournamentId)) return { error: 'Choose the tournament attended.' };
   const packageKey = text(body?.packageId);
   if (!Object.hasOwn(PACKAGES, packageKey)) return { error: 'Choose a package.' };
-  return { value: { guardianName, playerName, email, phone, tournamentId, packageKey } };
+  return { value: { guardianName, playerName, teamName, email, phone, tournamentId, packageKey, kind: team ? 'team' : 'player' } };
 }
 
 // The post-purchase identification step (handoff §6): three required, three
@@ -94,8 +114,19 @@ export const DETAIL_FIELDS = [
   { key: 'notes', column: 'notes', label: 'the note', limit: NOTE_LIMIT },
 ];
 
-export function validateDetails(body) {
-  return readFields(body, DETAIL_FIELDS);
+// A team order's step asks about the team, never a player: the division is
+// what tells two teams of one name apart on the tournament roster.
+export const TEAM_DETAIL_FIELDS = [
+  { key: 'division', column: 'team_division', label: 'the division or age group', required: 'Enter the division or age group.' },
+  { key: 'headCoach', column: 'head_coach', label: 'the head coach' },
+  { key: 'gameContext', column: 'game_context', label: 'the game dates or opponents' },
+  { key: 'notes', column: 'notes', label: 'the note', limit: NOTE_LIMIT },
+];
+
+export const detailFieldsFor = order => (order?.order_kind === 'team' ? TEAM_DETAIL_FIELDS : DETAIL_FIELDS);
+
+export function validateDetails(body, fields = DETAIL_FIELDS) {
+  return readFields(body, fields);
 }
 
 // sk_live_ / rk_live_ → 'live', sk_test_ / rk_test_ → 'test', else null.
@@ -138,7 +169,7 @@ function livePriceProblem(variable, value) {
 }
 
 // The environment decides the mode: the key's prefix (keyMode) says live or
-// test, and each mode reads only its own Prices, a live key the four
+// test, and each mode reads only its own Prices, a live key the eight
 // STRIPE_LIVE_PRICE_* settings and a test key STRIPE_TEST_PRICES. The other
 // mode's Prices beside a key is a mismatch, named here so that every checkout
 // is refused before Stripe is asked: a live key never meets a test Price, or a
@@ -150,7 +181,7 @@ export function priceSettings(env = {}) {
   const liveSet = Object.values(LIVE_PRICE_VARIABLES).filter(name => String(env[name] ?? '').trim());
   if (mode === 'live' && env.STRIPE_TEST_PRICES) {
     settings.mismatch = 'STRIPE_SECRET_KEY is a live key, but STRIPE_TEST_PRICES is set: a live key never charges test Prices. '
-      + 'Remove STRIPE_TEST_PRICES; live Prices come from the four STRIPE_LIVE_PRICE_* settings.';
+      + 'Remove STRIPE_TEST_PRICES; live Prices come from the STRIPE_LIVE_PRICE_* settings.';
   } else if (mode === 'test' && liveSet.length) {
     const many = liveSet.length > 1;
     settings.mismatch = `STRIPE_SECRET_KEY is a test key, but ${liveSet.join(', ')} ${many ? 'are' : 'is'} set: a test key never charges live Prices. `

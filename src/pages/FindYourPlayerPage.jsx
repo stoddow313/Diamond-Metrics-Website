@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import MarketingLayout from '../components/MarketingLayout';
+import { loadSavedPlayerDetails, savePlayerDetails } from '../lib/findYourPlayerSaved';
 import heroImage from '../assets/find-your-player-hero.jpeg';
 import './FindYourPlayerPage.css';
 
@@ -54,6 +55,7 @@ const packages = [
 ];
 
 const emptyForm = { guardianName: '', playerName: '', teamName: '', email: '', phone: '', tournamentId: '' };
+const CHECKOUT_FAILED = 'We could not start secure checkout. Please try again.';
 
 function isTeamPackage(packageId) {
   return packageId.startsWith('team_');
@@ -73,17 +75,28 @@ function validateDetails(form, packageId) {
   return errors;
 }
 
+// The details saved just before leaving for Stripe (this tab only), if they
+// still make a complete form for their package; anything else is nothing saved.
+function restoreDetails() {
+  const saved = loadSavedPlayerDetails();
+  const form = Object.fromEntries(Object.keys(emptyForm).map((key) => [key, typeof saved?.form?.[key] === 'string' ? saved.form[key] : '']));
+  const packageId = packages.some((item) => item.id === saved?.packageId) ? saved.packageId : 'individual_pro';
+  return Object.keys(validateDetails(form, packageId)).length ? null : { form, packageId };
+}
+
 export default function FindYourPlayerPage() {
   const [searchParams] = useSearchParams();
   const requestedPackage = searchParams.get('package');
+  const checkoutCancelled = searchParams.get('checkout') === 'cancelled';
+  // Back from a canceled checkout in the same tab: everything typed and the package come back.
+  const [restored] = useState(() => (checkoutCancelled ? restoreDetails() : null));
   const [selectedPackage, setSelectedPackage] = useState(
-    packages.some((item) => item.id === requestedPackage) ? requestedPackage : 'individual_pro',
+    restored?.packageId || (packages.some((item) => item.id === requestedPackage) ? requestedPackage : 'individual_pro'),
   );
-  const [form, setForm] = useState(emptyForm);
+  const [form, setForm] = useState(restored?.form || emptyForm);
   const [errors, setErrors] = useState({});
   const [checkoutError, setCheckoutError] = useState('');
   const [isCreatingCheckout, setIsCreatingCheckout] = useState(false);
-  const checkoutCancelled = searchParams.get('checkout') === 'cancelled';
   const selected = packages.find((item) => item.id === selectedPackage);
   const selectingTeamPackage = isTeamPackage(selectedPackage);
   const individualPackages = packages.filter((item) => item.group === 'Individual player');
@@ -116,10 +129,15 @@ export default function FindYourPlayerPage() {
         body: JSON.stringify({ ...form, packageId: selectedPackage }),
       });
       const data = await response.json().catch(() => ({}));
-      if (!response.ok || !(data.url || data.checkoutUrl)) throw new Error(data.message || 'We could not start secure checkout. Please try again.');
-      window.location.assign(data.url || data.checkoutUrl);
-    } catch (error) {
-      setCheckoutError(error.message || 'We could not start secure checkout. Please try again.');
+      // The server's reason when it refuses (API routes answer { error }).
+      if (!response.ok || !(data.url || data.checkoutUrl)) setCheckoutError(data.error || data.message || CHECKOUT_FAILED);
+      else {
+        savePlayerDetails({ form, packageId: selectedPackage });
+        window.location.assign(data.url || data.checkoutUrl);
+      }
+    } catch {
+      // The request never reached the server: never show the browser's "Failed to fetch".
+      setCheckoutError(CHECKOUT_FAILED);
     } finally {
       setIsCreatingCheckout(false);
     }
@@ -128,7 +146,7 @@ export default function FindYourPlayerPage() {
   return (
     <MarketingLayout contact={false}>
       <section className="player-finder" aria-labelledby="player-finder-title">
-        {checkoutCancelled && <div className="player-finder-alert" role="status">Checkout was canceled. Your package selection is still available below.</div>}
+        {checkoutCancelled && <div className="player-finder-alert" role="status">Checkout was canceled. {restored ? 'Your details and package are still filled in below.' : 'Your package selection is still available below.'}</div>}
 
         <header className="player-finder-hero">
           <div className="player-finder-image-wrap"><img src={heroImage} alt="Aerial view of a baseball diamond" className="player-finder-image" /><p className="player-finder-tag">Tournament footage, made useful</p></div>

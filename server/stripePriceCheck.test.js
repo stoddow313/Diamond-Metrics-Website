@@ -1,5 +1,6 @@
 // The tournament checkout's Stripe settings as an operator sees them (ship
-// gate, round 2: production's Price IDs are four Render settings, never code).
+// gate, round 2: production's Price IDs are Render settings, eight since the
+// team packages, never code).
 // /command/ops names the key, where its Prices come from and what is still to
 // set or fix; an admin's "Check now" asks Stripe for each configured Price and
 // says whether it charges its card's price, once, in US dollars; at boot the
@@ -26,15 +27,22 @@ console.error = (...a) => logged.push(a.join(' '));
 const { startIntakeApp } = await import('./intakeTestHarness.js');
 const { setStripeClientForTests, checkStripeAtStartup, readStripeConfig } = await import('./stripeConfig.js');
 
-const LIVE = { individual_basic: 'price_LiveCheckA', individual_pro: 'price_LiveCheckB', tournament_basic: 'price_LiveCheckC', tournament_pro: 'price_LiveCheckD' };
+const LIVE = {
+  individual_basic: 'price_LiveCheckA', individual_pro: 'price_LiveCheckB', tournament_basic: 'price_LiveCheckC', tournament_pro: 'price_LiveCheckD',
+  team_single_basic: 'price_LiveCheckE', team_single_advanced: 'price_LiveCheckF', team_tournament_basic: 'price_LiveCheckG', team_tournament_advanced: 'price_LiveCheckH',
+};
 const LIVE_ENV = Object.fromEntries(Object.entries(LIVE).map(([key, id]) => [`STRIPE_LIVE_PRICE_${key.toUpperCase()}`, id]));
 const product = name => ({ id: `prod_${name.replace(/\W/g, '')}`, object: 'product', name });
 const PRICE = { object: 'price', active: true, type: 'one_time', currency: 'usd' };
 const atStripe = new Map([
-  [LIVE.individual_basic, { ...PRICE, id: LIVE.individual_basic, unit_amount: 5000, product: product('Individual Game — Basic') }],
+  [LIVE.individual_basic, { ...PRICE, id: LIVE.individual_basic, unit_amount: 5000, product: product('Individual Player Basic — Single Game') }],
   [LIVE.individual_pro, { ...PRICE, id: LIVE.individual_pro, unit_amount: 7500, product: product('Individual Pro') }],
   [LIVE.tournament_basic, { ...PRICE, id: LIVE.tournament_basic, unit_amount: 12500, product: product('Tournament Basic') }],
   [LIVE.tournament_pro, { ...PRICE, id: LIVE.tournament_pro, unit_amount: 15000, product: product('Tournament Pro') }],
+  [LIVE.team_single_basic, { ...PRICE, id: LIVE.team_single_basic, unit_amount: 15000, product: product('Team Basic Single') }],
+  [LIVE.team_single_advanced, { ...PRICE, id: LIVE.team_single_advanced, unit_amount: 30000, product: product('Team Advanced Single') }],
+  [LIVE.team_tournament_basic, { ...PRICE, id: LIVE.team_tournament_basic, unit_amount: 45000, product: product('Team Basic Tournament') }],
+  [LIVE.team_tournament_advanced, { ...PRICE, id: LIVE.team_tournament_advanced, unit_amount: 90000, product: product('Team Advanced Tournament') }],
   ['price_LiveMonthly', { ...PRICE, id: 'price_LiveMonthly', type: 'recurring', unit_amount: 7500, product: product('Individual Pro monthly') }],
 ]);
 const asked = [];
@@ -101,12 +109,12 @@ test('service health names the key, where its Prices come from and what is still
 test('service health names a key beside the other mode’s Prices', async () => {
   goLive({ STRIPE_TEST_PRICES: JSON.stringify(LIVE) });
   assert.deepEqual((await summary()).problems, ['STRIPE_SECRET_KEY is a live key, but STRIPE_TEST_PRICES is set: a live key never charges test Prices. '
-    + 'Remove STRIPE_TEST_PRICES; live Prices come from the four STRIPE_LIVE_PRICE_* settings.']);
+    + 'Remove STRIPE_TEST_PRICES; live Prices come from the STRIPE_LIVE_PRICE_* settings.']);
   assert.deepEqual((await check()).body.check.error, readStripeConfig().mismatch, 'the check says the same, and asks Stripe nothing');
   assert.equal(asked.length, 0);
 });
 
-test('an admin checks the four Prices against the cards: amount, one-time, dollars, and the name Checkout shows', async () => {
+test('an admin checks the eight Prices against the cards: amount, one-time, dollars, and the name Checkout shows', async () => {
   goLive();
   const r = await check();
   assert.equal(r.status, 200);
@@ -114,12 +122,16 @@ test('an admin checks the four Prices against the cards: amount, one-time, dolla
   assert.equal(r.body.check.mode, 'live');
   assert.equal(r.body.check.prices_from, 'STRIPE_LIVE_PRICE_*');
   assert.deepEqual(r.body.check.packages.map(p => [p.package_key, p.label, p.card_amount, p.amount, p.type, p.currency, p.active, p.product_name, p.problem]), [
-    ['individual_basic', 'Individual Game — Basic', 5000, 5000, 'one_time', 'usd', true, 'Individual Game — Basic', ''],
-    ['individual_pro', 'Individual Game — Pro', 7500, 7500, 'one_time', 'usd', true, 'Individual Pro', ''],
-    ['tournament_basic', 'Single Tournament — Basic', 12500, 12500, 'one_time', 'usd', true, 'Tournament Basic', ''],
-    ['tournament_pro', 'Single Tournament — Pro', 15000, 15000, 'one_time', 'usd', true, 'Tournament Pro', ''],
+    ['individual_basic', 'Individual Player Basic — Single Game', 5000, 5000, 'one_time', 'usd', true, 'Individual Player Basic — Single Game', ''],
+    ['individual_pro', 'Individual Player Advanced — Single Game', 7500, 7500, 'one_time', 'usd', true, 'Individual Pro', ''],
+    ['tournament_basic', 'Individual Player Basic — Whole Tournament', 12500, 12500, 'one_time', 'usd', true, 'Tournament Basic', ''],
+    ['tournament_pro', 'Individual Player Advanced — Whole Tournament', 15000, 15000, 'one_time', 'usd', true, 'Tournament Pro', ''],
+    ['team_single_basic', 'Team Basic — Single Game', 15000, 15000, 'one_time', 'usd', true, 'Team Basic Single', ''],
+    ['team_single_advanced', 'Team Advanced — Single Game', 30000, 30000, 'one_time', 'usd', true, 'Team Advanced Single', ''],
+    ['team_tournament_basic', 'Team Basic — Whole Tournament', 45000, 45000, 'one_time', 'usd', true, 'Team Basic Tournament', ''],
+    ['team_tournament_advanced', 'Team Advanced — Whole Tournament', 90000, 90000, 'one_time', 'usd', true, 'Team Advanced Tournament', ''],
   ]);
-  assert.deepEqual(asked.map(a => a.params), Array(4).fill({ expand: ['product'] }), 'the product comes along for its name');
+  assert.deepEqual(asked.map(a => a.params), Array(8).fill({ expand: ['product'] }), 'the product comes along for its name');
   for (const id of Object.values(LIVE)) assert.ok(!JSON.stringify(r.body).includes(id), 'Price IDs stay on the server');
 
   // Checked once here, a parent's checkout does not ask Stripe again.
@@ -144,6 +156,7 @@ test('each problem is named against its package: swapped, a product ID, the othe
     individual_pro: 'is a recurring Price, not a one-time one',
     tournament_basic: 'charges $150.00, not the card’s $125.00',
     tournament_pro: 'STRIPE_LIVE_PRICE_TOURNAMENT_PRO holds a product ID (prod_…), not the product\'s Price ID (price_…)',
+    team_single_basic: '', team_single_advanced: '', team_tournament_basic: '', team_tournament_advanced: '',
   });
   for (const value of ['price_FromTestMode', 'prod_TournamentPro']) assert.ok(!JSON.stringify(r.body).includes(value), `${value} is never shown`);
 });
@@ -184,7 +197,7 @@ test('at boot, good Prices are said once and a bad configuration loudly, with an
 
   goLive();
   await checkStripeAtStartup();
-  assert.deepEqual(logLines('stripe_prices_checked').map(l => [l.level, l.mode, l.packages]), [['info', 'live', 4]]);
+  assert.deepEqual(logLines('stripe_prices_checked').map(l => [l.level, l.mode, l.packages]), [['info', 'live', 8]]);
   assert.equal(logLines('ops_alert').length, 0);
 
   logged.length = 0;
@@ -195,7 +208,7 @@ test('at boot, good Prices are said once and a bad configuration loudly, with an
   assert.deepEqual(bad.map(l => [l.level, l.package_key, l.variable, l.problem]), [
     ['error', 'tournament_pro', 'STRIPE_LIVE_PRICE_TOURNAMENT_PRO', 'is a test-mode Price, but STRIPE_SECRET_KEY is a live key'],
   ]);
-  assert.match(logLines('ops_alert')[0].title, /refuses 1 of 4 packages/);
+  assert.match(logLines('ops_alert')[0].title, /refuses 1 of 8 packages/);
 
   logged.length = 0;
   goLive({ STRIPE_TEST_PRICES: JSON.stringify(LIVE) });

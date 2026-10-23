@@ -20,7 +20,7 @@ export const getOrderBySessionId = (db, sessionId) =>
 
 // Saved before Stripe hears about the checkout (handoff §5), with the Price the
 // server chose. The order id is random and retried on the rare collision.
-export function createPendingOrder(db, { guardianName, playerName, email, phone = '', tournamentId, packageKey, priceId }) {
+export function createPendingOrder(db, { guardianName, playerName, teamName = '', email, phone = '', tournamentId, packageKey, priceId, kind = 'player' }) {
   return db.transaction(() => {
     let orderId;
     for (let i = 0; i < 8; i++) {
@@ -28,10 +28,10 @@ export function createPendingOrder(db, { guardianName, playerName, email, phone 
       if (!db.prepare('SELECT 1 FROM tournament_orders WHERE order_id = ?').get(orderId)) break;
     }
     const id = db.prepare(
-      `INSERT INTO tournament_orders (order_id, guardian_name, player_name, email, phone, tournament_id, package_key, price_id)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
-    ).run(orderId, guardianName, playerName, email, phone, tournamentId, packageKey, priceId).lastInsertRowid;
-    addOrderEvent(db, id, 'created', 'parent', { order_id: orderId, package_key: packageKey, price_id: priceId });
+      `INSERT INTO tournament_orders (order_id, order_kind, guardian_name, player_name, team_name, email, phone, tournament_id, package_key, price_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    ).run(orderId, kind, guardianName, playerName || '', teamName || '', email, phone, tournamentId, packageKey, priceId).lastInsertRowid;
+    addOrderEvent(db, id, 'created', 'parent', { order_id: orderId, order_kind: kind, package_key: packageKey, price_id: priceId });
     return getOrder(db, id);
   })();
 }
@@ -71,15 +71,16 @@ export function markPaid(db, orderPk, { sessionId, paymentIntentId = null, amoun
   return changed;
 }
 
-// The identification step. A later send from the same link replaces the
-// earlier details; the history says which one it was.
-export function saveDetails(db, orderPk, details) {
+// The identification step (a player's, or a team order's TEAM_DETAIL_FIELDS).
+// A later send from the same link replaces the earlier details; the history
+// says which one it was.
+export function saveDetails(db, orderPk, details, fields = DETAIL_FIELDS) {
   return db.transaction(() => {
     const replacing = Boolean(getOrder(db, orderPk)?.details_received_at);
-    const columns = DETAIL_FIELDS.map(f => `${f.column} = ?`).join(', ');
+    const columns = fields.map(f => `${f.column} = ?`).join(', ');
     db.prepare(
       `UPDATE tournament_orders SET ${columns}, details_received_at = datetime('now'), updated_at = datetime('now') WHERE id = ?`
-    ).run(...DETAIL_FIELDS.map(f => details[f.key] ?? ''), orderPk);
+    ).run(...fields.map(f => details[f.key] ?? ''), orderPk);
     addOrderEvent(db, orderPk, replacing ? 'details_replaced' : 'details_received', 'parent');
     return replacing ? 'replaced' : 'received';
   })();
@@ -105,27 +106,79 @@ export function setDelivered(db, orderPk, delivered, actorId) {
   })();
 }
 
+// A team order joins its team's tournament entry: the order then covers that
+// entry's event roster (who gets the included analytics). Unlinking returns
+// it to "roster match needed". Only a change writes history.
+export function setTeamMatch(db, orderPk, entryId, actorId) {
+  return db.transaction(() => {
+    const entry = entryId == null ? null : db.prepare('SELECT id, team_id FROM tournament_entries WHERE id = ?').get(entryId);
+    if (entryId != null && !entry) return { error: 'That tournament team was not found.' };
+    const changed = (entry
+      ? db.prepare(
+        `UPDATE tournament_orders SET entry_id = ?, team_id = ?, team_matched_at = datetime('now'), team_matched_by = ?, updated_at = datetime('now')
+          WHERE id = ? AND order_kind = 'team' AND status = 'paid' AND (entry_id IS NULL OR entry_id != ?)`
+      ).run(entry.id, entry.team_id, actorId, orderPk, entry.id)
+      : db.prepare(
+        `UPDATE tournament_orders SET entry_id = NULL, team_id = NULL, team_matched_at = NULL, team_matched_by = NULL, updated_at = datetime('now')
+          WHERE id = ? AND order_kind = 'team' AND entry_id IS NOT NULL`
+      ).run(orderPk)).changes === 1;
+    if (changed) addOrderEvent(db, orderPk, entry ? 'team_matched' : 'team_unmatched', 'staff', entry ? { entry_id: entry.id, team_id: entry.team_id } : {}, actorId);
+    return { changed };
+  })();
+}
+
+// The tournament teams a team order can be matched to: every entry of a
+// tournament not archived, with its roster size, newest tournament first.
+export function teamEntriesForMatching(db) {
+  return db.prepare(
+    `SELECT te.id AS entry_id, t.name AS team_name, d.name AS division, tr.name AS tournament_name, tr.start_date,
+            (SELECT COUNT(*) FROM event_rosters er WHERE er.entry_id = te.id) AS roster_count
+       FROM tournament_entries te
+       JOIN teams t ON t.id = te.team_id
+       JOIN divisions d ON d.id = te.division_id
+       JOIN tournaments tr ON tr.id = te.tournament_id
+      WHERE tr.archived = 0 AND te.status != 'archived'
+      ORDER BY tr.start_date DESC, t.name COLLATE NOCASE, d.name`
+  ).all();
+}
+
 // What the Command list shows for a paid order (prd.md R4), plus the
-// delivered mark and who set it.
+// delivered mark and who set it, and for a team order the tournament team it
+// is matched to.
 const PAID_ORDER_VIEW = `
-  SELECT o.order_id, o.paid_at, o.package_key, o.amount_total, o.currency, o.tournament_id,
-         o.guardian_name, o.email, o.phone, o.player_name,
+  SELECT o.order_id, o.order_kind, o.paid_at, o.package_key, o.amount_total, o.currency, o.tournament_id,
+         o.guardian_name, o.email, o.phone, o.player_name, o.team_name,
          o.team_club, o.jersey_number, o.primary_position, o.bats_throws, o.game_context, o.notes, o.details_received_at,
+         o.team_division, o.head_coach,
          o.stripe_session_id, o.stripe_payment_intent_id,
-         o.delivered_at, a.name AS delivered_by
+         o.delivered_at, a.name AS delivered_by,
+         o.entry_id, o.team_matched_at, m.name AS team_matched_by,
+         mt.name AS matched_team, md.name AS matched_division, mtr.name AS matched_tournament
     FROM tournament_orders o
     LEFT JOIN admins a ON a.id = o.delivered_by
+    LEFT JOIN admins m ON m.id = o.team_matched_by
+    LEFT JOIN tournament_entries me ON me.id = o.entry_id
+    LEFT JOIN teams mt ON mt.id = me.team_id
+    LEFT JOIN divisions md ON md.id = me.division_id
+    LEFT JOIN tournaments mtr ON mtr.id = me.tournament_id
    WHERE o.status = 'paid'`;
-const labelled = o => ({ ...o, package_label: packageLabel(o.package_key), tournament_label: tournamentLabel(o.tournament_id) });
+const rosterOf = (db, entryId) => db.prepare(
+  `SELECT p.id AS player_id, p.first_name, p.last_name, er.jersey, er.is_guest FROM event_rosters er JOIN players p ON p.id = er.player_id
+    WHERE er.entry_id = ? ORDER BY p.last_name COLLATE NOCASE, p.first_name COLLATE NOCASE`
+).all(entryId);
+const labelled = (db, o) => ({
+  ...o, package_label: packageLabel(o.package_key), tournament_label: tournamentLabel(o.tournament_id),
+  ...(o.order_kind === 'team' ? { roster: o.entry_id ? rosterOf(db, o.entry_id) : [] } : {}),
+});
 
 // Paid orders only, newest paid first, with what staff need to fulfil each
 // one (prd.md R4). Pending and abandoned checkouts never appear.
 export function listPaidOrders(db) {
-  return db.prepare(`${PAID_ORDER_VIEW} ORDER BY o.paid_at DESC, o.id DESC`).all().map(labelled);
+  return db.prepare(`${PAID_ORDER_VIEW} ORDER BY o.paid_at DESC, o.id DESC`).all().map(o => labelled(db, o));
 }
 
 // One row of that list, or null when the order is unknown or not paid.
 export function getPaidOrderView(db, orderId) {
   const o = db.prepare(`${PAID_ORDER_VIEW} AND o.order_id = ?`).get(String(orderId));
-  return o ? labelled(o) : null;
+  return o ? labelled(db, o) : null;
 }
