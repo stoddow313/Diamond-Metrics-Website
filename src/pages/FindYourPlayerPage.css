@@ -38,6 +38,16 @@
 .player-finder-fields label { display: flex; flex-direction: column; gap: 6px; color: #31465c; font-size: 13px; font-weight: 800; }
 .player-finder-fields label span { font-weight: 400; }
 .player-finder-fields .full { grid-column: 1 / -1; }
+/* Side-by-side fields line up whatever their labels: each field's label, input
+   and error share rows with its neighbour's (subgrid), so a label that wraps to
+   two lines, or an error under one input, never pushes one input below the
+   other. A browser without subgrid stacks them as before. */
+.player-finder-fields { row-gap: 0; }
+.player-finder-fields > label { display: grid; grid-row: span 3; grid-template-rows: subgrid; row-gap: 6px; align-content: start; }
+.player-finder-fields > :not(:last-child) { margin-bottom: 15px; }
+/* A field's label and its "(optional)" read as one line. */
+.player-finder-fields .player-finder-label, .player-intake-form .player-finder-label { font-weight: 800; }
+.player-finder-label small { font-size: inherit; font-weight: 400; }
 .player-finder-fields input, .player-finder-fields select { width: 100%; min-height: 47px; padding: 0 12px; border: 1px solid #bccbd7; border-radius: 8px; color: #0e243e; background: #fff; font: inherit; font-weight: 400; }
 .player-finder-fields input:focus, .player-finder-fields select:focus { outline: 3px solid rgba(56, 189, 248, .32); border-color: #0284c7; }
 .player-finder-primary { width: 100%; min-height: 51px; margin-top: 23px; border: 0; border-radius: 8px; background: #06122b; color: #fff; font: inherit; font-weight: 800; cursor: pointer; }
