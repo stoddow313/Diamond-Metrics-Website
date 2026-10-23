@@ -49,6 +49,11 @@
 .player-finder-fields .player-finder-label, .player-intake-form .player-finder-label { font-weight: 800; }
 .player-finder-label small { font-size: inherit; font-weight: 400; }
 .player-finder-fields input, .player-finder-fields select { width: 100%; min-height: 47px; padding: 0 12px; border: 1px solid #bccbd7; border-radius: 8px; color: #0e243e; background: #fff; font: inherit; font-weight: 400; }
+/* Our own chevron, inset from the edge (the browser's sits against it), with
+   the text kept clear of it. */
+.player-finder-fields select { appearance: none; -webkit-appearance: none; padding-right: 40px; cursor: pointer; text-overflow: ellipsis;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1.5l5 5 5-5' fill='none' stroke='%2331465c' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right 16px center; background-size: 12px 8px; }
 .player-finder-fields input:focus, .player-finder-fields select:focus { outline: 3px solid rgba(56, 189, 248, .32); border-color: #0284c7; }
 .player-finder-primary { width: 100%; min-height: 51px; margin-top: 23px; border: 0; border-radius: 8px; background: #06122b; color: #fff; font: inherit; font-weight: 800; cursor: pointer; }
 .player-finder-primary:hover:not(:disabled) { background: #0b5990; }
