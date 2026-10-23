@@ -217,8 +217,8 @@ export function EventSignupPage() {
             <p>Register in advance for {event.name} on {event.days.map(d => d.label).join(' or ')}.</p>
             <div className="ep-prices" aria-label="Pricing">
               <p>{event.type_label} pricing</p>
-              {teamPrice && <div><span>Team price</span><strong>{teamPrice}</strong></div>}
               <div><span>{teamPrice ? 'Individual price' : 'Per player'}</span><strong>{price}</strong></div>
+              {teamPrice && <div><span>Team price</span><strong>{teamPrice}</strong></div>}
             </div>
             {event.location && <p className="ep-address"><strong>{venue}</strong>{address && <><br />{address}</>}</p>}
             {event.what_to_bring && <p className="ep-address"><strong>Bring:</strong> {event.what_to_bring}</p>}
