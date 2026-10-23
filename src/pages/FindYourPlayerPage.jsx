@@ -200,5 +200,5 @@ function PackageCard({ item, selected, onChoose }) {
 
 function Field({ label, optional, error, ...props }) {
   const errorId = `${props.name}-error`;
-  return <label>{label} {optional && <span>(optional)</span>}<input {...props} aria-invalid={Boolean(error)} aria-describedby={error ? errorId : undefined} />{error && <span className="player-finder-field-error" id={errorId}>{error}</span>}</label>;
+  return <label><span className="player-finder-label">{label}{optional && <small> (optional)</small>}</span><input {...props} aria-invalid={Boolean(error)} aria-describedby={error ? errorId : undefined} />{error && <span className="player-finder-field-error" id={errorId}>{error}</span>}</label>;
 }
