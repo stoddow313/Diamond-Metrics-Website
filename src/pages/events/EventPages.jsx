@@ -1,8 +1,7 @@
 // Public event registration (server/eventRoutes.js): the sign-up page a QR
 // code opens, the confirmation Stripe returns to, and the list of open events.
 // The browser sends the form only; the server decides the price and starts
-// the Stripe Checkout for the saved registration. An event with a team price
-// also takes a whole team on one form, from its coach or manager.
+// the Stripe Checkout for the saved registration.
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import MarketingLayout from '../../components/MarketingLayout';
@@ -51,7 +50,7 @@ function splitLocation(location = '') {
   const i = location.indexOf(',');
   return i < 0 ? [location.trim(), ''] : [location.slice(0, i).trim(), location.slice(i + 1).trim()];
 }
-const emptyForm = { kind: 'player', guardianName: '', email: '', phone: '', playerName: '', playerAge: '', playerTeam: '', coachName: '', teamName: '', teamSize: '', division: '', preferredDay: '', consent: false };
+const emptyForm = { guardianName: '', email: '', phone: '', playerName: '', playerAge: '', playerTeam: '', preferredDay: '', consent: false };
 
 // The form survives a canceled checkout in the same tab (never the browser's other tabs).
 const savedKey = slug => `dm-event-form-${slug}`;
@@ -63,23 +62,14 @@ function forget(slug) { try { sessionStorage.removeItem(savedKey(slug)); } catch
 
 function validate(form, event) {
   const e = {};
+  if (!form.guardianName.trim()) e.guardianName = 'Enter the parent or guardian name.';
   if (!form.email.trim()) e.email = 'Enter an email address.';
   else if (!/^\S+@\S+\.\S+$/.test(form.email)) e.email = 'Enter a valid email address.';
-  if (form.kind === 'team') {
-    if (!form.coachName.trim()) e.coachName = 'Enter the coach or manager name.';
-    if (!form.teamName.trim()) e.teamName = 'Enter the team name.';
-    const size = Number(form.teamSize);
-    if (!String(form.teamSize).trim()) e.teamSize = 'Enter the number of players.';
-    else if (!Number.isInteger(size) || size < 1 || size > event.team.max_size) e.teamSize = `Enter 1 to ${event.team.max_size} players.`;
-    if (!form.division.trim()) e.division = 'Choose the division or age group.';
-  } else {
-    if (!form.guardianName.trim()) e.guardianName = 'Enter the parent or guardian name.';
-    if (!form.playerName.trim()) e.playerName = 'Enter the player name.';
-    const age = Number(form.playerAge);
-    if (!String(form.playerAge).trim()) e.playerAge = 'Enter the player’s age.';
-    else if (!Number.isInteger(age) || age < 4 || age > 25) e.playerAge = 'Enter the age in years.';
-    if (!form.playerTeam.trim()) e.playerTeam = 'Enter the player’s team.';
-  }
+  if (!form.playerName.trim()) e.playerName = 'Enter the player name.';
+  const age = Number(form.playerAge);
+  if (!String(form.playerAge).trim()) e.playerAge = 'Enter the player’s age.';
+  else if (!Number.isInteger(age) || age < 4 || age > 25) e.playerAge = 'Enter the age in years.';
+  if (!form.playerTeam.trim()) e.playerTeam = 'Enter the player’s team.';
   if (event.days.length > 1 && !form.preferredDay) e.preferredDay = 'Choose a day.';
   if (!form.consent) e.consent = 'Please agree to the consent statement.';
   return e;
@@ -90,7 +80,6 @@ export function EventSignupPage() {
   const [params] = useSearchParams();
   const cancelled = params.get('checkout') === 'cancelled';
   const source = params.get('src') || '';
-  const asTeam = params.get('as') === 'team';
   const [event, setEvent] = useState(null);
   const [loadError, setLoadError] = useState('');
   const [form, setForm] = useState(() => (cancelled && loadSaved(slug)) || emptyForm);
@@ -104,11 +93,9 @@ export function EventSignupPage() {
       // A renamed event's old link (a printed QR code) shows its current address.
       if (d.event.slug !== slug) window.history.replaceState(null, '', `/events/${d.event.slug}${window.location.search}`);
       if (d.event.days.length === 1) setForm(f => ({ ...f, preferredDay: d.event.days[0].date }));
-      // ?as=team opens the team form (a coach's link); an event without a team price has none.
-      setForm(f => ({ ...f, kind: d.event.team && (f.kind === 'team' || asTeam) ? 'team' : 'player' }));
       if (cancelled) requestAnimationFrame(() => document.getElementById('event-signup')?.scrollIntoView());
     }).catch(err => setLoadError(err.status === 404 ? 'We couldn’t find that event.' : 'We couldn’t load this event. Please try again.'));
-  }, [slug, cancelled, asTeam]);
+  }, [slug, cancelled]);
 
   const set = e => {
     const { name, value, type, checked } = e.target;
@@ -137,10 +124,6 @@ export function EventSignupPage() {
   if (!event) return <MarketingLayout contact={false}><section className="player-intake-page"><p>Loading…</p></section></MarketingLayout>;
 
   const price = dollars(event.price_cents);
-  const teamPrice = event.team ? dollars(event.team.price_cents) : null;
-  const team = form.kind === 'team' && !!event.team;
-  const due = team ? teamPrice : price;
-  const pick = kind => { setForm(f => ({ ...f, kind, consent: false })); setErrors({}); setSubmitError(''); };
   const choices = [...event.days.map(d => ({ value: d.date, label: d.label, full: d.full })), ...(event.either ? [{ value: 'either', label: 'Either day', full: false }] : [])];
   const proDay = event.event_type === 'pro_day';
   const dates = dateRange(event.days);
@@ -158,11 +141,25 @@ export function EventSignupPage() {
             <p className="ep-eyebrow">{eyebrow}</p>
             <h1 id="event-title" className={event.name.length > 14 ? 'is-long' : ''}>{event.name}</h1>
             <p className="ep-presented">Presented by Diamond Metrics</p>
+            {event.slug === 'gobbler-last-chance-pro-day' && (
+              <div className="ep-event-partners" aria-label="Tournament and event partners">
+                <img
+                  className="ep-event-logo-gobbler"
+                  src="/images/events/gobbler-last-chance-tournament.png"
+                  alt="Gobbler Last Chance Tournament"
+                />
+                <img
+                  className="ep-event-logo-better-baseball"
+                  src="/images/events/better-baseball-logo.png"
+                  alt="Better Baseball"
+                />
+              </div>
+            )}
             {proDay && <p className="ep-tagline">{PRO_DAY.tagline}</p>}
             <div className="ep-details">
               {event.location && <div><span className="ep-detail-label">Location</span><strong>{venue}</strong>{address && <span>{address}</span>}</div>}
               <div><span className="ep-detail-label">{event.days.length > 1 ? 'Event dates' : 'Event date'}</span><strong>{dates}</strong>{event.tournament_name && <span>During the {event.tournament_name}</span>}</div>
-              <div><span className="ep-detail-label">Price</span><strong>{price} per player{teamPrice ? ` · ${teamPrice} per team` : ''}</strong><span>Paid securely at checkout</span></div>
+              <div><span className="ep-detail-label">Price</span><strong>{price} per player</strong><span>Paid securely at checkout</span></div>
             </div>
             {event.accepting
               ? <a className="ep-button" href="#event-signup">Sign up today <span aria-hidden="true">→</span></a>
@@ -217,8 +214,7 @@ export function EventSignupPage() {
             <p>Register in advance for {event.name} on {event.days.map(d => d.label).join(' or ')}.</p>
             <div className="ep-prices" aria-label="Pricing">
               <p>{event.type_label} pricing</p>
-              <div><span>{teamPrice ? 'Individual price' : 'Per player'}</span><strong>{price}</strong></div>
-              {teamPrice && <div><span>Team price</span><strong>{teamPrice}</strong></div>}
+              <div><span>Per player</span><strong>{price}</strong></div>
             </div>
             {event.location && <p className="ep-address"><strong>{venue}</strong>{address && <><br />{address}</>}</p>}
             {event.what_to_bring && <p className="ep-address"><strong>Bring:</strong> {event.what_to_bring}</p>}
@@ -226,47 +222,16 @@ export function EventSignupPage() {
 
           {event.accepting ? (
             <form className="ep-form-card" onSubmit={submit} noValidate data-testid="event-form">
-              <p className="ep-eyebrow">{team ? 'Team registration' : 'Player registration'}</p>
+              <p className="ep-eyebrow">Player registration</p>
               <h3>Sign up today</h3>
-              {event.team && (
-                <div className="ep-kind" role="radiogroup" aria-label="Register">
-                  {[['player', 'A player', price], ['team', 'A team', teamPrice]].map(([k, label, amount]) => (
-                    <button key={k} type="button" role="radio" aria-checked={form.kind === k} className={form.kind === k ? 'is-selected' : ''} onClick={() => pick(k)} data-testid={`register-as-${k}`}>
-                      <span>{label}</span><strong>{amount}</strong>
-                    </button>
-                  ))}
-                </div>
-              )}
-              <p className="ep-form-copy">{team ? `Coach or manager: one form for the whole team. You’ll pay ${teamPrice} on the next screen.` : `Parent or guardian: one form per player. You’ll pay ${price} on the next screen.`}</p>
+              <p className="ep-form-copy">Parent or guardian: one form per player. You’ll pay {price} on the next screen.</p>
               <div className="player-finder-fields">
-                {team ? (
-                  <>
-                    <Field label="Coach or Manager Name" name="coachName" value={form.coachName} onChange={set} error={errors.coachName} autoComplete="name" />
-                    <Field label="Email" name="email" type="email" value={form.email} onChange={set} error={errors.email} autoComplete="email" />
-                    <Field label="Phone" optional name="phone" type="tel" value={form.phone} onChange={set} autoComplete="tel" />
-                    <Field label="Team Name" name="teamName" value={form.teamName} onChange={set} error={errors.teamName} />
-                    <Field label="Number of Players" name="teamSize" type="number" inputMode="numeric" min="1" max={event.team.max_size} value={form.teamSize} onChange={set} error={errors.teamSize} />
-                    {event.team.divisions.length ? (
-                      <label>
-                        <span className="ep-label">Division / Age Group</span>
-                        <select name="division" value={form.division} onChange={set} aria-invalid={Boolean(errors.division)} aria-describedby={errors.division ? 'division-error' : undefined}>
-                          <option value="">Choose…</option>
-                          {event.team.divisions.map(d => <option key={d} value={d}>{d}</option>)}
-                        </select>
-                        {errors.division && <span className="player-finder-field-error" id="division-error">{errors.division}</span>}
-                      </label>
-                    ) : <Field label="Division / Age Group" name="division" value={form.division} onChange={set} error={errors.division} placeholder="12U" />}
-                  </>
-                ) : (
-                  <>
-                    <Field label="Parent or Guardian Name" name="guardianName" value={form.guardianName} onChange={set} error={errors.guardianName} autoComplete="name" />
-                    <Field label="Email" name="email" type="email" value={form.email} onChange={set} error={errors.email} autoComplete="email" />
-                    <Field label="Phone" optional name="phone" type="tel" value={form.phone} onChange={set} autoComplete="tel" />
-                    <Field label="Player Name" name="playerName" value={form.playerName} onChange={set} error={errors.playerName} />
-                    <Field label="Player Age" name="playerAge" type="number" inputMode="numeric" min="4" max="25" value={form.playerAge} onChange={set} error={errors.playerAge} />
-                    <Field label="Player’s Team" name="playerTeam" value={form.playerTeam} onChange={set} error={errors.playerTeam} />
-                  </>
-                )}
+                <Field label="Parent or Guardian Name" name="guardianName" value={form.guardianName} onChange={set} error={errors.guardianName} autoComplete="name" />
+                <Field label="Email" name="email" type="email" value={form.email} onChange={set} error={errors.email} autoComplete="email" />
+                <Field label="Phone" optional name="phone" type="tel" value={form.phone} onChange={set} autoComplete="tel" />
+                <Field label="Player Name" name="playerName" value={form.playerName} onChange={set} error={errors.playerName} />
+                <Field label="Player Age" name="playerAge" type="number" inputMode="numeric" min="4" max="25" value={form.playerAge} onChange={set} error={errors.playerAge} />
+                <Field label="Player’s Team" name="playerTeam" value={form.playerTeam} onChange={set} error={errors.playerTeam} />
                 {choices.length > 1 && (
                   <fieldset className="full event-days" aria-describedby={errors.preferredDay ? 'preferredDay-error' : undefined}>
                     <legend>Preferred day</legend>
@@ -282,13 +247,13 @@ export function EventSignupPage() {
                   </fieldset>
                 )}
                 <label className="full event-consent">
-                  <span className="event-consent-row"><input type="checkbox" name="consent" checked={form.consent} onChange={set} aria-invalid={Boolean(errors.consent)} /><span>{team ? event.team.consent_text : event.consent_text}</span></span>
+                  <span className="event-consent-row"><input type="checkbox" name="consent" checked={form.consent} onChange={set} aria-invalid={Boolean(errors.consent)} /><span>{event.consent_text}</span></span>
                   {errors.consent && <span className="player-finder-field-error">{errors.consent}</span>}
                 </label>
               </div>
               {submitError && <p className="player-finder-checkout-error" role="alert">{submitError}</p>}
-              <button className="ep-submit" type="submit" disabled={busy}>{busy ? 'Starting secure checkout…' : <>{team ? 'Register team' : 'Register'} &amp; pay {due} <span aria-hidden="true">→</span></>}</button>
-              <p className="player-finder-note">Payment is handled by Stripe. Your details are used to run the event and deliver {team ? 'your players’' : 'your player’s'} results. <a href="/privacy">Privacy Policy</a></p>
+              <button className="ep-submit" type="submit" disabled={busy}>{busy ? 'Starting secure checkout…' : <>Register &amp; pay {price} <span aria-hidden="true">→</span></>}</button>
+              <p className="player-finder-note">Payment is handled by Stripe. Your details are used to run the event and deliver your player’s results. <a href="/privacy">Privacy Policy</a></p>
             </form>
           ) : (
             <div className="ep-form-card" data-testid="event-closed">
@@ -352,13 +317,13 @@ export function EventRegisteredPage() {
     <MarketingLayout contact={false}>
       <section className="player-intake-page" data-testid="event-registered">
         <p className="player-finder-eyebrow">{r.paid ? 'You’re registered' : 'Confirming your payment'}</p>
-        <h1>{r.paid ? `See you there, ${r.kind === 'team' ? r.team_name : r.player_first_name}.` : 'One moment…'}</h1>
+        <h1>{r.paid ? `See you there, ${r.player_first_name}.` : 'One moment…'}</h1>
         <p>{r.paid
-          ? <>{event.name} · <strong>{r.day_label}</strong>{r.kind === 'team' ? <> · {r.team_size} players · {r.division}</> : null}{event.location ? <> · {event.location}</> : null}</>
+          ? <>{event.name} · <strong>{r.day_label}</strong>{event.location ? <> · {event.location}</> : null}</>
           : waitedOut ? 'Stripe has your payment; your confirmation is on its way. Keep your registration number below.' : 'We’re waiting for Stripe to confirm your payment. This page updates on its own.'}</p>
         <div className="player-intake-order"><p className="player-finder-eyebrow">Registration number</p><p className="player-intake-order-id">{r.registration_id}</p></div>
         {event.what_to_bring && <p className="player-intake-next"><strong>Bring:</strong> {event.what_to_bring}</p>}
-        <p className="player-intake-next">Stripe will email your receipt. Show your registration number or the {r.kind === 'team' ? 'team’s' : 'player’s'} name at check-in.</p>
+        <p className="player-intake-next">Stripe will email your receipt. Show your registration number or the player’s name at check-in.</p>
         {r.paid && ics && <a className="player-intake-link" href={ics} download={`${event.slug}.ics`}>Add to calendar</a>}
       </section>
     </MarketingLayout>
@@ -381,7 +346,7 @@ export function EventsIndexPage() {
                 <span className="player-finder-eyebrow">{e.type_label}</span>
                 <strong>{e.name}</strong>
                 <span>{e.days.map(d => d.label).join(' · ')}{e.location ? ` · ${e.location}` : ''}</span>
-                <span className="event-index-price">{dollars(e.price_cents)}{e.team ? ` · ${dollars(e.team.price_cents)} per team` : ''} · Register →</span>
+                <span className="event-index-price">{dollars(e.price_cents)} · Register →</span>
               </Link>
             ))}
           </div>
@@ -390,3 +355,4 @@ export function EventsIndexPage() {
     </MarketingLayout>
   );
 }
+
