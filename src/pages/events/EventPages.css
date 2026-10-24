@@ -120,27 +120,40 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 12px;
+  gap: 22px;
   margin: 18px 0 22px;
+}
+
+.ep-event-partner-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.ep-event-partner-label {
+  color: #9cc8e5;
+  font-size: 10px;
+  font-weight: 850;
+  letter-spacing: .12em;
+  text-transform: uppercase;
 }
 
 .ep-event-partners img {
   display: block;
-  height: auto;
-  padding: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.75);
-  border-radius: 12px;
-  background: #fff;
   object-fit: contain;
 }
 
 .ep-event-logo-gobbler {
   width: 88px;
-  height: 88px !important;
+  height: 88px;
+  filter: drop-shadow(0 0 2px rgba(255, 255, 255, 0.65))
+    drop-shadow(0 4px 10px rgba(0, 0, 0, 0.3));
 }
 
 .ep-event-logo-better-baseball {
   width: min(250px, 65vw);
-  height: 88px !important;
+  height: 88px;
+  filter: drop-shadow(0 4px 10px rgba(0, 0, 0, 0.3));
 }
 

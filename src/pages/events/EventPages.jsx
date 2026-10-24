@@ -142,17 +142,23 @@ export function EventSignupPage() {
             <h1 id="event-title" className={event.name.length > 14 ? 'is-long' : ''}>{event.name}</h1>
             <p className="ep-presented">Presented by Diamond Metrics</p>
             {event.slug === 'gobbler-last-chance-pro-day' && (
-              <div className="ep-event-partners" aria-label="Tournament and event partners">
-                <img
-                  className="ep-event-logo-gobbler"
-                  src="/images/events/gobbler-last-chance-tournament.png"
-                  alt="Gobbler Last Chance Tournament"
-                />
-                <img
-                  className="ep-event-logo-better-baseball"
-                  src="/images/events/better-baseball-logo.png"
-                  alt="Better Baseball"
-                />
+              <div className="ep-event-partners" aria-label="Gobbler Last Chance Tournament hosted by Better Baseball">
+                <div className="ep-event-partner-item">
+                  <span className="ep-event-partner-label">Tournament</span>
+                  <img
+                    className="ep-event-logo-gobbler"
+                    src="/images/events/gobbler-last-chance-tournament.png"
+                    alt="Gobbler Last Chance Tournament"
+                  />
+                </div>
+                <div className="ep-event-partner-item">
+                  <span className="ep-event-partner-label">Tournament host</span>
+                  <img
+                    className="ep-event-logo-better-baseball"
+                    src="/images/events/better-baseball-logo.png"
+                    alt="Better Baseball"
+                  />
+                </div>
               </div>
             )}
             {proDay && <p className="ep-tagline">{PRO_DAY.tagline}</p>}
