@@ -61,11 +61,6 @@
 .ep-form-card { min-width: 0; padding: clamp(20px, 3vw, 32px); border: 1px solid rgba(125, 211, 252, .24); border-radius: 18px; background: #fff; color: var(--ep-ink); box-shadow: 0 20px 48px rgba(0, 0, 0, .26); }
 .ep-form-card .ep-eyebrow { margin-bottom: 8px; color: #0284c7; }
 .ep-form-card h3 { margin: 0; color: var(--ep-ink); font-size: 32px; font-weight: 950; line-height: 1; letter-spacing: -.04em; text-transform: uppercase; }
-.ep-kind { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 16px 0 2px; }
-.ep-kind button { display: flex; min-height: 50px; align-items: center; justify-content: space-between; gap: 10px; padding: 0 14px; border: 1px solid #bccbd7; border-radius: 8px; background: #fff; color: var(--ep-ink); font: inherit; font-size: 14px; font-weight: 800; cursor: pointer; }
-.ep-kind button strong { color: var(--ep-muted); font-weight: 900; }
-.ep-kind button.is-selected { border-color: #0284c7; background: rgba(56, 189, 248, .12); box-shadow: inset 0 0 0 1px #0284c7; }
-.ep-kind button.is-selected strong { color: #0b5990; }
 .ep-form-card .player-finder-fields .ep-label { font-weight: 800; }
 .ep-form-card .player-finder-fields .ep-label small { color: var(--ep-muted); font-size: 12px; font-weight: 400; }
 .ep-form-copy { margin: 9px 0 20px; color: var(--ep-muted); font-size: 13px; line-height: 1.5; }
@@ -118,3 +113,47 @@
 .event-index-card strong { color: #fff; font-size: 22px; }
 .event-index-card:hover { border-color: rgba(125, 211, 252, .55); }
 .event-index-price { color: #7dd3fc; font-weight: 800; }
+
+
+/* Gobbler Last Chance Pro Day tournament and partner logos */
+.ep-event-partners {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 22px;
+  margin: 18px 0 22px;
+}
+
+.ep-event-partner-item {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.ep-event-partner-label {
+  color: #9cc8e5;
+  font-size: 10px;
+  font-weight: 850;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+}
+
+.ep-event-partners img {
+  display: block;
+  object-fit: contain;
+}
+
+.ep-event-logo-gobbler {
+  width: 88px;
+  height: 88px;
+  filter: drop-shadow(0 0 2px rgba(255, 255, 255, 0.65))
+    drop-shadow(0 4px 10px rgba(0, 0, 0, 0.3));
+}
+
+.ep-event-logo-better-baseball {
+  width: min(250px, 65vw);
+  height: 88px;
+  filter: drop-shadow(0 4px 10px rgba(0, 0, 0, 0.3));
+}
+
