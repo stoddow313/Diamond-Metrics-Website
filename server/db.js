@@ -1488,6 +1488,18 @@ db.exec(`
     restored_at   TEXT
   );
   CREATE INDEX IF NOT EXISTS idx_event_trash_tournament ON event_trash(tournament_id, deleted_at);
+  CREATE TABLE IF NOT EXISTS giveaway_entries (
+    id                    INTEGER PRIMARY KEY AUTOINCREMENT,
+    full_name             TEXT NOT NULL,
+    email                 TEXT NOT NULL,
+    phone                 TEXT NOT NULL DEFAULT '',
+    age_confirmed         INTEGER NOT NULL CHECK (age_confirmed = 1),
+    marketing_consent     INTEGER NOT NULL CHECK (marketing_consent = 1),
+    consent_version       TEXT NOT NULL,
+    consented_at          TEXT NOT NULL DEFAULT (datetime('now')),
+    created_at            TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+  CREATE INDEX IF NOT EXISTS idx_giveaway_entries_created ON giveaway_entries(created_at);
 `);
 
 // ── Seed Command reference data (idempotent; active flags follow code) ──

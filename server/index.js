@@ -32,6 +32,7 @@ import { mountGamePairingRoutes } from './gamePairingRoutes.js';
 import { mountTournamentLinkRoutes } from './tournamentLinkRoutes.js';
 import { upsertStaffInvite as upsertInvite, accessList } from './staffAccess.js';
 import { mountEventRoutes } from './eventRoutes.js';
+import { mountGiveawayRoutes } from './giveawayRoutes.js';
 import { parseDays } from './eventLogic.js';
 import { mountLiveRoutes } from './liveRoutes.js';
 import { mountTournamentCheckoutRoutes } from './tournamentCheckoutRoutes.js';
@@ -918,6 +919,7 @@ app.put('/api/roster/:id', requireAdmin, (req, res) => {
 // archive, delete with a dependency summary, restore): tournamentAdminRoutes.js.
 mountTournamentAdminRoutes(app, { db, requireAdmin });
 mountEventRoutes(app, { db, principals });
+mountGiveawayRoutes(app, { db, requireAdmin });
 
 // ── Server-side imports (requirements §8) ────────────────────────────────
 // Dry-run preview → duplicate resolution → transactional apply + audit.

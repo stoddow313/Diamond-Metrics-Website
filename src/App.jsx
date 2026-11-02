@@ -49,6 +49,7 @@ import { EventSignupPage, EventRegisteredPage, EventsIndexPage } from './pages/e
 import { EventsListPage, EventPage } from './pages/command/EventsPages';
 import PlayerIntakeCompletePage from './pages/PlayerIntakeCompletePage';
 import PrivacyPage from './pages/PrivacyPage';
+import GiveawayPage, { GiveawayRulesPage } from './pages/GiveawayPage';
 
 function RoleRoute({ role, children }) {
   const { user, loading } = useAuth();
@@ -103,6 +104,9 @@ function AppRoutes() {
       <Route path="/events/:slug" element={<EventSignupPage />} />
       <Route path="/events/:slug/registered" element={<EventRegisteredPage />} />
       <Route path="/privacy" element={<PrivacyPage />} />
+      {/* Direct-link giveaway landing page; intentionally omitted from site navigation. */}
+      <Route path="/giveaway" element={<GiveawayPage />} />
+      <Route path="/giveaway/official-rules" element={<GiveawayRulesPage />} />
       <Route path="/claim/:token" element={<ClaimPage />} />
       <Route path="/claim-staff/:token" element={<ClaimStaffPage />} />
       <Route path="/p/:slug" element={<PublicProfilePage />} />
