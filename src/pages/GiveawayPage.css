@@ -36,7 +36,7 @@
 .giveaway-eyebrow { margin: 0 0 16px; color: var(--giveaway-blue); font-size: 11px; font-weight: 850; letter-spacing: .19em; line-height: 1.5; text-transform: uppercase; }
 .giveaway-intro h1 { margin: 0; color: white; font-size: clamp(48px, 7.2vw, 90px); font-weight: 950; letter-spacing: -.075em; line-height: .91; text-transform: uppercase; }
 .giveaway-intro h1 span { color: var(--giveaway-blue); }
-.giveaway-prize { position: relative; display: flex; flex-direction: column; width: min(355px, 90%); margin: 37px 0 23px; padding: 22px 27px 25px; border: 1px solid rgba(123,205,255,.44); border-radius: 18px; background: linear-gradient(120deg, rgba(16,48,87,.96), rgba(8,25,52,.88)); box-shadow: 0 18px 55px rgba(0,0,0,.24), inset 0 1px rgba(255,255,255,.08); transform: rotate(-1deg) scale(1.4); }
+.giveaway-prize { position: relative; display: flex; flex-direction: column; width: min(355px, 90%); margin: 37px 0 80px; padding: 22px 27px 25px; border: 1px solid rgba(123,205,255,.44); border-radius: 18px; background: linear-gradient(120deg, rgba(16,48,87,.96), rgba(8,25,52,.88)); box-shadow: 0 18px 55px rgba(0,0,0,.24), inset 0 1px rgba(255,255,255,.08); transform: rotate(-1deg) scale(1.4); transform-origin: top left; }
 .giveaway-prize::after { position: absolute; top: -7px; right: 18px; width: 52px; height: 13px; border-radius: 4px; background: var(--giveaway-blue); content: ""; opacity: .76; transform: rotate(5deg); }
 .giveaway-prize-label { color: #9bc8e4; font-size: 10px; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; }
 .giveaway-prize strong { margin-top: 1px; color: white; font-size: 56px; font-weight: 950; letter-spacing: -.065em; line-height: 1.04; }
@@ -100,7 +100,7 @@
   .giveaway-page { padding: 20px 16px 18px; }
   .giveaway-content { margin: 26px auto 34px; }
   .giveaway-form-card { padding: 23px 18px; border-radius: 20px; }
-  .giveaway-prize { transform: rotate(-1deg) scale(1.1); }
+  .giveaway-prize { margin-bottom: 44px; transform: rotate(-1deg) scale(1.1); }
   .giveaway-brand { font-size: 12px; }
   .giveaway-brand-mark { width: 34px; height: 34px; }
   .giveaway-modal { padding: 30px 22px; }
