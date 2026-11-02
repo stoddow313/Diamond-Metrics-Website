@@ -74,6 +74,7 @@ export default function GiveawayPage() {
           <p className="giveaway-age-note"><span aria-hidden="true">18+</span> Must be 18 years or older to enter.</p>
           <div className="giveaway-rule" aria-hidden="true"><span /></div>
           <p className="giveaway-no-purchase">No purchase necessary.</p>
+          <p className="giveaway-sponsor-disclaimer">This giveaway is not sponsored or endorsed by DICK'S Sporting Goods</p>
         </section>
 
         <section className="giveaway-form-card" aria-labelledby="giveaway-form-title">

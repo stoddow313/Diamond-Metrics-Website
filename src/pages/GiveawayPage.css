@@ -47,6 +47,7 @@
 .giveaway-rule { display: flex; align-items: center; width: min(440px, 100%); height: 1px; margin: 28px 0 16px; background: rgba(141,183,220,.18); }
 .giveaway-rule span { width: 64px; height: 2px; background: var(--giveaway-blue); box-shadow: 0 0 14px rgba(76,201,240,.8); }
 .giveaway-no-purchase { margin: 0; color: #9bb5d2; font-size: 13px; font-weight: 650; }
+.giveaway-sponsor-disclaimer { margin: 7px 0 0; color: #9bb5d2; font-size: 11px; line-height: 1.5; }
 
 .giveaway-form-card { padding: clamp(24px, 3.5vw, 38px); border: 1px solid rgba(125,180,225,.24); border-radius: 24px; background: linear-gradient(155deg, rgba(13,34,64,.96), rgba(7,22,44,.96)); box-shadow: 0 24px 80px rgba(0,0,0,.32), inset 0 1px rgba(255,255,255,.045); }
 .giveaway-card-heading { margin-bottom: 23px; }
