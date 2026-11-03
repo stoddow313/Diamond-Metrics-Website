@@ -1,8 +1,10 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import './GiveawayPage.css';
 
 const THANK_YOU = 'Thanks for entering! Keep an eye on your email, as we will contact the winner via email after the giveaway concludes';
+const ENTRY_START = Date.parse('2026-11-06T14:00:00Z');
+const ENTRY_END = Date.parse('2026-11-08T07:00:00Z');
 
 function ConfirmationDialog({ onClose }) {
   return (
@@ -21,10 +23,17 @@ function ConfirmationDialog({ onClose }) {
 }
 
 export default function GiveawayPage() {
-  const [form, setForm] = useState({ fullName: '', email: '', phone: '', ageConfirmed: false, website: '' });
+  const [form, setForm] = useState({ fullName: '', email: '', phone: '', ageConfirmed: false, utahResident: false, tournamentAttendanceConfirmed: false, sponsorEligibilityConfirmed: false, website: '' });
+  const [now, setNow] = useState(Date.now());
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [submitted, setSubmitted] = useState(false);
+  const entryOpen = now >= ENTRY_START && now < ENTRY_END;
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 15000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   function update(event) {
     const { name, value, checked, type } = event.target;
@@ -44,7 +53,7 @@ export default function GiveawayPage() {
       const result = await response.json().catch(() => ({}));
       if (!response.ok || !result.ok) throw new Error(result.error || 'We couldn’t save your entry. Please try again.');
       setSubmitted(true);
-      setForm({ fullName: '', email: '', phone: '', ageConfirmed: false, website: '' });
+      setForm({ fullName: '', email: '', phone: '', ageConfirmed: false, utahResident: false, tournamentAttendanceConfirmed: false, sponsorEligibilityConfirmed: false, website: '' });
     } catch (err) {
       setError(err.message || 'We couldn’t save your entry. Please try again.');
     } finally {
@@ -65,16 +74,16 @@ export default function GiveawayPage() {
         <section className="giveaway-intro">
           <p className="giveaway-eyebrow">A little something for the season</p>
           <h1>Diamond Metrics<br /><span>Giveaway</span></h1>
-          <div className="giveaway-prize" aria-label="$250 DICKS Sporting Goods gift card">
+          <div className="giveaway-prize" aria-label="$250 DICK'S Sporting Goods gift card">
             <span className="giveaway-prize-label">Enter to win</span>
             <strong>$250</strong>
-            <span className="giveaway-prize-retailer">DICKS Sporting Goods gift card</span>
+            <span className="giveaway-prize-retailer">DICK'S Sporting Goods gift card</span>
           </div>
-          <p className="giveaway-copy">Enter for your chance to win a $250 DICKS Sporting Goods gift card, courtesy of Diamond Metrics.</p>
+          <p className="giveaway-copy">Enter for your chance to win a $250 DICK'S Sporting Goods gift card, courtesy of Diamond Metrics.</p>
           <p className="giveaway-age-note"><span aria-hidden="true">18+</span> Must be 18 years or older to enter.</p>
           <div className="giveaway-rule" aria-hidden="true"><span /></div>
           <p className="giveaway-no-purchase">No purchase necessary.</p>
-          <p className="giveaway-sponsor-disclaimer">This giveaway is not sponsored or endorsed by DICK'S Sporting Goods</p>
+          <p className="giveaway-sponsor-disclaimer">This giveaway is not sponsored or endorsed by DICK'S Sporting Goods.</p>
         </section>
 
         <section className="giveaway-form-card" aria-labelledby="giveaway-form-title">
@@ -83,6 +92,9 @@ export default function GiveawayPage() {
             <h2 id="giveaway-form-title">Enter the giveaway</h2>
             <p>Fill out the form below to submit your entry.</p>
           </div>
+          <p className="giveaway-entry-status" role="status">
+            {now < ENTRY_START ? 'Entries open Friday, November 6, 2026 at 7:00 AM MST.' : now >= ENTRY_END ? 'The entry period has ended.' : 'Entries are open through Saturday, November 7, 2026 at 11:59 PM MST.'}
+          </p>
           <form className="giveaway-form" onSubmit={submit}>
             <div className="giveaway-honeypot" aria-hidden="true">
               <label htmlFor="giveaway-website">Website</label>
@@ -104,15 +116,27 @@ export default function GiveawayPage() {
               <input name="ageConfirmed" type="checkbox" required checked={form.ageConfirmed} onChange={update} />
               <span>I confirm that I am 18 years of age or older.</span>
             </label>
+            <label className="giveaway-age-check">
+              <input name="utahResident" type="checkbox" required checked={form.utahResident} onChange={update} />
+              <span>I confirm that I am a legal resident of Utah.</span>
+            </label>
+            <label className="giveaway-age-check">
+              <input name="tournamentAttendanceConfirmed" type="checkbox" required checked={form.tournamentAttendanceConfirmed} onChange={update} />
+              <span>I confirm that I am attending the Gobbler Last Chance tournament in Nephi, Utah.</span>
+            </label>
+            <label className="giveaway-age-check">
+              <input name="sponsorEligibilityConfirmed" type="checkbox" required checked={form.sponsorEligibilityConfirmed} onChange={update} />
+              <span>I confirm that I am not an employee or owner of Diamond Metrics LLC or an immediate family member of one.</span>
+            </label>
 
             <div className="giveaway-consent">
               <h3>Marketing Consent Disclosure</h3>
-              <p>By entering this giveaway, you agree to receive promotional emails from Diamond Metrics, including player development insights, upcoming events, product updates, and special offers. You may unsubscribe at any time without affecting your eligibility to win.</p>
+              <p>By entering this giveaway, you agree to receive promotional emails from Diamond Metrics LLC, including player development insights, upcoming events, product updates, and special offers. You may unsubscribe at any time using the unsubscribe link in those communications without affecting your eligibility to win.</p>
             </div>
             <p className="giveaway-rules">No purchase necessary. See <Link to="/giveaway/official-rules">Official Rules</Link> for complete eligibility and giveaway details.</p>
             {error && <p className="giveaway-error" role="alert">{error}</p>}
-            <button className="giveaway-submit" type="submit" disabled={busy}>
-              {busy ? 'Submitting…' : 'Submit Entry'}
+            <button className="giveaway-submit" type="submit" disabled={busy || !entryOpen}>
+              {busy ? 'Submitting…' : entryOpen ? 'Submit Entry' : 'Entries Not Open'}
             </button>
             <p className="giveaway-privacy">Your information will be used to administer the giveaway and provide the promotional emails described above.</p>
           </form>
@@ -128,8 +152,72 @@ export function GiveawayRulesPage() {
   return (
     <main className="giveaway-rules-page">
       <p className="giveaway-eyebrow">Diamond Metrics Giveaway</p>
-      <h1>Official Rules</h1>
-      <p>The official rules are being finalized. Please check back before submitting an entry.</p>
+      <h1 className="giveaway-rules-title">Diamond Metrics $250 DICK'S Sporting Goods Gift Card Giveaway</h1>
+      <h2>Official Rules</h2>
+      <p><strong>NO PURCHASE NECESSARY TO ENTER OR WIN. A PURCHASE WILL NOT INCREASE YOUR CHANCES OF WINNING.</strong></p>
+
+      <h2>1. Sponsor</h2>
+      <p>The Diamond Metrics $250 DICK'S Sporting Goods Gift Card Giveaway (“Giveaway”) is sponsored and administered by Diamond Metrics LLC (“Sponsor”), located in Utah, United States.</p>
+      <p><strong>Sponsor Mailing Address:</strong> 924 Rothbury Ct, North Salt Lake, UT 84054</p>
+      <p>The Giveaway takes place in connection with the Gobbler Last Chance baseball tournament, hosted by Better Baseball in Nephi, Utah.</p>
+      <p>The Giveaway is not sponsored, endorsed, administered by, or affiliated with DICK'S Sporting Goods or Better Baseball unless expressly authorized.</p>
+
+      <h2>2. Eligibility</h2>
+      <p>The Giveaway is open to individuals who:</p>
+      <ul><li>Are at least 18 years of age at the time of entry.</li><li>Are legal residents of Utah.</li><li>Attend the Gobbler Last Chance tournament in Nephi, Utah, during the entry period.</li><li>Complete the official entry form and provide a valid email address.</li></ul>
+      <p>Employees and owners of Diamond Metrics LLC and their immediate family members are not eligible. Void where prohibited by law.</p>
+
+      <h2>3. Giveaway Period</h2>
+      <p>The Giveaway begins on <strong>Friday, November 6, 2026, at 7:00 AM Mountain Standard Time (MST)</strong> and ends on <strong>Saturday, November 7, 2026, at 11:59 PM MST</strong>. Entries submitted before or after this period will not be eligible.</p>
+
+      <h2>4. How to Enter</h2>
+      <p>To enter:</p>
+      <ol><li>Scan the official Diamond Metrics Giveaway QR code displayed at the Gobbler Last Chance tournament.</li><li>Complete the online entry form with your full name and valid email address.</li><li>Confirm that you are at least 18 years old.</li><li>Review the marketing disclosure and submit your entry.</li></ol>
+      <p>Limit one (1) entry per person. Duplicate entries may be disqualified.</p>
+      <p>No purchase, payment, or participation in any paid Diamond Metrics service is required to enter or win.</p>
+
+      <h2>5. Email Marketing Consent</h2>
+      <p>By submitting an entry, participants agree to receive promotional emails from Diamond Metrics LLC, including upcoming events, player development insights, product updates, and special offers.</p>
+      <p>Participants may unsubscribe from marketing emails at any time using the unsubscribe link included in those communications.</p>
+      <p><strong>Unsubscribing after entering will not disqualify a participant, remove their entry, or affect their chances of winning.</strong></p>
+      <p>Email addresses and personal information collected through this Giveaway will be used in accordance with Diamond Metrics' published <Link to="/privacy">Privacy Policy</Link>.</p>
+
+      <h2>6. Prize</h2>
+      <p>One (1) winner will receive a <strong>$250 DICK'S Sporting Goods gift card</strong>, subject to DICK'S Sporting Goods' applicable gift card terms and conditions.</p>
+      <ul><li>Prize: DICK'S Sporting Goods Gift Card</li><li>Value: $250 USD</li><li>Number of Winners: One (1)</li><li>Total Prize Value: $250 USD</li></ul>
+      <p>The prize cannot be redeemed for cash through the Sponsor and is not transferable or exchangeable through the Sponsor. The Sponsor reserves the right to substitute a prize of equal or greater value if the advertised prize becomes unavailable, subject to applicable law. Any applicable taxes are the responsibility of the winner.</p>
+
+      <h2>7. Winner Selection and Notification</h2>
+      <p>One (1) winner will be selected through a random drawing from all eligible entries.</p>
+      <p><strong>The drawing will take place on Wednesday, November 11, 2026.</strong></p>
+      <p>The selected winner will be notified at the email address provided during entry. The potential winner must respond within seven (7) calendar days of notification.</p>
+      <p>If the selected winner does not respond within that period, cannot verify eligibility, or declines the prize, Diamond Metrics may select an alternate winner through another random drawing.</p>
+
+      <h2>8. Odds of Winning</h2>
+      <p>The odds of winning depend on the total number of eligible entries received during the Giveaway period. Each eligible entry has an equal chance of winning.</p>
+
+      <h2>9. Prize Delivery</h2>
+      <p>The winner will receive instructions for claiming the gift card following verification of eligibility. The gift card will be delivered electronically to the winner's provided email address or through another delivery method arranged by Diamond Metrics. No purchase or additional payment is required to claim the prize.</p>
+
+      <h2>10. General Conditions</h2>
+      <p>By entering, participants agree to comply with these Official Rules and the Sponsor's decisions regarding administration of the Giveaway, subject to applicable law.</p>
+      <p>The Sponsor reserves the right to disqualify fraudulent, incomplete, automated, or otherwise invalid entries.</p>
+      <p>The Sponsor may modify, suspend, or cancel the Giveaway if technical failures, fraud, or circumstances beyond its reasonable control compromise its fairness or integrity, subject to applicable law.</p>
+
+      <h2>11. Privacy and Personal Information</h2>
+      <p>Diamond Metrics collects participants' names, email addresses, and entry information to administer the Giveaway, contact the winner, and deliver marketing communications as disclosed during entry.</p>
+      <p>Entrants may unsubscribe from promotional communications without affecting their Giveaway eligibility.</p>
+      <p>For details on how personal information is collected, used, stored, and protected, please review the Diamond Metrics <Link to="/privacy">Privacy Policy</Link>.</p>
+
+      <h2>12. Governing Law</h2>
+      <p>The Giveaway is governed by applicable laws of the State of Utah and the United States.</p>
+
+      <h2>13. Contact Information</h2>
+      <p><strong>Diamond Metrics LLC</strong></p>
+      <p>Website: <a href="https://www.diamondmetrics.ai">https://www.diamondmetrics.ai</a></p>
+      <p>Email: <a href="mailto:info@diamondmetrics.ai">info@diamondmetrics.ai</a></p>
+      <p><strong>Mailing Address:</strong> 924 Rothbury Ct, North Salt Lake, UT 84054</p>
+      <p>For questions regarding the Giveaway, please contact the Sponsor using the information above.</p>
       <Link to="/giveaway">Back to the giveaway</Link>
     </main>
   );

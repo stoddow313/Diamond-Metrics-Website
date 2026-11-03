@@ -1494,6 +1494,9 @@ db.exec(`
     email                 TEXT NOT NULL,
     phone                 TEXT NOT NULL DEFAULT '',
     age_confirmed         INTEGER NOT NULL CHECK (age_confirmed = 1),
+    utah_resident         INTEGER NOT NULL DEFAULT 0 CHECK (utah_resident IN (0, 1)),
+    tournament_attendance_confirmed INTEGER NOT NULL DEFAULT 0 CHECK (tournament_attendance_confirmed IN (0, 1)),
+    sponsor_eligibility_confirmed INTEGER NOT NULL DEFAULT 0 CHECK (sponsor_eligibility_confirmed IN (0, 1)),
     marketing_consent     INTEGER NOT NULL CHECK (marketing_consent = 1),
     consent_version       TEXT NOT NULL,
     consented_at          TEXT NOT NULL DEFAULT (datetime('now')),
@@ -1501,6 +1504,10 @@ db.exec(`
   );
   CREATE INDEX IF NOT EXISTS idx_giveaway_entries_created ON giveaway_entries(created_at);
 `);
+// Eligibility confirmations were added after the first giveaway page release.
+addColumnIfMissing('giveaway_entries', 'utah_resident', 'utah_resident INTEGER NOT NULL DEFAULT 0');
+addColumnIfMissing('giveaway_entries', 'tournament_attendance_confirmed', 'tournament_attendance_confirmed INTEGER NOT NULL DEFAULT 0');
+addColumnIfMissing('giveaway_entries', 'sponsor_eligibility_confirmed', 'sponsor_eligibility_confirmed INTEGER NOT NULL DEFAULT 0');
 
 // ── Seed Command reference data (idempotent; active flags follow code) ──
 {

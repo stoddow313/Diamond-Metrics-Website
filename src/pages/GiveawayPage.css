@@ -48,6 +48,7 @@
 .giveaway-rule span { width: 64px; height: 2px; background: var(--giveaway-blue); box-shadow: 0 0 14px rgba(76,201,240,.8); }
 .giveaway-no-purchase { margin: 0; color: #9bb5d2; font-size: 13px; font-weight: 650; }
 .giveaway-sponsor-disclaimer { margin: 7px 0 0; color: #9bb5d2; font-size: 11px; line-height: 1.5; }
+.giveaway-entry-status { margin: -7px 0 17px; padding: 10px 12px; border: 1px solid rgba(76,201,240,.24); border-radius: 10px; background: rgba(6,19,39,.48); color: #bfeeff; font-size: 12px; font-weight: 700; line-height: 1.5; }
 
 .giveaway-form-card { padding: clamp(24px, 3.5vw, 38px); border: 1px solid rgba(125,180,225,.24); border-radius: 24px; background: linear-gradient(155deg, rgba(13,34,64,.96), rgba(7,22,44,.96)); box-shadow: 0 24px 80px rgba(0,0,0,.32), inset 0 1px rgba(255,255,255,.045); }
 .giveaway-card-heading { margin-bottom: 23px; }
@@ -85,9 +86,12 @@
 .giveaway-modal h2 { margin: 0 0 12px; font-size: 38px; letter-spacing: -.05em; }
 .giveaway-modal p:not(.giveaway-eyebrow) { margin: 0 0 24px; color: #d5e5f6; font-size: 15px; line-height: 1.65; }
 
-.giveaway-rules-page { min-height: 100vh; padding: clamp(32px, 8vw, 100px); background: linear-gradient(135deg, #07152c, #091a34); color: white; }
-.giveaway-rules-page h1 { margin: 0 0 16px; font-size: clamp(38px, 7vw, 66px); letter-spacing: -.06em; }
-.giveaway-rules-page p:not(.giveaway-eyebrow) { max-width: 600px; margin: 0 0 20px; color: #c2d5e8; line-height: 1.65; }
+.giveaway-rules-page { display: flex; flex-direction: column; gap: 14px; min-height: 100vh; width: min(1180px, 100%); margin: 0 auto; padding: clamp(32px, 8vw, 100px); background: linear-gradient(135deg, #07152c, #091a34); color: white; }
+.giveaway-rules-page h1 { margin: 0; font-size: clamp(38px, 5vw, 60px); letter-spacing: -.06em; line-height: 1.05; }
+.giveaway-rules-page h2 { margin: 24px 0 0; color: #e1f5ff; font-size: 21px; line-height: 1.25; }
+.giveaway-rules-page p:not(.giveaway-eyebrow) { max-width: 900px; margin: 0; color: #c2d5e8; line-height: 1.65; }
+.giveaway-rules-page ul, .giveaway-rules-page ol { max-width: 900px; margin: 0; padding-left: 24px; color: #c2d5e8; line-height: 1.7; }
+.giveaway-rules-page a { color: var(--giveaway-blue, #4cc9f0); font-weight: 700; text-underline-offset: 3px; }
 
 @media (max-width: 850px) {
   .giveaway-content { grid-template-columns: 1fr; gap: 26px; max-width: 600px; margin-top: 32px; }
