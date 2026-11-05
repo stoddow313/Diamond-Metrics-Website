@@ -7,7 +7,7 @@
     defaultTheme: 'blue',
     // Optional: URL that receives parent contact info as JSON (POST).
     // e.g. a Google Apps Script web app, Zapier/Make webhook, or Formspree endpoint.
-    // Leave blank until the Apps Script web app is deployed.
+    // Leave '' and nothing is sent anywhere.
     leadEndpoint: 'https://script.google.com/macros/s/AKfycbw1aST48E_YKzt7Up7iMnGL3QKUJbblNiqtLDfmAlRZtKtHv7FHuGhG3SWnuU5yLcB3sw/exec',
   };
   /* ============================================== */
@@ -289,17 +289,16 @@
 
   $('parent-form').addEventListener('submit', async (e) => {
     e.preventDefault();
-    const name = $('p-name').value.trim(), email = $('p-email').value.trim(), phone = $('p-phone').value.trim();
+    const name = $('p-name').value.trim(), email = $('p-email').value.trim();
     const err = $('parent-error');
     if (!name) { err.textContent = 'Please enter a parent or guardian name.'; $('p-name').focus(); return; }
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email)) { err.textContent = 'Please enter a valid email.'; $('p-email').focus(); return; }
-    if (phone.replace(/\D/g, '').length < 10) { err.textContent = 'Please enter a 10-digit phone number.'; $('p-phone').focus(); return; }
     err.textContent = '';
     const btn = $('parent-submit'); btn.disabled = true; btn.textContent = 'Making your card…';
 
     if (CONFIG.leadEndpoint) {
       const payload = {
-        parentName: name, email, phone, marketingOptIn: $('p-optin').checked,
+        parentName: name, email, marketingOptIn: $('p-optin').checked,
         playerName: val('name').trim(), team: val('team').trim(), event: CONFIG.eventName, createdAt: new Date().toISOString(),
       };
       fetch(CONFIG.leadEndpoint, { method: 'POST', mode: 'no-cors', headers: { 'Content-Type': 'text/plain;charset=utf-8' }, body: JSON.stringify(payload) }).catch(() => {});
