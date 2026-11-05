@@ -5,7 +5,15 @@
       "destination": "https://diamond-metrics-api.onrender.com/api/:path*"
     },
     {
-      "source": "/((?!api/|_poc/).*)",
+      "source": "/card-station",
+      "destination": "/card-station/index.html"
+    },
+    {
+      "source": "/card-station/",
+      "destination": "/card-station/index.html"
+    },
+    {
+      "source": "/((?!api/|_poc/|card-station/).*)",
       "destination": "/index.html"
     }
   ]
