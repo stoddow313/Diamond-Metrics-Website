@@ -8,7 +8,7 @@
     // Optional: URL that receives parent contact info as JSON (POST).
     // e.g. a Google Apps Script web app, Zapier/Make webhook, or Formspree endpoint.
     // Leave blank until the Apps Script web app is deployed.
-    leadEndpoint: '',
+    leadEndpoint: 'https://script.google.com/macros/s/AKfycbw1aST48E_YKzt7Up7iMnGL3QKUJbblNiqtLDfmAlRZtKtHv7FHuGhG3SWnuU5yLcB3sw/exec',
   };
   /* ============================================== */
 
