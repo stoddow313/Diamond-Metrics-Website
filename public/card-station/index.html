@@ -3,9 +3,15 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <base href="/card-station/">
   <meta name="theme-color" content="#060d1d">
   <meta name="description" content="Make your own Diamond Metrics baseball card.">
   <title>Make Your Card | Diamond Metrics</title>
+  <script>
+    if (window.location.pathname === '/card-station/index.html' || window.location.pathname === '/card-station/') {
+      window.history.replaceState(window.history.state, '', '/card-station' + window.location.search + window.location.hash);
+    }
+  </script>
   <link rel="stylesheet" href="styles.css">
 </head>
 <body class="modal-open">
@@ -126,7 +132,7 @@
       <form id="parent-form" novalidate>
         <label class="field"><span>Parent / guardian name</span><input id="p-name" autocomplete="name" required></label>
         <label class="field"><span>Email</span><input id="p-email" type="email" autocomplete="email" inputmode="email" required></label>
-        <label class="check small"><input id="p-optin" type="checkbox"><span><strong>Send me Diamond Metrics updates by email.</strong> Optional. Unsubscribe anytime. Not required to get your card.</span></label>
+        <label class="check small"><input id="p-optin" type="checkbox" checked><span><strong>Send me Diamond Metrics updates by email.</strong> Optional. Unsubscribe anytime. Not required to get your card.</span></label>
         <p class="error" id="parent-error" role="alert"></p>
         <button class="btn primary big" type="submit" id="parent-submit">Make my card</button>
       </form>
