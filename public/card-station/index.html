@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#060d1d">
+  <meta name="description" content="Create and download your Diamond Metrics player card at the Gobbler Last Chance tournament.">
+  <meta name="robots" content="noindex, nofollow">
+  <title>Gobbler Last Chance Player Card | Diamond Metrics</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body class="modal-open">
+  <div class="app" id="app" inert>
+    <header class="topbar">
+      <img class="brand" src="assets/logo-light.png" alt="Diamond Metrics Sports Analytics">
+      <span class="station"><i></i>Player Card Station</span>
+    </header>
+
+    <main class="layout">
+      <section class="preview-col" aria-label="Card preview">
+        <div class="stage">
+          <div class="flipper" id="flipper">
+            <canvas id="front" class="face front" width="1500" height="2100" aria-label="Front of your card"></canvas>
+            <canvas id="back" class="face back" width="1500" height="2100" aria-label="Back of your card"></canvas>
+          </div>
+          <p class="drag-hint" id="drag-hint" hidden>Drag to move your photo • pinch or use the slider to zoom</p>
+        </div>
+        <div class="side-toggle" role="group" aria-label="Card side">
+          <button type="button" class="active" data-side="front" aria-pressed="true">Front</button>
+          <button type="button" data-side="back" aria-pressed="false">Back</button>
+        </div>
+      </section>
+
+      <section class="form-col">
+        <div class="intro">
+          <p class="eyebrow">Your game. Your card.</p>
+          <h1>Make your baseball card</h1>
+        </div>
+
+        <form id="card-form" autocomplete="off" novalidate>
+          <fieldset class="step">
+            <legend><span class="num">1</span>Add your photo</legend>
+            <div class="photo-actions">
+              <button type="button" class="btn primary" id="open-camera">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 4h6l1.5 2H20a1 1 0 0 1 1 1v11a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h3.5z" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/><circle cx="12" cy="12.5" r="3.5" fill="none" stroke="currentColor" stroke-width="2"/></svg>
+                Take photo
+              </button>
+              <label class="btn ghost" for="photo-file">
+                <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2" fill="none" stroke="currentColor" stroke-width="2"/><path d="m3 16 5-5 4 4 3-3 6 6" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/></svg>
+                Upload photo
+              </label>
+              <input id="photo-file" type="file" accept="image/*" hidden>
+            </div>
+            <div class="photo-adjust" id="photo-adjust" hidden>
+              <label class="zoom"><span>Zoom</span><input id="zoom" type="range" min="1" max="3" step="0.01" value="1"></label>
+              <button type="button" class="link" id="recenter">Re-center</button>
+              <button type="button" class="link" id="remove-photo">Remove</button>
+            </div>
+            <p class="status" id="photo-status" role="status">Use a photo from the waist up for the best card.</p>
+          </fieldset>
+
+          <fieldset class="step">
+            <legend><span class="num">2</span>Player info</legend>
+            <div class="row">
+              <label class="field grow"><span>Player name</span><input id="name" maxlength="32" placeholder="First and last name" autocapitalize="words"></label>
+              <label class="field num-field"><span>Number</span><input id="number" inputmode="numeric" maxlength="3" placeholder="7"></label>
+            </div>
+            <label class="field"><span>Team</span><input id="team" maxlength="32" placeholder="Team name" autocapitalize="words"></label>
+            <label class="field"><span>Position</span>
+              <select id="position">
+                <option value="">Choose a position</option>
+                <option>Pitcher</option><option>Catcher</option><option>First Base</option><option>Second Base</option>
+                <option>Third Base</option><option>Shortstop</option><option>Left Field</option><option>Center Field</option>
+                <option>Right Field</option><option>Outfield</option><option>Infield</option><option>Utility</option>
+              </select>
+            </label>
+            <label class="field"><span>Strengths <em>(back of card)</em></span><input id="strengths" maxlength="60" placeholder="e.g. Big arm, quick hands"></label>
+            <label class="field"><span>Walk-up song <em>(back of card)</em></span><input id="song" maxlength="60" placeholder="Song – Artist"></label>
+          </fieldset>
+
+          <fieldset class="step">
+            <legend><span class="num">3</span>Pick your colors</legend>
+            <div class="swatches" id="swatches" role="radiogroup" aria-label="Card color"></div>
+          </fieldset>
+
+          <button type="button" class="btn primary big" id="finish">Get my card <span aria-hidden="true">→</span></button>
+          <button type="button" class="link center" id="start-over">Start over</button>
+        </form>
+      </section>
+    </main>
+  </div>
+
+  <!-- 1. Parent / guardian approval -->
+  <div class="modal" id="consent-modal">
+    <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="consent-title">
+      <img class="sheet-logo" src="assets/logo-light.png" alt="">
+      <p class="eyebrow">Parent / guardian approval</p>
+      <h2 id="consent-title">Before we make your card</h2>
+      <p>Please hand this device to a parent or legal guardian to review and approve.</p>
+      <div class="notice">The photo and player details are used to make the card right here in this browser. They are not uploaded or stored.</div>
+      <label class="check"><input id="consent-check" type="checkbox"><span>I am this player’s parent or legal guardian, and I give permission for them to take a photo and create a baseball card.</span></label>
+      <button class="btn primary big" id="consent-go" type="button" disabled>Continue</button>
+    </div>
+  </div>
+
+  <!-- Camera -->
+  <div class="modal camera" id="camera-modal" hidden>
+    <div class="camera-box">
+      <video id="video" autoplay playsinline muted></video>
+      <div class="camera-guide" aria-hidden="true"></div>
+      <div class="countdown" id="countdown" hidden></div>
+      <div class="camera-bar">
+        <button type="button" class="btn ghost" id="camera-cancel">Cancel</button>
+        <button type="button" class="shutter" id="shutter" aria-label="Take photo"></button>
+        <button type="button" class="btn ghost" id="camera-flip">Flip</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 2. Parent contact -->
+  <div class="modal" id="parent-modal" hidden>
+    <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="parent-title">
+      <button class="close" type="button" data-close="parent-modal" aria-label="Close">×</button>
+      <p class="eyebrow">One last step</p>
+      <h2 id="parent-title">Where should we send updates?</h2>
+      <p>A parent or guardian’s contact info, then your card is ready to save.</p>
+      <form id="parent-form" novalidate>
+        <label class="field"><span>Parent / guardian name</span><input id="p-name" autocomplete="name" required></label>
+        <label class="field"><span>Email</span><input id="p-email" type="email" autocomplete="email" inputmode="email" required></label>
+        <label class="field"><span>Phone</span><input id="p-phone" type="tel" autocomplete="tel" inputmode="tel" required></label>
+        <label class="check small"><input id="p-optin" type="checkbox"><span><strong>Yes, send me Diamond Metrics updates by email and text.</strong> Optional. Message frequency varies; msg &amp; data rates may apply. Reply STOP to opt out. Not required to get your card.</span></label>
+        <p class="error" id="parent-error" role="alert"></p>
+        <button class="btn primary big" type="submit" id="parent-submit">Make my card</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- 3. Result -->
+  <div class="modal" id="result-modal" hidden>
+    <div class="sheet wide" role="dialog" aria-modal="true" aria-labelledby="result-title">
+      <p class="eyebrow">You’re on the card</p>
+      <h2 id="result-title">Your card is ready!</h2>
+      <div class="results">
+        <figure><img id="out-front" alt="Front of your card"><figcaption>Front</figcaption></figure>
+        <figure><img id="out-back" alt="Back of your card"><figcaption>Back</figcaption></figure>
+      </div>
+      <p class="tip" id="save-tip">On a phone: tap <b>Save to phone</b>, then “Save Image.” Or press and hold a card to save it.</p>
+      <div class="result-actions">
+        <button class="btn primary big" type="button" id="save-all">Save to phone</button>
+        <div class="row">
+          <a class="btn ghost" id="dl-front" download>Download front</a>
+          <a class="btn ghost" id="dl-back" download>Download back</a>
+        </div>
+        <button class="link center" type="button" id="edit-card">Back to editing</button>
+        <button class="btn ghost big" type="button" id="new-card">Make a card for another player</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="card.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
