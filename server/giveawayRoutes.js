@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 
-const CONSENT_TEXT = 'By entering this giveaway, you agree to receive promotional emails from Diamond Metrics LLC, including player development insights, upcoming events, product updates, and special offers. You may unsubscribe at any time using the unsubscribe link in those communications without affecting your eligibility to win.';
+const CONSENT_TEXT = 'By checking this box, I agree to receive promotional emails from Diamond Metrics LLC about player development insights, upcoming events, product updates, and special offers. I may unsubscribe at any time using the unsubscribe link in those emails. Unsubscribing after I enter will not affect my eligibility to win.';
 const CONSENT_VERSION = createHash('sha256').update(CONSENT_TEXT).digest('hex').slice(0, 16);
 // The rules specify MST; these fixed UTC boundaries correspond to Nov 6–7, 2026 in America/Denver.
 const ENTRY_START = Date.parse('2026-11-06T14:00:00Z');
@@ -26,24 +26,24 @@ export function mountGiveawayRoutes(app, { db, requireAdmin }) {
     const fullName = text(body.fullName);
     const email = text(body.email).toLowerCase();
     const phone = text(body.phone);
+    const marketingConsent = body.marketingConsent === true;
     if (!fullName || [...fullName].length > 120) return res.status(400).json({ error: 'Enter your full name.' });
     if (!email || [...email].length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       return res.status(400).json({ error: 'Enter a valid email address.' });
     }
     if ([...phone].length > 40) return res.status(400).json({ error: 'Enter a phone number of 40 characters or fewer.' });
     if (body.ageConfirmed !== true) return res.status(400).json({ error: 'Confirm that you are 18 or older to enter.' });
-    if (body.utahResident !== true) return res.status(400).json({ error: 'Confirm that you are a legal resident of Utah.' });
-    if (body.tournamentAttendanceConfirmed !== true) return res.status(400).json({ error: 'Confirm that you are attending the Gobbler Last Chance tournament in Nephi, Utah.' });
-    if (body.sponsorEligibilityConfirmed !== true) return res.status(400).json({ error: 'Confirm that you are not an employee or owner of Diamond Metrics LLC or an immediate family member of one.' });
+    if (body.eligibilityConfirmed !== true) return res.status(400).json({ error: 'Confirm that you meet the eligibility requirements in the Official Rules.' });
+    if (!marketingConsent) return res.status(400).json({ error: 'Check the marketing consent box to enter.' });
 
     const insert = db.prepare(`
       INSERT INTO giveaway_entries (
         full_name, email, phone, age_confirmed, utah_resident,
         tournament_attendance_confirmed, sponsor_eligibility_confirmed, marketing_consent, consent_version
       )
-      SELECT ?, ?, ?, 1, 1, 1, 1, 1, ?
+      SELECT ?, ?, ?, 1, 1, 1, 1, ?, ?
       WHERE NOT EXISTS (SELECT 1 FROM giveaway_entries WHERE lower(email) = ?)
-    `).run(fullName, email, phone, CONSENT_VERSION, email);
+    `).run(fullName, email, phone, marketingConsent ? 1 : 0, CONSENT_VERSION, email);
     if (insert.changes !== 1) return res.status(409).json({ error: 'Only one entry per person is allowed. This email address has already been used.' });
     return res.status(201).json({ ok: true });
   });

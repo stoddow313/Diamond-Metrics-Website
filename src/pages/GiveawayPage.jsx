@@ -23,7 +23,7 @@ function ConfirmationDialog({ onClose }) {
 }
 
 export default function GiveawayPage() {
-  const [form, setForm] = useState({ fullName: '', email: '', phone: '', ageConfirmed: false, utahResident: false, tournamentAttendanceConfirmed: false, sponsorEligibilityConfirmed: false, website: '' });
+  const [form, setForm] = useState({ fullName: '', email: '', phone: '', ageConfirmed: false, marketingConsent: true, website: '' });
   const [now, setNow] = useState(Date.now());
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
@@ -48,12 +48,12 @@ export default function GiveawayPage() {
       const response = await fetch('/api/giveaway/entries', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(form),
+        body: JSON.stringify({ ...form, eligibilityConfirmed: true }),
       });
       const result = await response.json().catch(() => ({}));
       if (!response.ok || !result.ok) throw new Error(result.error || 'We couldn’t save your entry. Please try again.');
       setSubmitted(true);
-      setForm({ fullName: '', email: '', phone: '', ageConfirmed: false, utahResident: false, tournamentAttendanceConfirmed: false, sponsorEligibilityConfirmed: false, website: '' });
+      setForm({ fullName: '', email: '', phone: '', ageConfirmed: false, marketingConsent: true, website: '' });
     } catch (err) {
       setError(err.message || 'We couldn’t save your entry. Please try again.');
     } finally {
@@ -117,23 +117,10 @@ export default function GiveawayPage() {
               <span>I confirm that I am 18 years of age or older.</span>
             </label>
             <label className="giveaway-age-check">
-              <input name="utahResident" type="checkbox" required checked={form.utahResident} onChange={update} />
-              <span>I confirm that I am a legal resident of Utah.</span>
+              <input name="marketingConsent" type="checkbox" required checked={form.marketingConsent} onChange={update} />
+              <span><strong>Email marketing consent</strong> — By checking this box, I agree to receive promotional emails from Diamond Metrics LLC about player development insights, upcoming events, product updates, and special offers. I may unsubscribe at any time using the unsubscribe link in those emails. Unsubscribing after I enter will not affect my eligibility to win.</span>
             </label>
-            <label className="giveaway-age-check">
-              <input name="tournamentAttendanceConfirmed" type="checkbox" required checked={form.tournamentAttendanceConfirmed} onChange={update} />
-              <span>I confirm that I am attending the Gobbler Last Chance tournament in Nephi, Utah.</span>
-            </label>
-            <label className="giveaway-age-check">
-              <input name="sponsorEligibilityConfirmed" type="checkbox" required checked={form.sponsorEligibilityConfirmed} onChange={update} />
-              <span>I confirm that I am not an employee or owner of Diamond Metrics LLC or an immediate family member of one.</span>
-            </label>
-
-            <div className="giveaway-consent">
-              <h3>Marketing Consent Disclosure</h3>
-              <p>By entering this giveaway, you agree to receive promotional emails from Diamond Metrics LLC, including player development insights, upcoming events, product updates, and special offers. You may unsubscribe at any time using the unsubscribe link in those communications without affecting your eligibility to win.</p>
-            </div>
-            <p className="giveaway-rules">No purchase necessary. See <Link to="/giveaway/official-rules">Official Rules</Link> for complete eligibility and giveaway details.</p>
+            <p className="giveaway-rules">By submitting, you confirm that you meet the eligibility requirements in the <Link to="/giveaway/official-rules">Official Rules</Link>, including Utah residency and Gobbler Last Chance attendance. No purchase necessary.</p>
             {error && <p className="giveaway-error" role="alert">{error}</p>}
             <button className="giveaway-submit" type="submit" disabled={busy || !entryOpen}>
               {busy ? 'Submitting…' : entryOpen ? 'Submit Entry' : 'Entries Not Open'}
