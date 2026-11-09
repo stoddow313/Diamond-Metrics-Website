@@ -3,8 +3,35 @@ import { Link } from 'react-router-dom';
 import './GiveawayPage.css';
 
 const THANK_YOU = 'Thanks for entering! Keep an eye on your email, as we will contact the winner via email after the giveaway concludes';
-const ENTRY_START = Date.parse('2026-11-06T14:00:00Z');
-const ENTRY_END = Date.parse('2026-11-08T07:00:00Z');
+
+// The entry window and drawing date are settings (Command → Events → Giveaway),
+// read from the server and shown in Mountain time, as the official rules state.
+const TZ = 'America/Denver';
+const when = iso => new Intl.DateTimeFormat('en-US', { timeZone: TZ, weekday: 'long', month: 'long', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short' })
+  .format(new Date(iso)).replace(/, (\d{1,2}:\d{2})/, ' at $1');
+const onDay = ymd => new Intl.DateTimeFormat('en-US', { timeZone: 'UTC', weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' }).format(new Date(`${ymd}T12:00:00Z`));
+function useGiveaway() {
+  const [giveaway, setGiveaway] = useState(null);
+  useEffect(() => {
+    let live = true;
+    fetch('/api/giveaway').then(r => (r.ok ? r.json() : null)).then(d => live && setGiveaway(d?.giveaway || {})).catch(() => live && setGiveaway({}));
+    return () => { live = false; };
+  }, []);
+  return giveaway;
+}
+// Whether entries are taken at this moment (the server checks again on submit).
+function openAt(g, now) {
+  if (!g) return false;
+  if (g.opens_at && now < Date.parse(g.opens_at)) return false;
+  if (g.closes_at && now >= Date.parse(g.closes_at)) return false;
+  return true;
+}
+function statusLine(g, now) {
+  if (!g) return 'Checking the entry period…';
+  if (g.opens_at && now < Date.parse(g.opens_at)) return `Entries open ${when(g.opens_at)}.`;
+  if (g.closes_at && now >= Date.parse(g.closes_at)) return 'The entry period has ended.';
+  return g.closes_at ? `Entries are open through ${when(g.closes_at)}.` : 'Entries are open.';
+}
 
 function ConfirmationDialog({ onClose }) {
   return (
@@ -24,11 +51,12 @@ function ConfirmationDialog({ onClose }) {
 
 export default function GiveawayPage() {
   const [form, setForm] = useState({ fullName: '', email: '', phone: '', ageConfirmed: false, marketingConsent: true, website: '' });
-  const [now, setNow] = useState(Date.now());
+  const [now, setNow] = useState(() => Date.now());
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [submitted, setSubmitted] = useState(false);
-  const entryOpen = now >= ENTRY_START && now < ENTRY_END;
+  const giveaway = useGiveaway();
+  const entryOpen = openAt(giveaway, now);
 
   useEffect(() => {
     const timer = window.setInterval(() => setNow(Date.now()), 15000);
@@ -93,7 +121,7 @@ export default function GiveawayPage() {
             <p>Fill out the form below to submit your entry.</p>
           </div>
           <p className="giveaway-entry-status" role="status">
-            {now < ENTRY_START ? 'Entries open Friday, November 6, 2026 at 7:00 AM MST.' : now >= ENTRY_END ? 'The entry period has ended.' : 'Entries are open through Saturday, November 7, 2026 at 11:59 PM MST.'}
+            {statusLine(giveaway, now)}
           </p>
           <form className="giveaway-form" onSubmit={submit}>
             <div className="giveaway-honeypot" aria-hidden="true">
@@ -136,6 +164,12 @@ export default function GiveawayPage() {
 }
 
 export function GiveawayRulesPage() {
+  const giveaway = useGiveaway();
+  const period = !giveaway ? <>…</>
+    : giveaway.opens_at && giveaway.closes_at ? <>The Giveaway begins on <strong>{when(giveaway.opens_at)}</strong> and ends on <strong>{when(giveaway.closes_at)}</strong>. Entries submitted before or after this period will not be eligible.</>
+      : giveaway.closes_at ? <>The Giveaway ends on <strong>{when(giveaway.closes_at)}</strong>. Entries submitted after this time will not be eligible.</>
+        : giveaway.opens_at ? <>The Giveaway begins on <strong>{when(giveaway.opens_at)}</strong>. Entries submitted before this time will not be eligible.</>
+          : <>The Giveaway entry period is shown on the entry page.</>;
   return (
     <main className="giveaway-rules-page">
       <p className="giveaway-eyebrow">Diamond Metrics Giveaway</p>
@@ -155,7 +189,7 @@ export function GiveawayRulesPage() {
       <p>Employees and owners of Diamond Metrics LLC and their immediate family members are not eligible. Void where prohibited by law.</p>
 
       <h2>3. Giveaway Period</h2>
-      <p>The Giveaway begins on <strong>Friday, November 6, 2026, at 7:00 AM Mountain Standard Time (MST)</strong> and ends on <strong>Saturday, November 7, 2026, at 11:59 PM MST</strong>. Entries submitted before or after this period will not be eligible.</p>
+      <p>{period} All times are Mountain Time.</p>
 
       <h2>4. How to Enter</h2>
       <p>To enter:</p>
@@ -176,7 +210,7 @@ export function GiveawayRulesPage() {
 
       <h2>7. Winner Selection and Notification</h2>
       <p>One (1) winner will be selected through a random drawing from all eligible entries.</p>
-      <p><strong>The drawing will take place on Wednesday, November 11, 2026.</strong></p>
+      {giveaway?.drawing_on && <p><strong>The drawing will take place on {onDay(giveaway.drawing_on)}.</strong></p>}
       <p>The selected winner will be notified at the email address provided during entry. The potential winner must respond within seven (7) calendar days of notification.</p>
       <p>If the selected winner does not respond within that period, cannot verify eligibility, or declines the prize, Diamond Metrics may select an alternate winner through another random drawing.</p>
 

@@ -1215,6 +1215,31 @@ paired game either team's order opens the field, and each job publishes its
 own players. Code: `server/scorebook.js` (`sprayZone`, `battingSide`),
 `server/gameRecord.js`, `src/components/FieldDiagram.jsx`.
 
+### 3.25 The giveaway (Command → Events → Giveaway)
+
+`/giveaway` is a direct-link entry page; `/giveaway/official-rules` holds its
+rules. Entries are saved in the API's database, one per email; no Google Sheet
+is involved. Code: `server/giveawayRoutes.js`, `giveawayLogic.js`,
+`src/pages/GiveawayPage.jsx`, `src/pages/command/GiveawayAdminPage.jsx`.
+
+**Command → Events → Giveaway** (admin and fulfillment):
+- **Entry window:** **Opens**, **Closes** and the **Drawing date**, in Mountain
+  time. They are settings, not code. The entry page's status line and button,
+  the rules' "Giveaway Period" and drawing date, and the API's refusal of
+  entries outside the window all read them. A blank **Opens** means open now;
+  a blank **Closes** means no end.
+- **Entries:** a live list (refreshes every 15 seconds) with search, the count,
+  and **Export CSV** (`/api/giveaway/entries.csv`).
+- **Share:** the link, **Copy link**, **Download QR** and the official rules.
+
+The rules' other wording (eligibility tied to the Gobbler Last Chance
+tournament, the prize) is in the page's code: change it there before reusing
+the page for another giveaway.
+
+An entry the API refuses is not stored anywhere, and request logs don't keep
+what was typed. The page only works once the API is deployed with the route:
+after a merge, deploy Render too (§1).
+
 ---
 
 ## 4. Backups and restore

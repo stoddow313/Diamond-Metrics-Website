@@ -49,7 +49,7 @@ export async function startIntakeApp() {
   mountTournamentOrderCommandRoutes(app, { db, requireInternal, requireInternalRole });
   mountTournamentAdminRoutes(app, { db, requireAdmin: principals.requireAdmin });
   mountEventRoutes(app, { db, principals });
-  mountGiveawayRoutes(app, { db, requireAdmin: principals.requireAdmin });
+  mountGiveawayRoutes(app, { db, requireInternalRole: principals.requireInternalRole });
   const server = app.listen(0);
   await once(server, 'listening');
   const base = `http://127.0.0.1:${server.address().port}`;

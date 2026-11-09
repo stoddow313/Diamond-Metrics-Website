@@ -1509,6 +1509,22 @@ addColumnIfMissing('giveaway_entries', 'utah_resident', 'utah_resident INTEGER N
 addColumnIfMissing('giveaway_entries', 'tournament_attendance_confirmed', 'tournament_attendance_confirmed INTEGER NOT NULL DEFAULT 0');
 addColumnIfMissing('giveaway_entries', 'sponsor_eligibility_confirmed', 'sponsor_eligibility_confirmed INTEGER NOT NULL DEFAULT 0');
 
+// The giveaway's entry window and drawing date are settings, not code
+// (server/giveawayLogic.js; Command → Events → Giveaway). One row; seeded with
+// the first giveaway's window (Nov 6, 7 AM – Nov 7, 11:59 PM MST) and drawing.
+db.exec(`
+  CREATE TABLE IF NOT EXISTS giveaway_settings (
+    id         INTEGER PRIMARY KEY CHECK (id = 1),
+    opens_at   TEXT,                       -- ISO UTC; NULL: open now
+    closes_at  TEXT,                       -- ISO UTC; NULL: no end
+    drawing_on TEXT,                       -- YYYY-MM-DD, shown in the official rules
+    updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_by INTEGER REFERENCES admins(id)
+  );
+  INSERT OR IGNORE INTO giveaway_settings (id, opens_at, closes_at, drawing_on)
+    VALUES (1, '2026-11-06T14:00:00.000Z', '2026-11-08T07:00:00.000Z', '2026-11-11');
+`);
+
 // ── Seed Command reference data (idempotent; active flags follow code) ──
 {
   const insSport = db.prepare('INSERT OR IGNORE INTO sports (key, name) VALUES (?, ?)');

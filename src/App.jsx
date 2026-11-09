@@ -47,6 +47,7 @@ import { SignupRoute, ForgotPasswordPage, ResetPasswordPage, VerifyEmailPage, Ac
 import FindYourPlayerPage from './pages/FindYourPlayerPage';
 import { EventSignupPage, EventRegisteredPage, EventsIndexPage } from './pages/events/EventPages';
 import { EventsListPage, EventPage } from './pages/command/EventsPages';
+import GiveawayAdminPage from './pages/command/GiveawayAdminPage';
 import PlayerIntakeCompletePage from './pages/PlayerIntakeCompletePage';
 import PrivacyPage from './pages/PrivacyPage';
 import GiveawayPage, { GiveawayRulesPage } from './pages/GiveawayPage';
@@ -146,6 +147,7 @@ function AppRoutes() {
         <Route path="tournament-orders" element={<TournamentOrdersPage />} />
         <Route path="events" element={<EventsListPage />} />
         <Route path="events/:eventId" element={<EventPage />} />
+        <Route path="giveaway" element={<InternalRoute roles={['admin', 'fulfillment']}><GiveawayAdminPage /></InternalRoute>} />
         <Route path="team" element={<InternalRoute roles={['admin']}><TeamPage /></InternalRoute>} />
       </Route>
       <Route path="/admin" element={<RoleRoute role="admin"><AdminLayout /></RoleRoute>}>
