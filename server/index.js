@@ -919,7 +919,7 @@ app.put('/api/roster/:id', requireAdmin, (req, res) => {
 // archive, delete with a dependency summary, restore): tournamentAdminRoutes.js.
 mountTournamentAdminRoutes(app, { db, requireAdmin });
 mountEventRoutes(app, { db, principals });
-mountGiveawayRoutes(app, { db, requireAdmin });
+mountGiveawayRoutes(app, { db, requireInternalRole });
 
 // ── Server-side imports (requirements §8) ────────────────────────────────
 // Dry-run preview → duplicate resolution → transactional apply + audit.

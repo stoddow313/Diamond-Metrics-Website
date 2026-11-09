@@ -263,6 +263,13 @@ export const api = {
     if (!res.ok) throw new Error(`Export failed (${res.status})`);
     return res.blob();
   },
+  commandGiveaway: () => request('/api/command/giveaway'),
+  commandSetGiveaway: (body) => request('/api/command/giveaway/settings', { method: 'PUT', body }),
+  commandGiveawayCsv: async () => {
+    const res = await fetch('/api/giveaway/entries.csv', { headers: { Authorization: `Bearer ${getToken()}` } });
+    if (!res.ok) throw new Error(`Export failed (${res.status})`);
+    return res.blob();
+  },
   commandCreateEvent: (body) => request('/api/command/events', { method: 'POST', body }),
   commandEventSetup: (id) => request(`/api/command/events/${id}/setup`),
   commandUpdateEvent: (id, body) => request(`/api/command/events/${id}`, { method: 'PUT', body }),

@@ -10,6 +10,7 @@ import { cardStyle } from '../../components/admin/theme';
 import AccessPanel from '../../components/admin/AccessPanel';
 import { InfoTip } from '../../components/Tooltip';
 import EventDesk from './EventDesk';
+import { giveawayStatus } from './giveawayStatus';
 
 const STATUS = {
   draft: { label: 'Draft', color: '#94a3b8' },
@@ -27,8 +28,10 @@ export function EventsListPage() {
   const [creating, setCreating] = useState(false);
   const [form, setForm] = useState({ name: '', day1: '', day2: '', price: '75', teamPrice: '' });
   const [archived, setArchived] = useState(false);
+  const [giveaway, setGiveaway] = useState(null);   // admin and fulfillment only; others never see the card
 
   useEffect(() => { api.deskEvents(archived).then(setData).catch(err => setError(err.message)); }, [archived]);
+  useEffect(() => { api.commandGiveaway().then(setGiveaway).catch(() => setGiveaway(null)); }, []);
 
   async function create(e) {
     e.preventDefault();
@@ -62,6 +65,14 @@ export function EventsListPage() {
           <Field label="Team price ($, optional)"><TextInput type="number" min="1" step="1" value={form.teamPrice} onChange={e => setForm(f => ({ ...f, teamPrice: e.target.value }))} placeholder="750" data-testid="new-event-team-price" /></Field>
           <div className="sm:col-span-5 flex gap-2"><PrimaryButton type="submit">Create draft</PrimaryButton><GhostButton type="button" onClick={() => setCreating(false)}>Cancel</GhostButton></div>
         </form>
+      )}
+      {giveaway && (
+        <Link to="/command/giveaway" className="rounded-2xl border px-5 py-4 mb-4 flex flex-wrap items-center gap-x-4 gap-y-1 hover:bg-slate-800/40" style={cardStyle} data-testid="giveaway-card">
+          <span className="font-bold text-white">Giveaway</span>
+          <span className="text-xs font-bold" style={{ color: giveawayStatus(giveaway.giveaway).color }}>{giveawayStatus(giveaway.giveaway).label}</span>
+          <span className="text-sm tabular-nums" style={{ color: '#cfe8ff' }}>{giveaway.counts.entries} {giveaway.counts.entries === 1 ? 'entry' : 'entries'}</span>
+          <span className="ml-auto text-sm font-bold" style={{ color: '#38bdf8' }}>Entries & dates →</span>
+        </Link>
       )}
       <section className="rounded-2xl border overflow-hidden" style={cardStyle}>
         {!data ? <p className="p-5 text-sm" style={{ color: '#94a3b8' }}>Loading…</p> : data.events.length === 0 ? (
