@@ -41,7 +41,10 @@ function Footer() {
           <p>Utah, United States</p>
         </div>
       </div>
-      <div className="footer-bottom"><p>© 2026 Diamond Metrics LLC. All rights reserved.</p></div>
+      <div className="footer-bottom">
+        <p>© 2026 Diamond Metrics LLC. All rights reserved.</p>
+        <a className="footer-parent-company" href="https://blklbl.ventures" target="_blank" rel="noopener noreferrer">A BLK LBL Ventures Company</a>
+      </div>
     </footer>
   );
 }
